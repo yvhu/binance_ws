@@ -141,12 +141,16 @@ class BinanceWSClient:
             
             # For combined streams, message has 'stream' and 'data' fields
             if 'stream' in data and 'data' in data:
+                stream_name = data['stream']
                 event_data = data['data']
+                logger.info(f"[WS] Received message from stream: {stream_name}")
             else:
                 event_data = data
+                logger.info(f"[WS] Received message without stream field")
             
             if 'e' in event_data:
                 event_type = event_data['e']
+                logger.info(f"[WS] Event type: {event_type}")
                 
                 if event_type == '24hrTicker':
                     self._process_ticker(event_data)
@@ -160,6 +164,8 @@ class BinanceWSClient:
                     self._process_force_order(event_data)
                 else:
                     logger.warning(f"Unknown event type: {event_type}")
+            else:
+                logger.debug(f"[WS] Message has no event type field")
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse message: {e}")
@@ -174,6 +180,7 @@ class BinanceWSClient:
             data: Ticker data from Binance
         """
         symbol = data.get('s', 'UNKNOWN')
+        logger.debug(f"[WS] Processing ticker for {symbol}")
         self.latest_data[f"{symbol}_ticker"] = data
         
         ticker_info = {
@@ -206,7 +213,9 @@ class BinanceWSClient:
         kline = data.get('k', {})
         symbol = data.get('s', 'UNKNOWN')
         interval = kline.get('i', '1m')
+        is_closed = kline.get('x', False)
         
+        logger.info(f"[WS] Processing kline: {symbol} {interval} closed={is_closed}")
         self.latest_data[f"{symbol}_kline_{interval}"] = data
         
         kline_info = {
@@ -240,6 +249,7 @@ class BinanceWSClient:
             data: Trade data from Binance
         """
         symbol = data.get('s', 'UNKNOWN')
+        logger.debug(f"[WS] Processing trade for {symbol}")
         
         trade_info = {
             'symbol': symbol,
@@ -267,6 +277,7 @@ class BinanceWSClient:
             data: Mark price data from Binance Futures
         """
         symbol = data.get('s', 'UNKNOWN')
+        logger.debug(f"[WS] Processing mark price for {symbol}")
         
         mark_price_info = {
             'symbol': symbol,
@@ -296,6 +307,7 @@ class BinanceWSClient:
         """
         order = data.get('o', {})
         symbol = data.get('s', 'UNKNOWN')
+        logger.debug(f"[WS] Processing force order for {symbol}")
         
         force_order_info = {
             'symbol': symbol,
