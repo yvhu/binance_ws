@@ -318,23 +318,31 @@ class BinanceTelegramBot:
         except Exception as e:
             self.logger.error(f"Error processing position update: {e}")
     
-    async def _on_user_data_error(self, error_info: dict) -> None:
+    async def _on_user_data_error(self, error_info) -> None:
         """
         Handle user data stream errors
         
         Args:
-            error_info: Error information dictionary
+            error_info: Error information (dict or str)
         """
-        error_type = error_info.get('type', 'unknown')
-        error_message = error_info.get('error', 'Unknown error')
-        
-        self.logger.error(f"User data stream error ({error_type}): {error_message}")
-        
-        # Send error notification to Telegram
-        await self.telegram_client.send_error_message(
-            error=error_message,
-            context=f"User data stream {error_type}"
-        )
+        try:
+            # Handle both dict and str error info
+            if isinstance(error_info, dict):
+                error_type = error_info.get('type', 'unknown')
+                error_message = error_info.get('error', 'Unknown error')
+            else:
+                error_type = 'unknown'
+                error_message = str(error_info)
+            
+            self.logger.error(f"User data stream error ({error_type}): {error_message}")
+            
+            # Send error notification to Telegram
+            await self.telegram_client.send_error_message(
+                error=error_message,
+                context=f"User data stream {error_type}"
+            )
+        except Exception as e:
+            self.logger.error(f"Error in user data error handler: {e}")
     
     async def send_startup_notification(self) -> None:
         """Send startup notification to Telegram"""
@@ -383,9 +391,16 @@ class BinanceTelegramBot:
                 self.logger.error(f"✗ Failed to create user data stream task: {e}")
                 raise
             
-            # Wait a moment for user data stream to connect and get initial balance
-            self.logger.info("Waiting for account balance from user data stream...")
-            await asyncio.sleep(2)
+            # Wait longer for user data stream to connect and get initial balance
+            self.logger.info("Waiting for account balance from user data stream (up to 10 seconds)...")
+            for i in range(10):
+                await asyncio.sleep(1)
+                balance = self.user_data_client.get_account_balance()
+                if balance is not None:
+                    self.logger.info(f"✓ Account balance received from WebSocket: {balance:.2f} USDC")
+                    break
+                else:
+                    self.logger.debug(f"Waiting for balance... ({i+1}/10)")
             
             self.logger.info("Sending startup notification...")
             # Send startup notification
