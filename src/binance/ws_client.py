@@ -247,7 +247,7 @@ class BinanceWSClient:
         interval = kline.get('i', '1m')
         is_closed = kline.get('x', False)
         
-        logger.info(f"[WS] ✓ Processing kline: {symbol} {interval} closed={is_closed}")
+        # logger.info(f"[WS] ✓ Processing kline: {symbol} {interval} closed={is_closed}")
         self.latest_data[f"{symbol}_kline_{interval}"] = data
         
         kline_info = {
@@ -438,8 +438,8 @@ class BinanceWSClient:
         try:
             async for message in self.websocket:
                 message_count += 1
-                if message_count % 100 == 0:
-                    logger.info(f"[WS] Received {message_count} messages so far...")
+                # if message_count % 100 == 0:
+                    # logger.info(f"[WS] Received {message_count} messages so far...")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
             logger.error(f"[WS] ✗ Binance Futures WebSocket connection closed: {e}")

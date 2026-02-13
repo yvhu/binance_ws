@@ -503,7 +503,7 @@ class BinanceTelegramBot:
             while self.is_running:
                 loop_count += 1
                 if loop_count % 60 == 0:  # 每分钟记录一次
-                    self.logger.info(f"Main loop running... (iteration {loop_count})")
+                    # self.logger.info(f"Main loop running... (iteration {loop_count})")
                     # 检查 WebSocket 任务状态
                     if self.user_data_task:
                         if self.user_data_task.done():
@@ -513,8 +513,8 @@ class BinanceTelegramBot:
                                 self.logger.warning(f"User data task result: {result}")
                             except Exception as e:
                                 self.logger.error(f"User data task exception: {e}")
-                        else:
-                            self.logger.info("User data task is still running")
+                        # else:
+                            # self.logger.info("User data task is still running")
                     else:
                         self.logger.warning("User data task is None!")
                     
@@ -526,8 +526,8 @@ class BinanceTelegramBot:
                                 self.logger.warning(f"Market data task result: {result}")
                             except Exception as e:
                                 self.logger.error(f"Market data task exception: {e}")
-                        else:
-                            self.logger.info("Market data task is still running")
+                        # else:
+                        #     self.logger.info("Market data task is still running")
                     else:
                         self.logger.warning("Market data task is None!")
                     

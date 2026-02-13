@@ -434,8 +434,8 @@ class UserDataClient:
         try:
             async for message in self.websocket:
                 message_count += 1
-                if message_count % 10 == 0:
-                    logger.info(f"[USER_WS] Received {message_count} messages so far...")
+                # if message_count % 10 == 0:
+                #     logger.info(f"[USER_WS] Received {message_count} messages so far...")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
             logger.error(f"[USER_WS] ✗ User data stream connection closed: {e}")
