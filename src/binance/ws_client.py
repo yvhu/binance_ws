@@ -101,11 +101,12 @@ class BinanceWSClient:
         logger.info(f"Connecting to Binance Futures WebSocket: {url}")
         
         try:
+            logger.info("Establishing WebSocket connection...")
             self.websocket = await websockets.connect(url)
             self.is_connected = True
-            logger.info("Successfully connected to Binance Futures WebSocket")
+            logger.info("✓ Successfully connected to Binance Futures WebSocket")
         except Exception as e:
-            logger.error(f"Failed to connect to Binance WebSocket: {e}")
+            logger.error(f"✗ Failed to connect to Binance WebSocket: {e}")
             self.is_connected = False
             raise
     
@@ -307,13 +308,20 @@ class BinanceWSClient:
         if not self.is_connected or not self.websocket:
             raise RuntimeError("WebSocket is not connected")
         
-        logger.info("Starting to listen for messages...")
+        logger.info("✓ Starting to listen for messages...")
+        logger.info("Waiting for market data...")
         
         try:
+            message_count = 0
             async for message in self.websocket:
+                message_count += 1
+                if message_count == 1:
+                    logger.info("✓ First message received from Binance WebSocket")
+                elif message_count % 100 == 0:
+                    logger.info(f"✓ Received {message_count} messages from Binance WebSocket")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
-            logger.error(f"Binance Futures WebSocket connection closed: {e}")
+            logger.error(f"✗ Binance Futures WebSocket connection closed: {e}")
             self.is_connected = False
             for callback in self.callbacks['error']:
                 try:
@@ -321,26 +329,29 @@ class BinanceWSClient:
                 except Exception as err:
                     logger.error(f"Error in error callback: {err}")
         except Exception as e:
-            logger.error(f"Error while listening: {e}")
+            logger.error(f"✗ Error while listening: {e}")
             self.is_connected = False
     
     async def start(self) -> None:
         """Start WebSocket connection and listening"""
         attempt = 0
         
+        logger.info(f"Starting WebSocket connection (max {self.reconnect_attempts} attempts)...")
+        
         while attempt < self.reconnect_attempts:
             try:
+                logger.info(f"Connection attempt {attempt + 1}/{self.reconnect_attempts}")
                 await self.connect()
                 await self.listen()
             except Exception as e:
                 attempt += 1
-                logger.error(f"Connection attempt {attempt} failed: {e}")
+                logger.error(f"✗ Connection attempt {attempt} failed: {e}")
                 
                 if attempt < self.reconnect_attempts:
-                    logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
+                    logger.info(f"⏳ Reconnecting in {self.reconnect_delay} seconds...")
                     await asyncio.sleep(self.reconnect_delay)
                 else:
-                    logger.error("Max reconnection attempts reached. Giving up.")
+                    logger.error("✗ Max reconnection attempts reached. Giving up.")
                     raise
     
     def get_latest_data(self, symbol: str, data_type: str = 'ticker') -> Optional[Dict]:

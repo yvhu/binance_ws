@@ -39,14 +39,26 @@ class BinanceTelegramBot:
         self.logger.info("Initializing Binance Futures Telegram Bot...")
         
         # Initialize components for futures trading
+        self.logger.info("Initializing data handler...")
         self.data_handler = BinanceDataHandler()
+        
+        self.logger.info("Initializing Binance WebSocket client...")
         self.binance_client = BinanceWSClient(self.config)
+        
+        self.logger.info("Initializing Telegram client...")
         self.telegram_client = TelegramClient(self.config)
+        
+        self.logger.info("Initializing technical analyzer...")
         self.technical_analyzer = TechnicalAnalyzer(self.config.indicators_config)
         
         # Initialize trading components
+        self.logger.info("Initializing position manager...")
         self.position_manager = PositionManager()
+        
+        self.logger.info("Initializing trading executor (this may take a moment)...")
         self.trading_executor = TradingExecutor(self.config)
+        
+        self.logger.info("Initializing 15-minute strategy...")
         self.strategy = FifteenMinuteStrategy(
             self.config,
             self.technical_analyzer,
@@ -55,6 +67,8 @@ class BinanceTelegramBot:
             self.data_handler,
             self.telegram_client
         )
+        
+        self.logger.info("All components initialized successfully")
         
         # Bot state
         self.is_running = False
@@ -72,12 +86,16 @@ class BinanceTelegramBot:
     async def initialize(self) -> None:
         """Initialize all components for futures trading"""
         try:
+            self.logger.info("Initializing Telegram bot...")
             # Initialize Telegram client
             await self.telegram_client.initialize()
             await self.telegram_client.start_bot()
+            self.logger.info("Telegram bot initialized successfully")
             
+            self.logger.info("Registering WebSocket callbacks...")
             # Register Binance Futures WebSocket callbacks
             self._register_callbacks()
+            self.logger.info("WebSocket callbacks registered successfully")
             
             self.logger.info("All components initialized successfully for futures trading")
             
@@ -248,13 +266,16 @@ class BinanceTelegramBot:
         self.is_running = True
         
         try:
+            self.logger.info("Starting bot initialization...")
             # Initialize components
             await self.initialize()
             
+            self.logger.info("Sending startup notification...")
             # Send startup notification
             await self.send_startup_notification()
             
             self.logger.info("Bot started successfully")
+            self.logger.info("Connecting to Binance WebSocket...")
             
             # Start Binance WebSocket connection
             await self.binance_client.start()
