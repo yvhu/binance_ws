@@ -383,6 +383,7 @@ class UserDataClient:
     
     async def start(self) -> None:
         """Start user data stream connection and listening"""
+        logger.info(">>> USER DATA STREAM STARTED <<<")
         try:
             await self.connect()
             await self.listen()
