@@ -166,13 +166,13 @@ class FifteenMinuteStrategy:
         """
         logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
-            # Get SAR direction from current 15m K-line
+            # Get SAR direction from current running 15m K-line (not closed)
             sar_direction = self._get_sar_direction(symbol)
             if sar_direction is None:
                 logger.warning(f"Could not determine SAR direction for {symbol}")
                 return
             
-            # Get 3m K-line direction
+            # Get 3m K-line direction for the first closed 3m K-line in current 15m cycle
             kline_3m = self.data_handler.get_klines(symbol, "3m", count=1)
             if not kline_3m:
                 logger.warning(f"No 3m K-line data for {symbol}")
@@ -183,7 +183,7 @@ class FifteenMinuteStrategy:
                 logger.warning(f"Could not determine 3m K-line direction for {symbol}")
                 return
             
-            # Get 5m K-line direction
+            # Get 5m K-line direction for the first closed 5m K-line in current 15m cycle
             kline_5m = self.data_handler.get_klines(symbol, "5m", count=1)
             if not kline_5m:
                 logger.warning(f"No 5m K-line data for {symbol}")
