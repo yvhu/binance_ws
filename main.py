@@ -538,12 +538,12 @@ class BinanceTelegramBot:
                         self.logger.warning("Market data task is None!")
                     
                     # 检查 WebSocket 连接状态
-                    if self.binance_client:
-                        self.logger.info(f"Binance WS connected: {self.binance_client.is_connected}")
-                    if self.user_data_client:
-                        self.logger.info(f"User data WS connected: {self.user_data_client.is_connected}")
-                await asyncio.sleep(1)
-            self.logger.info("Main event loop exited")
+                    # if self.binance_client:
+                    #     self.logger.info(f"Binance WS connected: {self.binance_client.is_connected}")
+                    # if self.user_data_client:
+                    #     self.logger.info(f"User data WS connected: {self.user_data_client.is_connected}")
+            #     await asyncio.sleep(1)
+            # self.logger.info("Main event loop exited")
 
         except asyncio.CancelledError:
             self.logger.info("Bot cancelled")

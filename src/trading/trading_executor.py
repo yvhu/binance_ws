@@ -302,33 +302,33 @@ class TradingExecutor:
         if balance is None:
             return None
         
-        # Calculate position value (100% of balance)
-        position_value = balance  # Full position
+        # Reserve opening fee and safety margin from balance
+        # These are deducted from available margin before applying leverage
+        opening_fee = balance * self.fee_rate
+        safety_margin_amount = balance * self.safety_margin
         
-        # Calculate total cost including fees and safety margin
-        # Total cost = Position value + Opening fee + Closing fee + Safety margin
-        # Opening fee = Position value * fee_rate
-        # Closing fee = Position value * fee_rate (estimated)
-        # Safety margin = Position value * safety_margin
+        # Available margin after reserving fees and safety margin
+        available_margin = balance - opening_fee - safety_margin_amount
         
-        opening_fee = position_value * self.fee_rate
-        closing_fee = position_value * self.fee_rate  # Estimated
-        safety_margin_amount = position_value * self.safety_margin
+        # Calculate position value using leverage
+        # Position value = Available margin * Leverage
+        position_value = available_margin * self.leverage
         
-        total_cost = position_value + opening_fee + closing_fee + safety_margin_amount
+        # Calculate quantity
+        # Quantity = Position value / Current price
+        quantity = position_value / current_price
         
-        # Calculate quantity (considering leverage)
-        # Quantity = Total cost * Leverage / Current price
-        quantity = (total_cost * self.leverage) / current_price
+        # Estimate closing fee for information only
+        closing_fee = position_value * self.fee_rate
         
         logger.info(
             f"Position size calculated:\n"
             f"  Balance: {balance:.2f} USDC\n"
-            f"  Position value: {position_value:.2f} USDC\n"
             f"  Opening fee: {opening_fee:.4f} USDC ({self.fee_rate*100:.2f}%)\n"
-            f"  Closing fee (est): {closing_fee:.4f} USDC\n"
             f"  Safety margin: {safety_margin_amount:.4f} USDC ({self.safety_margin*100:.1f}%)\n"
-            f"  Total cost: {total_cost:.2f} USDC\n"
+            f"  Available margin: {available_margin:.2f} USDC\n"
+            f"  Position value: {position_value:.2f} USDC\n"
+            f"  Closing fee (est): {closing_fee:.4f} USDC\n"
             f"  Raw quantity: {quantity:.6f} BTC\n"
             f"  Leverage: {self.leverage}x"
         )
@@ -355,6 +355,14 @@ class TradingExecutor:
             Order result or None
         """
         try:
+            # Re-check balance before opening position to ensure sufficient margin
+            balance = self.get_account_balance()
+            if balance is None:
+                logger.error(f"Failed to get account balance before opening long position for {symbol}")
+                return None
+            
+            logger.info(f"Re-verified balance before opening long position: {balance:.2f} USDC")
+            
             # Ensure leverage is set (only if not already cached)
             if not self.ensure_leverage(symbol):
                 logger.error(f"Failed to ensure leverage for {symbol}")
@@ -387,6 +395,14 @@ class TradingExecutor:
             Order result or None
         """
         try:
+            # Re-check balance before opening position to ensure sufficient margin
+            balance = self.get_account_balance()
+            if balance is None:
+                logger.error(f"Failed to get account balance before opening short position for {symbol}")
+                return None
+            
+            logger.info(f"Re-verified balance before opening short position: {balance:.2f} USDC")
+            
             # Ensure leverage is set (only if not already cached)
             if not self.ensure_leverage(symbol):
                 logger.error(f"Failed to ensure leverage for {symbol}")
