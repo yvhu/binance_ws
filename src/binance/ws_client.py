@@ -1,0 +1,343 @@
+"""
+Binance Futures WebSocket Client
+Handles WebSocket connections to Binance Futures for real-time market data
+"""
+
+import asyncio
+import json
+import logging
+from typing import Callable, Dict, List, Optional
+import websockets
+from websockets.exceptions import ConnectionClosed, ConnectionClosedError
+
+from ..config.config_manager import ConfigManager
+
+
+logger = logging.getLogger(__name__)
+
+
+class BinanceWSClient:
+    """Binance WebSocket client for real-time market data"""
+    
+    def __init__(self, config: ConfigManager):
+        """
+        Initialize Binance Futures WebSocket client
+        
+        Args:
+            config: Configuration manager instance
+        """
+        self.config = config
+        self.ws_url = config.binance_ws_url
+        self.symbols = config.binance_symbols
+        self.streams = config.binance_streams
+        self.futures_type = config.get_config("binance", "futures_type", default="perpetual")
+        
+        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
+        self.is_connected = False
+        self.reconnect_attempts = config.get_config("binance", "reconnect_attempts", default=5)
+        self.reconnect_delay = config.get_config("binance", "reconnect_delay", default=5)
+        
+        # Callbacks for different message types
+        self.callbacks: Dict[str, List[Callable]] = {
+            'ticker': [],
+            'kline': [],
+            'trade': [],
+            'error': []
+        }
+        
+        # Data storage
+        self.latest_data: Dict[str, Dict] = {}
+    
+    def on_message(self, message_type: str, callback: Callable) -> None:
+        """
+        Register callback for specific message type
+        
+        Args:
+            message_type: Type of message (ticker, kline, trade, error)
+            callback: Callback function to handle the message
+        """
+        if message_type in self.callbacks:
+            self.callbacks[message_type].append(callback)
+            logger.info(f"Registered callback for {message_type}")
+    
+    def _build_stream_url(self) -> str:
+        """
+        Build WebSocket stream URL for Binance Futures based on configured symbols and streams
+        
+        Returns:
+            Complete WebSocket URL for futures
+        """
+        streams = []
+        for symbol in self.symbols:
+            symbol_lower = symbol.lower()
+            for stream in self.streams:
+                if stream == 'ticker':
+                    # Futures ticker stream
+                    streams.append(f"{symbol_lower}@ticker")
+                elif stream.startswith('kline_'):
+                    interval = stream.split('_')[1]
+                    # Futures kline stream
+                    streams.append(f"{symbol_lower}@kline_{interval}")
+                elif stream == 'trade':
+                    # Futures trade stream
+                    streams.append(f"{symbol_lower}@trade")
+                elif stream == 'markPrice':
+                    # Futures mark price stream
+                    streams.append(f"{symbol_lower}@markPrice")
+                elif stream == 'forceOrder':
+                    # Futures liquidation orders stream
+                    streams.append(f"{symbol_lower}@forceOrder")
+        
+        if not streams:
+            raise ValueError("No valid streams configured")
+        
+        stream_path = "/".join(streams)
+        # Binance Futures WebSocket endpoint
+        return f"{self.ws_url}/{stream_path}"
+    
+    async def connect(self) -> None:
+        """Connect to Binance WebSocket"""
+        url = self._build_stream_url()
+        logger.info(f"Connecting to Binance Futures WebSocket: {url}")
+        
+        try:
+            self.websocket = await websockets.connect(url)
+            self.is_connected = True
+            logger.info("Successfully connected to Binance Futures WebSocket")
+        except Exception as e:
+            logger.error(f"Failed to connect to Binance WebSocket: {e}")
+            self.is_connected = False
+            raise
+    
+    async def disconnect(self) -> None:
+        """Disconnect from Binance WebSocket"""
+        if self.websocket:
+            await self.websocket.close()
+            self.is_connected = False
+            logger.info("Disconnected from Binance Futures WebSocket")
+    
+    async def _handle_message(self, message: str) -> None:
+        """
+        Handle incoming WebSocket message
+        
+        Args:
+            message: JSON message string
+        """
+        try:
+            data = json.loads(message)
+            
+            # Determine message type and route to appropriate callback
+            if 'e' in data:
+                event_type = data['e']
+                
+                if event_type == '24hrTicker':
+                    self._process_ticker(data)
+                elif event_type == 'kline':
+                    self._process_kline(data)
+                elif event_type == 'trade':
+                    self._process_trade(data)
+                elif event_type == 'markPriceUpdate':
+                    self._process_mark_price(data)
+                elif event_type == 'forceOrder':
+                    self._process_force_order(data)
+                else:
+                    logger.warning(f"Unknown event type: {event_type}")
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse message: {e}")
+        except Exception as e:
+            logger.error(f"Error handling message: {e}")
+    
+    def _process_ticker(self, data: Dict) -> None:
+        """
+        Process ticker data
+        
+        Args:
+            data: Ticker data from Binance
+        """
+        symbol = data.get('s', 'UNKNOWN')
+        self.latest_data[f"{symbol}_ticker"] = data
+        
+        ticker_info = {
+            'symbol': symbol,
+            'price_change': float(data.get('p', 0)),
+            'price_change_percent': float(data.get('P', 0)),
+            'current_price': float(data.get('c', 0)),
+            'high_price': float(data.get('h', 0)),
+            'low_price': float(data.get('l', 0)),
+            'volume': float(data.get('v', 0)),
+            'timestamp': data.get('E', 0)
+        }
+        
+        for callback in self.callbacks['ticker']:
+            try:
+                callback(ticker_info)
+            except Exception as e:
+                logger.error(f"Error in ticker callback: {e}")
+    
+    def _process_kline(self, data: Dict) -> None:
+        """
+        Process kline (candlestick) data
+        
+        Args:
+            data: Kline data from Binance
+        """
+        kline = data.get('k', {})
+        symbol = data.get('s', 'UNKNOWN')
+        interval = kline.get('i', '1m')
+        
+        self.latest_data[f"{symbol}_kline_{interval}"] = data
+        
+        kline_info = {
+            'symbol': symbol,
+            'interval': interval,
+            'open_time': kline.get('t', 0),
+            'close_time': kline.get('T', 0),
+            'open': float(kline.get('o', 0)),
+            'high': float(kline.get('h', 0)),
+            'low': float(kline.get('l', 0)),
+            'close': float(kline.get('c', 0)),
+            'volume': float(kline.get('v', 0)),
+            'is_closed': kline.get('x', False),
+            'number_of_trades': kline.get('n', 0)
+        }
+        
+        for callback in self.callbacks['kline']:
+            try:
+                callback(kline_info)
+            except Exception as e:
+                logger.error(f"Error in kline callback: {e}")
+    
+    def _process_trade(self, data: Dict) -> None:
+        """
+        Process trade data
+        
+        Args:
+            data: Trade data from Binance
+        """
+        symbol = data.get('s', 'UNKNOWN')
+        
+        trade_info = {
+            'symbol': symbol,
+            'trade_id': data.get('t', 0),
+            'price': float(data.get('p', 0)),
+            'quantity': float(data.get('q', 0)),
+            'time': data.get('T', 0),
+            'is_buyer_maker': data.get('m', False)
+        }
+        
+        for callback in self.callbacks['trade']:
+            try:
+                callback(trade_info)
+            except Exception as e:
+                logger.error(f"Error in trade callback: {e}")
+        
+        def _process_mark_price(self, data: Dict) -> None:
+            """
+            Process mark price data (Futures specific)
+            
+            Args:
+                data: Mark price data from Binance Futures
+            """
+            symbol = data.get('s', 'UNKNOWN')
+            
+            mark_price_info = {
+                'symbol': symbol,
+                'mark_price': float(data.get('p', 0)),
+                'index_price': float(data.get('i', 0)),
+                'estimated_settle_price': float(data.get('P', 0)),
+                'funding_rate': float(data.get('r', 0)),
+                'next_funding_time': data.get('T', 0),
+                'timestamp': data.get('E', 0)
+            }
+            
+            for callback in self.callbacks.get('mark_price', []):
+                try:
+                    callback(mark_price_info)
+                except Exception as e:
+                    logger.error(f"Error in mark price callback: {e}")
+        
+        def _process_force_order(self, data: Dict) -> None:
+            """
+            Process force order/liquidation data (Futures specific)
+            
+            Args:
+                data: Force order data from Binance Futures
+            """
+            order = data.get('o', {})
+            symbol = data.get('s', 'UNKNOWN')
+            
+            force_order_info = {
+                'symbol': symbol,
+                'side': order.get('S', 'UNKNOWN'),
+                'order_type': order.get('o', 'UNKNOWN'),
+                'time_in_force': order.get('f', 'UNKNOWN'),
+                'original_quantity': float(order.get('q', 0)),
+                'price': float(order.get('p', 0)),
+                'average_price': float(order.get('ap', 0)),
+                'order_status': order.get('X', 'UNKNOWN'),
+                'last_filled_quantity': float(order.get('z', 0)),
+                'total_filled_quantity': float(order.get('Z', 0)),
+                'timestamp': data.get('E', 0)
+            }
+            
+            for callback in self.callbacks.get('force_order', []):
+                try:
+                    callback(force_order_info)
+                except Exception as e:
+                    logger.error(f"Error in force order callback: {e}")
+        
+        async def listen(self) -> None:
+            """Listen for incoming messages from WebSocket"""
+            if not self.is_connected or not self.websocket:
+                raise RuntimeError("WebSocket is not connected")
+            
+            logger.info("Starting to listen for messages...")
+            
+            try:
+                async for message in self.websocket:
+                    await self._handle_message(message)
+            except ConnectionClosedError as e:
+                logger.error(f"Binance Futures WebSocket connection closed: {e}")
+                self.is_connected = False
+                for callback in self.callbacks['error']:
+                    try:
+                        callback({'type': 'connection_closed', 'error': str(e)})
+                    except Exception as err:
+                        logger.error(f"Error in error callback: {err}")
+            except Exception as e:
+                logger.error(f"Error while listening: {e}")
+                self.is_connected = False
+    
+    async def start(self) -> None:
+        """Start WebSocket connection and listening"""
+        attempt = 0
+        
+        while attempt < self.reconnect_attempts:
+            try:
+                await self.connect()
+                await self.listen()
+            except Exception as e:
+                attempt += 1
+                logger.error(f"Connection attempt {attempt} failed: {e}")
+                
+                if attempt < self.reconnect_attempts:
+                    logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
+                    await asyncio.sleep(self.reconnect_delay)
+                else:
+                    logger.error("Max reconnection attempts reached. Giving up.")
+                    raise
+    
+    def get_latest_data(self, symbol: str, data_type: str = 'ticker') -> Optional[Dict]:
+        """
+        Get latest data for a symbol
+        
+        Args:
+            symbol: Trading pair symbol
+            data_type: Type of data (ticker, kline, trade)
+            
+        Returns:
+            Latest data dictionary or None
+        """
+        key = f"{symbol}_{data_type}"
+        return self.latest_data.get(key)

@@ -1,0 +1,61 @@
+# Binance Futures Configuration
+[binance]
+# Trading pairs to monitor (Futures)
+# Currently focused on BTC only for production trading
+# To add more symbols for future expansion, simply add them to the list:
+# symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
+symbols = ["BTCUSDT"]
+# WebSocket streams (Futures)
+streams = ["ticker", "kline_3m", "kline_5m", "kline_15m"]
+# Reconnection settings
+reconnect_attempts = 5
+reconnect_delay = 5  # seconds
+# Futures type: 'perpetual' for perpetual futures
+futures_type = "perpetual"
+
+# Telegram Configuration
+[telegram]
+# Message settings
+enable_notifications = true
+message_timeout = 30  # seconds
+# Rate limiting
+max_messages_per_minute = 20
+
+# Technical Indicators Configuration
+[indicators]
+# Moving Averages
+ma_periods = [7, 25, 99]
+# RSI
+rsi_period = 14
+rsi_overbought = 70
+rsi_oversold = 30
+# MACD
+macd_fast = 12
+macd_slow = 26
+macd_signal = 9
+# Bollinger Bands
+bb_period = 20
+bb_std = 2
+
+# Trading Strategy Configuration
+[strategy]
+# 15m K线交易策略
+# Position size: 100% of account balance (full position)
+
+# K线 intervals for strategy
+main_interval = "15m"  # Main trading interval
+check_interval = "5m"  # Check interval for opening position
+confirm_interval_1 = "3m"  # First confirmation interval
+confirm_interval_2 = "5m"  # Second confirmation interval
+
+# SAR indicator parameters
+sar_acceleration = 0.02
+sar_maximum = 0.2
+
+# Logging Configuration
+[logging]
+level = "INFO"
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+file = "logs/app.log"
+max_bytes = 10485760  # 10MB
+backup_count = 5

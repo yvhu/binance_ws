@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  binance-telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: binance-telegram-bot
+    restart: unless-stopped
+    
+    # Environment variables from .env file
+    env_file:
+      - .env
+    
+    # Mount configuration file
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./logs:/app/logs
+    
+    # Network mode (use host if needed for better connectivity)
+    # network_mode: host
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
