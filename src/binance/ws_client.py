@@ -103,6 +103,7 @@ class BinanceWSClient:
     
     async def connect(self) -> None:
         """Connect to Binance WebSocket"""
+        logger.info("Building WebSocket stream URL...")
         url = self._build_stream_url()
         logger.info(f"Connecting to Binance Futures WebSocket: {url}")
         
@@ -128,7 +129,7 @@ class BinanceWSClient:
         except Exception as e:
             import traceback
             logger.error(f"✗ Failed to connect to Binance WebSocket: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(traceback.format_exc())
             self.is_connected = False
             raise
         finally:
@@ -367,17 +368,21 @@ class BinanceWSClient:
         """Start WebSocket connection and listening"""
         attempt = 0
         
+        logger.info(f">>> BINANCE WEBSOCKET STARTING <<<")
         logger.info(f"Starting WebSocket connection (max {self.reconnect_attempts} attempts)...")
         
         while attempt < self.reconnect_attempts:
             try:
                 logger.info(f"Connection attempt {attempt + 1}/{self.reconnect_attempts}")
                 await self.connect()
+                logger.info("Connected successfully, starting listen loop...")
                 # Start a background task to send periodic pongs to keep connection alive
                 await self.listen()
             except Exception as e:
+                import traceback
                 attempt += 1
                 logger.error(f"✗ Connection attempt {attempt} failed: {e}")
+                logger.error(traceback.format_exc())
                 
                 if attempt < self.reconnect_attempts:
                     logger.info(f"⏳ Reconnecting in {self.reconnect_delay} seconds...")
