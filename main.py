@@ -390,42 +390,40 @@ class BinanceTelegramBot:
 
             self.logger.info("Starting WebSocket services...")
 
-            # 先启动 WebSocket（后台运行）
-            ws_task = asyncio.create_task(
-                asyncio.gather(
-                    self.user_data_client.start(),
-                    self.binance_client.start()
-                )
-            )
+            # --- 关键改动：后台启动 WebSocket，不阻塞主协程 ---
+            asyncio.create_task(self.user_data_client.start())
+            asyncio.create_task(self.binance_client.start())
+            self.logger.info("WebSocket tasks started in background")
 
-            # 等待 user data stream 连接并获取余额
+            # 等待 user data stream 连接并获取余额 (最多 10 秒)
             self.logger.info("Waiting for account balance (up to 10 seconds)...")
+            balance = None
             for i in range(10):
                 await asyncio.sleep(1)
                 balance = self.user_data_client.get_account_balance()
-                if balance is not None:
-                    self.logger.info(
-                        f"✓ Account balance received: {balance:.2f} USDC"
-                    )
+                if balance is not None and balance > 0:
+                    self.logger.info(f"✓ Account balance received: {balance:.2f} USDC")
                     break
+                else:
+                    self.logger.debug(f"Waiting for balance... ({i+1}/10)")
 
-            # 如果还是没有，用 REST 主动获取
-            if self.user_data_client.get_account_balance() is None:
+            # 如果还是没有余额，用 REST API 主动获取
+            if balance is None or balance == 0:
                 self.logger.warning(
                     "WebSocket balance not available, fetching via REST..."
                 )
-                balance = await asyncio.to_thread(
-                    self.trading_executor.get_account_balance
-                )
+                balance = await asyncio.to_thread(self.trading_executor.get_account_balance)
                 self.user_data_client.account_balance = balance
+                self.logger.info(f"✓ Account balance fetched via REST: {balance:.2f} USDC")
 
             # 发送启动通知
             await self.send_startup_notification()
 
             self.logger.info("Bot started successfully")
 
-            # 等待 websocket 任务（永久运行）
-            await ws_task
+            # --- 主协程可以继续做其他任务，WebSocket 永远在后台运行 ---
+            while self.is_running:
+                await asyncio.sleep(1)
 
         except asyncio.CancelledError:
             self.logger.info("Bot cancelled")
@@ -436,80 +434,6 @@ class BinanceTelegramBot:
             await self.telegram_client.send_error_message(str(e), "Bot runtime error")
         finally:
             await self.shutdown()
-    
-    async def _on_mark_price(self, mark_price_info: dict) -> None:
-        """
-        Handle mark price updates (Futures specific)
-        
-        Args:
-            mark_price_info: Mark price information dictionary
-        """
-        try:
-            symbol = mark_price_info['symbol']
-            mark_price = mark_price_info.get('mark_price', 0)
-            funding_rate = mark_price_info.get('funding_rate', 0)
-            
-            self.logger.debug(f"Mark price update for {symbol}: {mark_price}, Funding rate: {funding_rate}")
-            
-            # Can add logic here to alert on significant funding rate changes
-            if abs(funding_rate) > 0.0001:  # 0.01% threshold
-                self.logger.info(f"Significant funding rate for {symbol}: {funding_rate:.4%}")
-                
-        except Exception as e:
-            self.logger.error(f"Error processing mark price: {e}")
-    
-    async def _on_force_order(self, force_order_info: dict) -> None:
-        """
-        Handle force order/liquidation updates (Futures specific)
-        
-        Args:
-            force_order_info: Force order information dictionary
-        """
-        try:
-            symbol = force_order_info['symbol']
-            side = force_order_info.get('side', 'UNKNOWN')
-            quantity = force_order_info.get('total_filled_quantity', 0)
-            price = force_order_info.get('average_price', 0)
-            
-            self.logger.warning(f"Liquidation detected for {symbol}: {side} {quantity} @ {price}")
-            
-            # Send alert for large liquidations
-            if quantity * price > 100000:  # $100,000 threshold
-                message = (
-                    f"⚠️ <b>大额强平提醒</b>\n\n"
-                    f"📊 交易对: {symbol}\n"
-                    f"📈 方向: {side}\n"
-                    f"💰 数量: {quantity:.4f}\n"
-                    f"💵 价格: ${price:,.2f}\n"
-                    f"💵 价值: ${quantity * price:,.2f}"
-                )
-                await self.telegram_client.send_message(message, parse_mode='HTML')
-            
-        except Exception as e:
-            self.logger.error(f"Error processing force order: {e}")
-    
-    async def shutdown(self) -> None:
-        """Shutdown the bot gracefully"""
-        self.logger.info("Shutting down bot...")
-        
-        try:
-            # Send shutdown notification
-            await self.send_shutdown_notification()
-            
-            # Disconnect Binance WebSocket
-            await self.binance_client.disconnect()
-            
-            # Disconnect user data stream
-            if self.user_data_client:
-                await self.user_data_client.disconnect()
-            
-            # Shutdown Telegram client
-            await self.telegram_client.shutdown()
-            
-            self.logger.info("Bot shutdown complete")
-            
-        except Exception as e:
-            self.logger.error(f"Error during shutdown: {e}")
 
 
 async def main():
