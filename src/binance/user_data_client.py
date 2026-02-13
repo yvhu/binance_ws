@@ -102,6 +102,9 @@ class UserDataClient:
             logger.error("Failed to get listen key: listen_key is None or empty")
             raise RuntimeError("Failed to get listen key")
         
+        # 打印 listen key 用于调试
+        logger.info(f"✓ Listen key obtained: {self.listen_key}")
+        
         # Build WebSocket URL per Binance docs: wss://fstream.binance.com/ws/<listenKey>
         url = f"wss://fstream.binance.com/ws/{self.listen_key}"
         logger.info(f"Connecting to user data stream: {url}")

@@ -155,7 +155,7 @@ class TradingExecutor:
         try:
             # futures_stream_get_listen_key returns the listen key string directly
             listen_key = self.client.futures_stream_get_listen_key()
-            logger.info(f"Listen key obtained: {listen_key[:10]}...")
+            logger.info(f"✓ Listen key obtained: {listen_key}")
             return listen_key
         except BinanceAPIException as e:
             logger.error(f"Failed to get listen key: {e}")
