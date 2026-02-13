@@ -68,32 +68,42 @@ class BinanceWSClient:
             Complete WebSocket URL for futures
         """
         streams = []
+        logger.info(f"Building stream URL for symbols: {self.symbols}")
+        logger.info(f"Configured streams: {self.streams}")
+        
         for symbol in self.symbols:
             symbol_lower = symbol.lower()
             for stream in self.streams:
                 if stream == 'ticker':
                     # Futures ticker stream
                     streams.append(f"{symbol_lower}@ticker")
+                    logger.debug(f"Added ticker stream for {symbol}")
                 elif stream.startswith('kline_'):
                     interval = stream.split('_')[1]
                     # Futures kline stream
                     streams.append(f"{symbol_lower}@kline_{interval}")
+                    logger.debug(f"Added kline_{interval} stream for {symbol}")
                 elif stream == 'trade':
                     # Futures trade stream
                     streams.append(f"{symbol_lower}@trade")
+                    logger.debug(f"Added trade stream for {symbol}")
                 elif stream == 'markPrice':
                     # Futures mark price stream
                     streams.append(f"{symbol_lower}@markPrice")
+                    logger.debug(f"Added markPrice stream for {symbol}")
                 elif stream == 'forceOrder':
                     # Futures liquidation orders stream
                     streams.append(f"{symbol_lower}@forceOrder")
+                    logger.debug(f"Added forceOrder stream for {symbol}")
         
         if not streams:
             raise ValueError("No valid streams configured")
         
         stream_path = "/".join(streams)
         # Binance Futures WebSocket endpoint
-        return f"{self.ws_url}/{stream_path}"
+        url = f"{self.ws_url}/{stream_path}"
+        logger.info(f"Built WebSocket URL: {url}")
+        return url
     
     async def connect(self) -> None:
         """Connect to Binance WebSocket"""
@@ -102,9 +112,17 @@ class BinanceWSClient:
         
         try:
             logger.info("Establishing WebSocket connection...")
-            self.websocket = await websockets.connect(url)
+            # Set timeout to avoid hanging
+            self.websocket = await asyncio.wait_for(
+                websockets.connect(url),
+                timeout=30.0
+            )
             self.is_connected = True
             logger.info("✓ Successfully connected to Binance Futures WebSocket")
+        except asyncio.TimeoutError:
+            logger.error("✗ WebSocket connection timeout after 30 seconds")
+            self.is_connected = False
+            raise
         except Exception as e:
             logger.error(f"✗ Failed to connect to Binance WebSocket: {e}")
             self.is_connected = False

@@ -10,6 +10,7 @@ from typing import Optional
 
 from src.config.config_manager import ConfigManager
 from src.binance.ws_client import BinanceWSClient
+from src.binance.user_data_client import UserDataClient
 from src.binance.data_handler import BinanceDataHandler
 from src.telegram.telegram_client import TelegramClient
 from src.indicators.technical_analyzer import TechnicalAnalyzer
@@ -48,6 +49,9 @@ class BinanceTelegramBot:
         self.logger.info("Initializing Telegram client...")
         self.telegram_client = TelegramClient(self.config)
         
+        # User data client will be initialized after trading executor
+        self.user_data_client: Optional[UserDataClient] = None
+        
         self.logger.info("Initializing technical analyzer...")
         self.technical_analyzer = TechnicalAnalyzer(self.config.indicators_config)
         
@@ -62,6 +66,10 @@ class BinanceTelegramBot:
         except Exception as e:
             self.logger.error(f"✗ Failed to initialize trading executor: {e}")
             raise
+        
+        self.logger.info("Initializing user data stream client...")
+        self.user_data_client = UserDataClient(self.config, self.trading_executor)
+        self.logger.info("✓ User data stream client initialized")
         
         self.logger.info("Initializing 15-minute strategy...")
         self.strategy = FifteenMinuteStrategy(
@@ -102,6 +110,11 @@ class BinanceTelegramBot:
             self._register_callbacks()
             self.logger.info("WebSocket callbacks registered successfully")
             
+            self.logger.info("Registering user data stream callbacks...")
+            # Register user data stream callbacks
+            self._register_user_data_callbacks()
+            self.logger.info("User data stream callbacks registered successfully")
+            
             self.logger.info("All components initialized successfully for futures trading")
             
         except Exception as e:
@@ -124,6 +137,20 @@ class BinanceTelegramBot:
         
         # Error callback
         self.binance_client.on_message('error', self._on_error)
+    
+    def _register_user_data_callbacks(self) -> None:
+        """Register callbacks for user data stream messages"""
+        # Account update callback
+        self.user_data_client.on_account_update(self._on_account_update)
+        
+        # Order update callback
+        self.user_data_client.on_order_update(self._on_order_update)
+        
+        # Position update callback
+        self.user_data_client.on_position_update(self._on_position_update)
+        
+        # Error callback
+        self.user_data_client.on_error(self._on_user_data_error)
     
     async def _on_ticker(self, ticker_info: dict) -> None:
         """
@@ -249,12 +276,78 @@ class BinanceTelegramBot:
             context=f"WebSocket {error_type}"
         )
     
+    async def _on_account_update(self, account_info: dict) -> None:
+        """
+        Handle account balance updates from user data stream
+        
+        Args:
+            account_info: Account information dictionary
+        """
+        try:
+            balance = account_info.get('balance', 0)
+            self.logger.info(f"Account balance updated via WebSocket: {balance:.2f} USDC")
+        except Exception as e:
+            self.logger.error(f"Error processing account update: {e}")
+    
+    async def _on_order_update(self, order_info: dict) -> None:
+        """
+        Handle order updates from user data stream
+        
+        Args:
+            order_info: Order information dictionary
+        """
+        try:
+            symbol = order_info.get('symbol', 'UNKNOWN')
+            status = order_info.get('status', 'UNKNOWN')
+            self.logger.info(f"Order update for {symbol}: {status}")
+        except Exception as e:
+            self.logger.error(f"Error processing order update: {e}")
+    
+    async def _on_position_update(self, position_info: dict) -> None:
+        """
+        Handle position updates from user data stream
+        
+        Args:
+            position_info: Position information dictionary
+        """
+        try:
+            symbol = position_info.get('symbol', 'UNKNOWN')
+            amount = position_info.get('amount', 0)
+            unrealized_pnl = position_info.get('unrealized_pnl', 0)
+            self.logger.info(f"Position update for {symbol}: {amount}, PnL: {unrealized_pnl:.2f}")
+        except Exception as e:
+            self.logger.error(f"Error processing position update: {e}")
+    
+    async def _on_user_data_error(self, error_info: dict) -> None:
+        """
+        Handle user data stream errors
+        
+        Args:
+            error_info: Error information dictionary
+        """
+        error_type = error_info.get('type', 'unknown')
+        error_message = error_info.get('error', 'Unknown error')
+        
+        self.logger.error(f"User data stream error ({error_type}): {error_message}")
+        
+        # Send error notification to Telegram
+        await self.telegram_client.send_error_message(
+            error=error_message,
+            context=f"User data stream {error_type}"
+        )
+    
     async def send_startup_notification(self) -> None:
         """Send startup notification to Telegram"""
         symbols = self.config.binance_symbols
         
-        # Get account balance
-        balance = self.trading_executor.get_account_balance()
+        # Get account balance from user data stream (WebSocket)
+        balance = self.user_data_client.get_account_balance()
+        
+        # If balance not available yet, try REST API as fallback
+        if balance is None:
+            self.logger.warning("Balance not available from WebSocket, using REST API fallback")
+            balance = self.trading_executor.get_account_balance()
+        
         balance_str = f"{balance:.2f} USDC" if balance is not None else "获取失败"
         
         details = {
@@ -281,6 +374,19 @@ class BinanceTelegramBot:
             # Initialize components
             await self.initialize()
             
+            self.logger.info("Starting user data stream...")
+            # Start user data stream in background
+            try:
+                user_data_task = asyncio.create_task(self.user_data_client.start())
+                self.logger.info("✓ User data stream task created")
+            except Exception as e:
+                self.logger.error(f"✗ Failed to create user data stream task: {e}")
+                raise
+            
+            # Wait a moment for user data stream to connect and get initial balance
+            self.logger.info("Waiting for account balance from user data stream...")
+            await asyncio.sleep(2)
+            
             self.logger.info("Sending startup notification...")
             # Send startup notification
             await self.send_startup_notification()
@@ -289,12 +395,18 @@ class BinanceTelegramBot:
             self.logger.info("Connecting to Binance WebSocket...")
             
             # Start Binance WebSocket connection
-            await self.binance_client.start()
+            try:
+                await self.binance_client.start()
+            except Exception as e:
+                self.logger.error(f"✗ Failed to start Binance WebSocket: {e}")
+                raise
             
         except asyncio.CancelledError:
             self.logger.info("Bot cancelled")
         except Exception as e:
             self.logger.error(f"Bot error: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             await self.telegram_client.send_error_message(str(e), "Bot runtime error")
         finally:
             # Cleanup
@@ -361,6 +473,10 @@ class BinanceTelegramBot:
             
             # Disconnect Binance WebSocket
             await self.binance_client.disconnect()
+            
+            # Disconnect user data stream
+            if self.user_data_client:
+                await self.user_data_client.disconnect()
             
             # Shutdown Telegram client
             await self.telegram_client.shutdown()

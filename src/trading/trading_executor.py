@@ -145,9 +145,43 @@ class TradingExecutor:
         
         return success
     
+    def get_listen_key(self) -> Optional[str]:
+        """
+        Get listen key for user data stream
+        
+        Returns:
+            Listen key or None
+        """
+        try:
+            response = self.client.futures_stream_get_listen_key()
+            listen_key = response.get('listenKey')
+            logger.info(f"Listen key obtained: {listen_key[:10]}...")
+            return listen_key
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get listen key: {e}")
+            return None
+    
+    def keep_alive_listen_key(self, listen_key: str) -> bool:
+        """
+        Keep the listen key alive (must be called every 30 minutes)
+        
+        Args:
+            listen_key: The listen key to keep alive
+            
+        Returns:
+            True if successful
+        """
+        try:
+            self.client.futures_stream_keepalive(listenKey=listen_key)
+            logger.debug("Listen key kept alive")
+            return True
+        except BinanceAPIException as e:
+            logger.error(f"Failed to keep listen key alive: {e}")
+            return False
+    
     def get_account_balance(self) -> Optional[float]:
         """
-        Get available USDT balance
+        Get available USDT balance via REST API (fallback method)
         
         Returns:
             Available balance or None
@@ -155,7 +189,7 @@ class TradingExecutor:
         try:
             account = self.client.futures_account()
             balance = float(account['availableBalance'])
-            logger.info(f"Available balance: {balance} USDT")
+            logger.info(f"Available balance: {balance} USDC")
             return balance
         except BinanceAPIException as e:
             logger.error(f"Failed to get account balance: {e}")
