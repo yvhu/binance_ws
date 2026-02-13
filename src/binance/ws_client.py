@@ -264,10 +264,10 @@ class BinanceWSClient:
             'number_of_trades': kline.get('n', 0)
         }
         
-        logger.info(f"[WS] Kline info: {symbol} {interval} O={kline_info['open']} H={kline_info['high']} L={kline_info['low']} C={kline_info['close']}")
+        # logger.info(f"[WS] Kline info: {symbol} {interval} O={kline_info['open']} H={kline_info['high']} L={kline_info['low']} C={kline_info['close']}")
         
         callback_count = len(self.callbacks['kline'])
-        logger.info(f"[WS] Calling {callback_count} kline callback(s)...")
+        # logger.info(f"[WS] Calling {callback_count} kline callback(s)...")
         
         for idx, callback in enumerate(self.callbacks['kline']):
             try:
@@ -282,11 +282,11 @@ class BinanceWSClient:
                 import traceback
                 logger.error(traceback.format_exc())
         
-        logger.info(f"[WS] All kline callbacks completed")
+        # logger.info(f"[WS] All kline callbacks completed")
         
         # Add explicit logging for 5m kline close to help debug strategy callback
         if interval == '5m' and is_closed:
-            logger.info(f"[WS] 5m kline closed for {symbol}, triggering strategy callbacks if any")
+            # logger.info(f"[WS] 5m kline closed for {symbol}, triggering strategy callbacks if any")
             for callback in self.callbacks['kline']:
                 # Check if callback is coroutine function and named on_5m_kline_close or similar
                 if hasattr(callback, '__name__') and callback.__name__ == 'on_5m_kline_close':
@@ -298,10 +298,10 @@ class BinanceWSClient:
         
         # Add explicit logging for 15m kline close to help debug strategy callback
         if interval == '15m' and is_closed:
-            logger.info(f"[WS] 15m kline closed for {symbol}, triggering strategy callbacks if any")
+            # logger.info(f"[WS] 15m kline closed for {symbol}, triggering strategy callbacks if any")
             for callback in self.callbacks['kline']:
                 if hasattr(callback, '__name__') and callback.__name__ == 'on_15m_kline_close':
-                    logger.info(f"[WS] Calling on_15m_kline_close callback for {symbol}")
+                    # logger.info(f"[WS] Calling on_15m_kline_close callback for {symbol}")
                     if asyncio.iscoroutinefunction(callback):
                         asyncio.create_task(callback(kline_info))
                     else:

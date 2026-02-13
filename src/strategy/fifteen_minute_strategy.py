@@ -249,6 +249,11 @@ class FifteenMinuteStrategy:
                     logger.warning(f"No 15m K-line data within current 15m cycle for SAR calculation")
                     return None
             
+            # Check if 'open_time' column exists in df
+            if 'open_time' not in df.columns:
+                logger.error(f"'open_time' column missing in 15m K-line dataframe")
+                return None
+            
             # Calculate SAR direction based on current price vs SAR
             sar_direction = self.technical_analyzer.get_sar_direction(df)
             
