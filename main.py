@@ -310,14 +310,14 @@ class BinanceTelegramBot:
             # Send alert for large liquidations
             if quantity * price > 100000:  # $100,000 threshold
                 message = (
-                    f"⚠️ *大额强平提醒*\n\n"
+                    f"⚠️ <b>大额强平提醒</b>\n\n"
                     f"📊 交易对: {symbol}\n"
                     f"📈 方向: {side}\n"
                     f"💰 数量: {quantity:.4f}\n"
                     f"💵 价格: ${price:,.2f}\n"
                     f"💵 价值: ${quantity * price:,.2f}"
                 )
-                await self.telegram_client.send_message(message, parse_mode='Markdown')
+                await self.telegram_client.send_message(message, parse_mode='HTML')
             
         except Exception as e:
             self.logger.error(f"Error processing force order: {e}")

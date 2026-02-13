@@ -231,83 +231,83 @@ class BinanceWSClient:
                 callback(trade_info)
             except Exception as e:
                 logger.error(f"Error in trade callback: {e}")
+    
+    def _process_mark_price(self, data: Dict) -> None:
+        """
+        Process mark price data (Futures specific)
         
-        def _process_mark_price(self, data: Dict) -> None:
-            """
-            Process mark price data (Futures specific)
-            
-            Args:
-                data: Mark price data from Binance Futures
-            """
-            symbol = data.get('s', 'UNKNOWN')
-            
-            mark_price_info = {
-                'symbol': symbol,
-                'mark_price': float(data.get('p', 0)),
-                'index_price': float(data.get('i', 0)),
-                'estimated_settle_price': float(data.get('P', 0)),
-                'funding_rate': float(data.get('r', 0)),
-                'next_funding_time': data.get('T', 0),
-                'timestamp': data.get('E', 0)
-            }
-            
-            for callback in self.callbacks.get('mark_price', []):
-                try:
-                    callback(mark_price_info)
-                except Exception as e:
-                    logger.error(f"Error in mark price callback: {e}")
+        Args:
+            data: Mark price data from Binance Futures
+        """
+        symbol = data.get('s', 'UNKNOWN')
         
-        def _process_force_order(self, data: Dict) -> None:
-            """
-            Process force order/liquidation data (Futures specific)
-            
-            Args:
-                data: Force order data from Binance Futures
-            """
-            order = data.get('o', {})
-            symbol = data.get('s', 'UNKNOWN')
-            
-            force_order_info = {
-                'symbol': symbol,
-                'side': order.get('S', 'UNKNOWN'),
-                'order_type': order.get('o', 'UNKNOWN'),
-                'time_in_force': order.get('f', 'UNKNOWN'),
-                'original_quantity': float(order.get('q', 0)),
-                'price': float(order.get('p', 0)),
-                'average_price': float(order.get('ap', 0)),
-                'order_status': order.get('X', 'UNKNOWN'),
-                'last_filled_quantity': float(order.get('z', 0)),
-                'total_filled_quantity': float(order.get('Z', 0)),
-                'timestamp': data.get('E', 0)
-            }
-            
-            for callback in self.callbacks.get('force_order', []):
-                try:
-                    callback(force_order_info)
-                except Exception as e:
-                    logger.error(f"Error in force order callback: {e}")
+        mark_price_info = {
+            'symbol': symbol,
+            'mark_price': float(data.get('p', 0)),
+            'index_price': float(data.get('i', 0)),
+            'estimated_settle_price': float(data.get('P', 0)),
+            'funding_rate': float(data.get('r', 0)),
+            'next_funding_time': data.get('T', 0),
+            'timestamp': data.get('E', 0)
+        }
         
-        async def listen(self) -> None:
-            """Listen for incoming messages from WebSocket"""
-            if not self.is_connected or not self.websocket:
-                raise RuntimeError("WebSocket is not connected")
-            
-            logger.info("Starting to listen for messages...")
-            
+        for callback in self.callbacks.get('mark_price', []):
             try:
-                async for message in self.websocket:
-                    await self._handle_message(message)
-            except ConnectionClosedError as e:
-                logger.error(f"Binance Futures WebSocket connection closed: {e}")
-                self.is_connected = False
-                for callback in self.callbacks['error']:
-                    try:
-                        callback({'type': 'connection_closed', 'error': str(e)})
-                    except Exception as err:
-                        logger.error(f"Error in error callback: {err}")
+                callback(mark_price_info)
             except Exception as e:
-                logger.error(f"Error while listening: {e}")
-                self.is_connected = False
+                logger.error(f"Error in mark price callback: {e}")
+    
+    def _process_force_order(self, data: Dict) -> None:
+        """
+        Process force order/liquidation data (Futures specific)
+        
+        Args:
+            data: Force order data from Binance Futures
+        """
+        order = data.get('o', {})
+        symbol = data.get('s', 'UNKNOWN')
+        
+        force_order_info = {
+            'symbol': symbol,
+            'side': order.get('S', 'UNKNOWN'),
+            'order_type': order.get('o', 'UNKNOWN'),
+            'time_in_force': order.get('f', 'UNKNOWN'),
+            'original_quantity': float(order.get('q', 0)),
+            'price': float(order.get('p', 0)),
+            'average_price': float(order.get('ap', 0)),
+            'order_status': order.get('X', 'UNKNOWN'),
+            'last_filled_quantity': float(order.get('z', 0)),
+            'total_filled_quantity': float(order.get('Z', 0)),
+            'timestamp': data.get('E', 0)
+        }
+        
+        for callback in self.callbacks.get('force_order', []):
+            try:
+                callback(force_order_info)
+            except Exception as e:
+                logger.error(f"Error in force order callback: {e}")
+    
+    async def listen(self) -> None:
+        """Listen for incoming messages from WebSocket"""
+        if not self.is_connected or not self.websocket:
+            raise RuntimeError("WebSocket is not connected")
+        
+        logger.info("Starting to listen for messages...")
+        
+        try:
+            async for message in self.websocket:
+                await self._handle_message(message)
+        except ConnectionClosedError as e:
+            logger.error(f"Binance Futures WebSocket connection closed: {e}")
+            self.is_connected = False
+            for callback in self.callbacks['error']:
+                try:
+                    callback({'type': 'connection_closed', 'error': str(e)})
+                except Exception as err:
+                    logger.error(f"Error in error callback: {err}")
+        except Exception as e:
+            logger.error(f"Error while listening: {e}")
+            self.is_connected = False
     
     async def start(self) -> None:
         """Start WebSocket connection and listening"""

@@ -36,7 +36,7 @@ class MessageFormatter:
         emoji = "📈" if change_percent >= 0 else "📉"
         
         message = (
-            f"{emoji} *{symbol} 价格提醒*\n\n"
+            f"{emoji} <b>{symbol} 价格提醒</b>\n\n"
             f"💰 当前价格: ${price:,.2f}\n"
             f"📊 24小时变化: {change:+.2f} ({change_percent:+.2f}%)\n"
             f"🔺 24小时最高: ${high:,.2f}\n"
@@ -64,9 +64,9 @@ class MessageFormatter:
         emoji = "🟢" if signal_type == "BUY" else "🔴"
         
         message = (
-            f"{emoji} *{symbol} {signal_type} 信号*\n\n"
+            f"{emoji} <b>{symbol} {signal_type} 信号</b>\n\n"
             f"💰 价格: ${price:,.2f}\n\n"
-            f"📊 *指标:*\n"
+            f"📊 <b>指标:</b>\n"
         )
         
         # Add indicator values
@@ -103,7 +103,7 @@ class MessageFormatter:
         status = "✅ 已收盘" if is_closed else "⏳ 进行中"
         
         message = (
-            f"🕯️ *{symbol} {interval} K线* {status}\n\n"
+            f"🕯️ <b>{symbol} {interval} K线</b> {status}\n\n"
             f"📊 OHLCV:\n"
             f"  • 开盘: ${open_price:,.2f}\n"
             f"  • 最高: ${high:,.2f}\n"
@@ -127,7 +127,7 @@ class MessageFormatter:
         Returns:
             Formatted error message string
         """
-        message = f"⚠️ *错误提醒*\n\n"
+        message = f"⚠️ <b>错误提醒</b>\n\n"
         
         if context:
             message += f"📍 上下文: {context}\n"
@@ -160,7 +160,7 @@ class MessageFormatter:
         
         emoji = emoji_map.get(status, 'ℹ️')
         
-        message = f"{emoji} *系统状态: {status}*\n\n"
+        message = f"{emoji} <b>系统状态: {status}</b>\n\n"
         
         if details:
             for key, value in details.items():
@@ -182,7 +182,7 @@ class MessageFormatter:
         Returns:
             Formatted summary report string
         """
-        message = "📊 *市场汇总报告*\n\n"
+        message = "📊 <b>市场汇总报告</b>\n\n"
         
         for symbol in symbols:
             if symbol in data:
@@ -193,7 +193,7 @@ class MessageFormatter:
                 
                 emoji = "📈" if change >= 0 else "📉"
                 message += (
-                    f"{emoji} *{symbol}*\n"
+                    f"{emoji} <b>{symbol}</b>\n"
                     f"  价格: ${price:,.2f}\n"
                     f"  24小时变化: {change:+.2f}%\n"
                     f"  成交量: {volume:,.2f}\n\n"
@@ -223,7 +223,7 @@ class MessageFormatter:
         position_value = price * quantity
         
         message = (
-            f"{emoji} *仓位已开仓*\n\n"
+            f"{emoji} <b>仓位已开仓</b>\n\n"
             f"📊 交易对: {symbol}\n"
             f"📈 方向: {side_cn}\n"
             f"💰 开仓价格: ${price:,.2f}\n"
@@ -256,7 +256,7 @@ class MessageFormatter:
         pnl_percent = (pnl / (entry_price * quantity)) * 100
         
         message = (
-            f"{emoji} *仓位已平仓*\n\n"
+            f"{emoji} <b>仓位已平仓</b>\n\n"
             f"📊 交易对: {symbol}\n"
             f"📈 方向: {side_cn}\n"
             f"💰 开仓价格: ${entry_price:,.2f}\n"
@@ -281,7 +281,7 @@ class MessageFormatter:
             Formatted message string
         """
         message = (
-            f"⏭️ *未交易 - {symbol}*\n\n"
+            f"⏭️ <b>未交易 - {symbol}</b>\n\n"
             f"📋 原因: {reason}\n"
             f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )

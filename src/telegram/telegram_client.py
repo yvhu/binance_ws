@@ -100,7 +100,7 @@ class TelegramClient:
         self.message_timestamps.append(now)
         return True
     
-    async def send_message(self, message: str, parse_mode: str = 'Markdown') -> bool:
+    async def send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
         """
         Send message to Telegram chat
         
@@ -146,7 +146,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_ticker_alert(ticker_data)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def send_signal_alert(self, symbol: str, signal_type: str, indicators: Dict, price: float) -> bool:
         """
@@ -162,7 +162,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_signal_alert(symbol, signal_type, indicators, price)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def send_kline_update(self, kline_data: Dict) -> bool:
         """
@@ -175,7 +175,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_kline_update(kline_data)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def send_error_message(self, error: str, context: Optional[str] = None) -> bool:
         """
@@ -189,7 +189,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_error_message(error, context)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def send_system_status(self, status: str, details: Optional[Dict] = None) -> bool:
         """
@@ -203,7 +203,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_system_status(status, details)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def send_summary_report(self, symbols: list, data: Dict) -> bool:
         """
@@ -217,7 +217,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_summary_report(symbols, data)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def start_bot(self) -> None:
         """Start Telegram bot with command handlers"""
@@ -239,19 +239,19 @@ class TelegramClient:
     async def _start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command"""
         message = (
-            "🤖 *Binance Trading Bot*\n\n"
+            "🤖 <b>Binance Trading Bot</b>\n\n"
             "Welcome! I'm here to keep you updated on market movements and trading signals.\n\n"
             "Available commands:\n"
             "/help - Show this help message\n"
             "/status - Check bot status\n"
             "/summary - Get market summary"
         )
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await update.message.reply_text(message, parse_mode='HTML')
     
     async def _help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command"""
         message = (
-            "📚 *Help*\n\n"
+            "📚 <b>Help</b>\n\n"
             "Available commands:\n"
             "/start - Start the bot\n"
             "/help - Show this help message\n"
@@ -262,7 +262,7 @@ class TelegramClient:
             "• Trading signals based on technical indicators\n"
             "• System status updates"
         )
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await update.message.reply_text(message, parse_mode='HTML')
     
     async def _status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /status command"""
@@ -272,7 +272,7 @@ class TelegramClient:
             "Rate Limit": f"{self.max_messages_per_minute} messages/minute"
         }
         message = self.formatter.format_system_status(status, details)
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await update.message.reply_text(message, parse_mode='HTML')
     
     async def send_trade_notification(self, symbol: str, side: str, price: float, quantity: float, leverage: int) -> bool:
         """
@@ -289,7 +289,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_trade_notification(symbol, side, price, quantity, leverage)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def send_close_notification(self, symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float) -> bool:
         """
@@ -307,7 +307,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_close_notification(symbol, side, entry_price, exit_price, quantity, pnl)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def send_no_trade_notification(self, symbol: str, reason: str) -> bool:
         """
@@ -321,9 +321,9 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_no_trade_notification(symbol, reason)
-        return await self.send_message(message, parse_mode='Markdown')
+        return await self.send_message(message, parse_mode='HTML')
     
     async def _summary_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /summary command"""
-        message = "📊 *Market Summary*\n\nSummary report will be sent when data is available."
-        await update.message.reply_text(message, parse_mode='Markdown')
+        message = "📊 <b>Market Summary</b>\n\nSummary report will be sent when data is available."
+        await update.message.reply_text(message, parse_mode='HTML')
