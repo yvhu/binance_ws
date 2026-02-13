@@ -223,12 +223,15 @@ class FifteenMinuteStrategy:
             'UP' or 'DOWN' or None
         """
         try:
-            # Get 15m K-line data (including current incomplete K-line)
+            # Get 15m K-line data including the current incomplete K-line
             df = self.data_handler.get_klines_dataframe(symbol, "15m")
             
-            if df.empty or len(df) < 2:
-                logger.warning(f"Not enough 15m K-line data for SAR calculation: {len(df)}")
+            if df.empty:
+                logger.warning(f"No 15m K-line data available for SAR calculation")
                 return None
+            
+            # Allow SAR calculation on incomplete current 15m K-line (last row)
+            # So do not require len(df) >= 2, just check if df has at least 1 row
             
             # Calculate SAR direction based on current price vs SAR
             sar_direction = self.technical_analyzer.get_sar_direction(df)
