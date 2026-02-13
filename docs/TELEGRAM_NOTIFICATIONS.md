@@ -14,7 +14,7 @@ Example:
 ```
 🚀 System Status: STARTED
 
-  Trading Pairs: BTCUSDT
+  Trading Pairs: BTCUSDC
   Leverage: 10x
   Strategy: 15m K-line with SAR
   Position Size: 100% (Full Position)
@@ -41,7 +41,7 @@ Example (LONG):
 ```
 🟢 Position Opened
 
-📊 Symbol: BTCUSDT
+📊 Symbol: BTCUSDC
 📈 Side: LONG
 💰 Entry Price: $50,000.00
 📦 Quantity: 0.2000
@@ -54,7 +54,7 @@ Example (SHORT):
 ```
 🔴 Position Opened
 
-📊 Symbol: BTCUSDT
+📊 Symbol: BTCUSDC
 📈 Side: SHORT
 💰 Entry Price: $50,000.00
 📦 Quantity: 0.2000
@@ -77,7 +77,7 @@ Example (Profit):
 ```
 ✅ Position Closed
 
-📊 Symbol: BTCUSDT
+📊 Symbol: BTCUSDC
 📈 Side: LONG
 💰 Entry Price: $50,000.00
 💰 Exit Price: $50,500.00
@@ -90,7 +90,7 @@ Example (Loss):
 ```
 ❌ Position Closed
 
-📊 Symbol: BTCUSDT
+📊 Symbol: BTCUSDC
 📈 Side: LONG
 💰 Entry Price: $50,000.00
 💰 Exit Price: $49,500.00
@@ -106,7 +106,7 @@ Sent when no trade is executed, including:
 
 Example:
 ```
-⏭️ No Trade - BTCUSDT
+⏭️ No Trade - BTCUSDC
 
 📋 Reason: Directions mismatch: SAR=UP, 3m=DOWN, 5m=UP
 ⏰ Time: 2024-01-01 12:05:00

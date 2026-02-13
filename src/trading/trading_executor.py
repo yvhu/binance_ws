@@ -235,13 +235,13 @@ class TradingExecutor:
             logger.error(f"Error rounding quantity for {symbol}: {e}")
             return None
     
-    def calculate_position_size(self, current_price: float, symbol: str = "BTCUSDT") -> Optional[float]:
+    def calculate_position_size(self, current_price: float, symbol: str) -> Optional[float]:
         """
         Calculate position size based on account balance, fees, and safety margin
         
         Args:
             current_price: Current price of the asset
-            symbol: Trading pair symbol (default: BTCUSDT)
+            symbol: Trading pair symbol (from configuration)
             
         Returns:
             Position quantity or None
@@ -271,12 +271,12 @@ class TradingExecutor:
         
         logger.info(
             f"Position size calculated:\n"
-            f"  Balance: {balance:.2f} USDT\n"
-            f"  Position value: {position_value:.2f} USDT\n"
-            f"  Opening fee: {opening_fee:.4f} USDT ({self.fee_rate*100:.2f}%)\n"
-            f"  Closing fee (est): {closing_fee:.4f} USDT\n"
-            f"  Safety margin: {safety_margin_amount:.4f} USDT ({self.safety_margin*100:.1f}%)\n"
-            f"  Total cost: {total_cost:.2f} USDT\n"
+            f"  Balance: {balance:.2f} USDC\n"
+            f"  Position value: {position_value:.2f} USDC\n"
+            f"  Opening fee: {opening_fee:.4f} USDC ({self.fee_rate*100:.2f}%)\n"
+            f"  Closing fee (est): {closing_fee:.4f} USDC\n"
+            f"  Safety margin: {safety_margin_amount:.4f} USDC ({self.safety_margin*100:.1f}%)\n"
+            f"  Total cost: {total_cost:.2f} USDC\n"
             f"  Raw quantity: {quantity:.6f} BTC\n"
             f"  Leverage: {self.leverage}x"
         )

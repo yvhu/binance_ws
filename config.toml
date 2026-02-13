@@ -3,8 +3,8 @@
 # Trading pairs to monitor (Futures)
 # Currently focused on BTC only for production trading
 # To add more symbols for future expansion, simply add them to the list:
-# symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
-symbols = ["BTCUSDT"]
+# symbols = ["BTCUSDC", "ETHUSDC", "BNBUSDC", "SOLUSDC"]
+symbols = ["BTCUSDC"]
 # WebSocket streams (Futures)
 streams = ["ticker", "kline_3m", "kline_5m", "kline_15m"]
 # Reconnection settings

@@ -90,14 +90,14 @@ Configure futures trading pairs, indicators, and strategy parameters in config.t
 在config.toml中配置合约交易对、指标和策略参数。
 
 **Current Focus / 当前重点:**
-- Trading is currently focused on BTCUSDT only for production use
-- 当前实盘交易仅专注于BTCUSDT
+- Trading is currently focused on BTCUSDC only for production use
+- 当前实盘交易仅专注于BTCUSDC
 - The codebase supports multiple symbols for future expansion
 - 代码库支持多币种扩展，只需在配置中添加即可
 
 **To add more symbols / 添加更多币种:**
 ```toml
-symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
+symbols = ["BTCUSDC", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
 ```
 
 Available streams for futures / 合约可用数据流:
