@@ -376,58 +376,58 @@ class BinanceTelegramBot:
     async def run(self) -> None:
         """Run the bot"""
         self.is_running = True
-        
+
         try:
             self.logger.info("Starting bot initialization...")
-            # Initialize components
             await self.initialize()
-            
-            self.logger.info("Starting user data stream...")
-            # Start user data stream in background
-            try:
-                self.logger.info("✓ User data stream task created")
-            except Exception as e:
-                self.logger.error(f"✗ Failed to create user data stream task: {e}")
-                raise
-            
-            # Wait longer for user data stream to connect and get initial balance
-            self.logger.info("Waiting for account balance from user data stream (up to 10 seconds)...")
+
+            self.logger.info("Starting WebSocket services...")
+
+            # 先启动 WebSocket（后台运行）
+            ws_task = asyncio.create_task(
+                asyncio.gather(
+                    self.user_data_client.start(),
+                    self.binance_client.start()
+                )
+            )
+
+            # 等待 user data stream 连接并获取余额
+            self.logger.info("Waiting for account balance (up to 10 seconds)...")
             for i in range(10):
                 await asyncio.sleep(1)
                 balance = self.user_data_client.get_account_balance()
                 if balance is not None:
-                    self.logger.info(f"✓ Account balance received from WebSocket: {balance:.2f} USDC")
+                    self.logger.info(
+                        f"✓ Account balance received: {balance:.2f} USDC"
+                    )
                     break
-                else:
-                    self.logger.debug(f"Waiting for balance... ({i+1}/10)")
-            
-            self.logger.info("Sending startup notification...")
-            # Send startup notification
-            await self.send_startup_notification()
-            
-            self.logger.info("Bot started successfully")
-            self.logger.info("Connecting to Binance WebSocket...")
-            
-            # Start Binance WebSocket connection
-            try:
-                # 同时启动两个 WebSocket
-                await asyncio.gather(
-                    self.user_data_client.start(),
-                    self.binance_client.start()
+
+            # 如果还是没有，用 REST 主动获取
+            if self.user_data_client.get_account_balance() is None:
+                self.logger.warning(
+                    "WebSocket balance not available, fetching via REST..."
                 )
-            except Exception as e:
-                self.logger.error(f"✗ Failed to start Binance WebSocket: {e}")
-                raise
-            
+                balance = await asyncio.to_thread(
+                    self.trading_executor.get_account_balance
+                )
+                self.user_data_client.account_balance = balance
+
+            # 发送启动通知
+            await self.send_startup_notification()
+
+            self.logger.info("Bot started successfully")
+
+            # 等待 websocket 任务（永久运行）
+            await ws_task
+
         except asyncio.CancelledError:
             self.logger.info("Bot cancelled")
         except Exception as e:
             self.logger.error(f"Bot error: {e}")
             import traceback
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            self.logger.error(traceback.format_exc())
             await self.telegram_client.send_error_message(str(e), "Bot runtime error")
         finally:
-            # Cleanup
             await self.shutdown()
     
     async def _on_mark_price(self, mark_price_info: dict) -> None:
