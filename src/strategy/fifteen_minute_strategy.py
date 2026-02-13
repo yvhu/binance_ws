@@ -240,8 +240,8 @@ class FifteenMinuteStrategy:
                 logger.error(f"Could not get current price for {symbol}")
                 return
             
-            # Calculate position size
-            quantity = self.trading_executor.calculate_position_size(current_price)
+            # Calculate position size (with fees and safety margin)
+            quantity = self.trading_executor.calculate_position_size(current_price, symbol)
             if quantity is None:
                 logger.error(f"Could not calculate position size for {symbol}")
                 return
@@ -294,8 +294,8 @@ class FifteenMinuteStrategy:
                 logger.error(f"Could not get current price for {symbol}")
                 return
             
-            # Calculate position size
-            quantity = self.trading_executor.calculate_position_size(current_price)
+            # Calculate position size (with fees and safety margin)
+            quantity = self.trading_executor.calculate_position_size(current_price, symbol)
             if quantity is None:
                 logger.error(f"Could not calculate position size for {symbol}")
                 return
