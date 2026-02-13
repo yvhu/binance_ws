@@ -6,6 +6,7 @@ Implements the 15m K-line trading strategy with SAR and confirmation intervals
 import logging
 from typing import Optional, Dict, Tuple
 from datetime import datetime
+import pandas as pd
 
 from ..config.config_manager import ConfigManager
 from ..indicators.technical_analyzer import TechnicalAnalyzer
@@ -247,15 +248,11 @@ class FifteenMinuteStrategy:
             current_15m_start = self.position_manager.current_15m_start_time
             if current_15m_start is not None:
                 cycle_end_time = current_15m_start + 15 * 60 * 1000  # 15 minutes in ms
-                df = df[df['open_time'] < cycle_end_time]
+                # Use df.index since open_time is set as index in get_klines_dataframe
+                df = df[df.index < pd.to_datetime(cycle_end_time, unit='ms')]
                 if df.empty:
                     logger.warning(f"No 15m K-line data within current 15m cycle for SAR calculation")
                     return None
-            
-            # Check if 'open_time' column exists in df
-            if 'open_time' not in df.columns:
-                logger.error(f"'open_time' column missing in 15m K-line dataframe")
-                return None
             
             # Calculate SAR direction based on current price vs SAR
             sar_direction = self.technical_analyzer.get_sar_direction(df)

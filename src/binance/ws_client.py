@@ -247,7 +247,12 @@ class BinanceWSClient:
         interval = kline.get('i', '1m')
         is_closed = kline.get('x', False)
         
-        # logger.info(f"[WS] ✓ Processing kline: {symbol} {interval} closed={is_closed}")
+        # Log all kline events, especially 15m
+        if interval == '15m':
+            logger.info(f"[WS] ✓ Processing 15m kline: {symbol} closed={is_closed}")
+        else:
+            logger.debug(f"[WS] ✓ Processing kline: {symbol} {interval} closed={is_closed}")
+        
         self.latest_data[f"{symbol}_kline_{interval}"] = data
         
         kline_info = {
@@ -266,7 +271,7 @@ class BinanceWSClient:
         
         # logger.info(f"[WS] Kline info: {symbol} {interval} O={kline_info['open']} H={kline_info['high']} L={kline_info['low']} C={kline_info['close']}")
         
-        callback_count = len(self.callbacks['kline'])
+        # callback_count = len(self.callbacks['kline'])
         # logger.info(f"[WS] Calling {callback_count} kline callback(s)...")
         
         for idx, callback in enumerate(self.callbacks['kline']):

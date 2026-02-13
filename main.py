@@ -187,9 +187,6 @@ class BinanceTelegramBot:
             kline_info: Kline information dictionary
         """
         try:
-            # Store data
-            self.data_handler.process_kline(kline_info)
-            
             symbol = kline_info['symbol']
             interval = kline_info['interval']
             is_closed = kline_info.get('is_closed', False)
@@ -197,6 +194,15 @@ class BinanceTelegramBot:
             
             # Debug log for all kline events
             self.logger.debug(f"[KLINE] Received: {symbol} {interval} closed={is_closed}")
+            
+            # Store data
+            self.data_handler.process_kline(kline_info)
+            
+            # Log data storage status for 15m klines
+            if interval == '15m':
+                key = f"{symbol}_{interval}"
+                klines_count = len(self.data_handler.kline_data.get(key, []))
+                self.logger.info(f"[KLINE] 15m kline stored for {symbol}, total count: {klines_count}, closed={is_closed}")
             
             # Track last seen 15m kline open time to detect new klines
             if not hasattr(self, '_last_15m_open_time'):
@@ -221,7 +227,7 @@ class BinanceTelegramBot:
             if interval == '15m':
                 # Handle 15m K-line close event
                 self.logger.info(f"[KLINE] Calling on_15m_kline_close for {symbol}")
-                self.strategy.on_15m_kline_close(kline_info)
+                await self.strategy.on_15m_kline_close(kline_info)
             elif interval == '5m':
                 # Handle 5m K-line close event (trigger for opening position)
                 self.logger.info(f"[KLINE] Calling on_5m_kline_close for {symbol}")

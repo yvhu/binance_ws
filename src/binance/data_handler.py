@@ -58,12 +58,21 @@ class BinanceDataHandler:
         # Only add closed klines or update the last one if not closed
         if kline_info['is_closed']:
             self.kline_data[key].append(kline_info)
-            logger.debug(f"Added closed kline for {symbol} {interval}")
+            logger.debug(f"Added closed kline for {symbol} {interval}, total count: {len(self.kline_data[key])}")
         elif self.kline_data[key]:
             # Update the last kline if it's the same one
             last_kline = self.kline_data[key][-1]
             if last_kline['open_time'] == kline_info['open_time']:
                 self.kline_data[key][-1] = kline_info
+                logger.debug(f"Updated unclosed kline for {symbol} {interval}")
+            else:
+                # New unclosed kline, add it
+                self.kline_data[key].append(kline_info)
+                logger.debug(f"Added new unclosed kline for {symbol} {interval}, total count: {len(self.kline_data[key])}")
+        else:
+            # First kline (unclosed), add it
+            self.kline_data[key].append(kline_info)
+            logger.debug(f"Added first unclosed kline for {symbol} {interval}, total count: {len(self.kline_data[key])}")
     
     def process_trade(self, trade_info: Dict) -> None:
         """
