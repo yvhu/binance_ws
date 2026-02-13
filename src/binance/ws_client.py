@@ -95,10 +95,13 @@ class BinanceWSClient:
     
     async def connect(self) -> None:
         """Connect to Binance WebSocket"""
+        logger.info("[WS] Starting connection process...")
         url = self._build_stream_url()
+        logger.info(f"[WS] Connecting to URL: {url}")
         
         try:
             # Set timeout to avoid hanging
+            logger.info("[WS] Attempting WebSocket connection with 30s timeout...")
             self.websocket = await asyncio.wait_for(
                 websockets.connect(
                     url,
@@ -111,6 +114,7 @@ class BinanceWSClient:
             )
             self.is_connected = True
             logger.info("✓ Successfully connected to Binance Futures WebSocket")
+            logger.info(f"[WS] Connection state: is_connected={self.is_connected}")
         except asyncio.TimeoutError:
             logger.error("✗ WebSocket connection timeout after 30 seconds")
             self.is_connected = False
@@ -124,10 +128,13 @@ class BinanceWSClient:
     
     async def disconnect(self) -> None:
         """Disconnect from Binance WebSocket"""
+        logger.info("[WS] Disconnecting from Binance WebSocket...")
         if self.websocket:
             await self.websocket.close()
             self.is_connected = False
             logger.info("Disconnected from Binance Futures WebSocket")
+        else:
+            logger.warning("[WS] No active WebSocket connection to disconnect")
     
     async def _handle_message(self, message: str) -> None:
         """
@@ -137,40 +144,54 @@ class BinanceWSClient:
             message: JSON message string
         """
         try:
+            logger.debug(f"[WS] Raw message received (length: {len(message)} bytes)")
             data = json.loads(message)
             
             # For combined streams, message has 'stream' and 'data' fields
             if 'stream' in data and 'data' in data:
                 stream_name = data['stream']
                 event_data = data['data']
-                logger.info(f"[WS] Received message from stream: {stream_name}")
+                logger.info(f"[WS] ✓ Received message from stream: {stream_name}")
             else:
                 event_data = data
-                logger.info(f"[WS] Received message without stream field")
+                logger.info(f"[WS] ✓ Received message without stream field")
             
             if 'e' in event_data:
                 event_type = event_data['e']
-                logger.info(f"[WS] Event type: {event_type}")
+                logger.info(f"[WS] ✓ Event type: {event_type}")
                 
                 if event_type == '24hrTicker':
+                    logger.debug(f"[WS] Processing ticker event...")
                     self._process_ticker(event_data)
+                    logger.debug(f"[WS] Ticker event processed")
                 elif event_type == 'kline':
+                    logger.debug(f"[WS] Processing kline event...")
                     self._process_kline(event_data)
+                    logger.debug(f"[WS] Kline event processed")
                 elif event_type == 'trade':
+                    logger.debug(f"[WS] Processing trade event...")
                     self._process_trade(event_data)
+                    logger.debug(f"[WS] Trade event processed")
                 elif event_type == 'markPriceUpdate':
+                    logger.debug(f"[WS] Processing mark price event...")
                     self._process_mark_price(event_data)
+                    logger.debug(f"[WS] Mark price event processed")
                 elif event_type == 'forceOrder':
+                    logger.debug(f"[WS] Processing force order event...")
                     self._process_force_order(event_data)
+                    logger.debug(f"[WS] Force order event processed")
                 else:
-                    logger.warning(f"Unknown event type: {event_type}")
+                    logger.warning(f"[WS] Unknown event type: {event_type}")
             else:
                 logger.debug(f"[WS] Message has no event type field")
             
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse message: {e}")
+            logger.error(f"[WS] ✗ Failed to parse message: {e}")
+            logger.error(f"[WS] Raw message: {message[:200]}...")
         except Exception as e:
-            logger.error(f"Error handling message: {e}")
+            logger.error(f"[WS] ✗ Error handling message: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def _process_ticker(self, data: Dict) -> None:
         """
@@ -180,7 +201,7 @@ class BinanceWSClient:
             data: Ticker data from Binance
         """
         symbol = data.get('s', 'UNKNOWN')
-        logger.debug(f"[WS] Processing ticker for {symbol}")
+        logger.info(f"[WS] Processing ticker for {symbol}")
         self.latest_data[f"{symbol}_ticker"] = data
         
         ticker_info = {
@@ -194,14 +215,25 @@ class BinanceWSClient:
             'timestamp': data.get('E', 0)
         }
         
-        for callback in self.callbacks['ticker']:
+        logger.info(f"[WS] Ticker info: {symbol} price={ticker_info['current_price']}")
+        
+        callback_count = len(self.callbacks['ticker'])
+        logger.info(f"[WS] Calling {callback_count} ticker callback(s)...")
+        
+        for idx, callback in enumerate(self.callbacks['ticker']):
             try:
+                logger.debug(f"[WS] Calling ticker callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(ticker_info))
                 else:
                     callback(ticker_info)
+                logger.debug(f"[WS] Ticker callback {idx+1}/{callback_count} completed")
             except Exception as e:
-                logger.error(f"Error in ticker callback: {e}")
+                logger.error(f"[WS] ✗ Error in ticker callback {idx+1}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        logger.info(f"[WS] All ticker callbacks completed")
     
     def _process_kline(self, data: Dict) -> None:
         """
@@ -215,7 +247,7 @@ class BinanceWSClient:
         interval = kline.get('i', '1m')
         is_closed = kline.get('x', False)
         
-        logger.info(f"[WS] Processing kline: {symbol} {interval} closed={is_closed}")
+        logger.info(f"[WS] ✓ Processing kline: {symbol} {interval} closed={is_closed}")
         self.latest_data[f"{symbol}_kline_{interval}"] = data
         
         kline_info = {
@@ -232,14 +264,25 @@ class BinanceWSClient:
             'number_of_trades': kline.get('n', 0)
         }
         
-        for callback in self.callbacks['kline']:
+        logger.info(f"[WS] Kline info: {symbol} {interval} O={kline_info['open']} H={kline_info['high']} L={kline_info['low']} C={kline_info['close']}")
+        
+        callback_count = len(self.callbacks['kline'])
+        logger.info(f"[WS] Calling {callback_count} kline callback(s)...")
+        
+        for idx, callback in enumerate(self.callbacks['kline']):
             try:
+                logger.debug(f"[WS] Calling kline callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(kline_info))
                 else:
                     callback(kline_info)
+                logger.debug(f"[WS] Kline callback {idx+1}/{callback_count} completed")
             except Exception as e:
-                logger.error(f"Error in kline callback: {e}")
+                logger.error(f"[WS] ✗ Error in kline callback {idx+1}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        logger.info(f"[WS] All kline callbacks completed")
     
     def _process_trade(self, data: Dict) -> None:
         """
@@ -249,7 +292,7 @@ class BinanceWSClient:
             data: Trade data from Binance
         """
         symbol = data.get('s', 'UNKNOWN')
-        logger.debug(f"[WS] Processing trade for {symbol}")
+        logger.info(f"[WS] Processing trade for {symbol}")
         
         trade_info = {
             'symbol': symbol,
@@ -260,14 +303,23 @@ class BinanceWSClient:
             'is_buyer_maker': data.get('m', False)
         }
         
-        for callback in self.callbacks['trade']:
+        callback_count = len(self.callbacks['trade'])
+        logger.info(f"[WS] Calling {callback_count} trade callback(s)...")
+        
+        for idx, callback in enumerate(self.callbacks['trade']):
             try:
+                logger.debug(f"[WS] Calling trade callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(trade_info))
                 else:
                     callback(trade_info)
+                logger.debug(f"[WS] Trade callback {idx+1}/{callback_count} completed")
             except Exception as e:
-                logger.error(f"Error in trade callback: {e}")
+                logger.error(f"[WS] ✗ Error in trade callback {idx+1}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        logger.info(f"[WS] All trade callbacks completed")
     
     def _process_mark_price(self, data: Dict) -> None:
         """
@@ -277,7 +329,7 @@ class BinanceWSClient:
             data: Mark price data from Binance Futures
         """
         symbol = data.get('s', 'UNKNOWN')
-        logger.debug(f"[WS] Processing mark price for {symbol}")
+        logger.info(f"[WS] Processing mark price for {symbol}")
         
         mark_price_info = {
             'symbol': symbol,
@@ -289,14 +341,23 @@ class BinanceWSClient:
             'timestamp': data.get('E', 0)
         }
         
-        for callback in self.callbacks.get('mark_price', []):
+        callback_count = len(self.callbacks.get('mark_price', []))
+        logger.info(f"[WS] Calling {callback_count} mark price callback(s)...")
+        
+        for idx, callback in enumerate(self.callbacks.get('mark_price', [])):
             try:
+                logger.debug(f"[WS] Calling mark price callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(mark_price_info))
                 else:
                     callback(mark_price_info)
+                logger.debug(f"[WS] Mark price callback {idx+1}/{callback_count} completed")
             except Exception as e:
-                logger.error(f"Error in mark price callback: {e}")
+                logger.error(f"[WS] ✗ Error in mark price callback {idx+1}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        logger.info(f"[WS] All mark price callbacks completed")
     
     def _process_force_order(self, data: Dict) -> None:
         """
@@ -307,7 +368,7 @@ class BinanceWSClient:
         """
         order = data.get('o', {})
         symbol = data.get('s', 'UNKNOWN')
-        logger.debug(f"[WS] Processing force order for {symbol}")
+        logger.info(f"[WS] Processing force order for {symbol}")
         
         force_order_info = {
             'symbol': symbol,
@@ -323,33 +384,54 @@ class BinanceWSClient:
             'timestamp': data.get('E', 0)
         }
         
-        for callback in self.callbacks.get('force_order', []):
+        callback_count = len(self.callbacks.get('force_order', []))
+        logger.info(f"[WS] Calling {callback_count} force order callback(s)...")
+        
+        for idx, callback in enumerate(self.callbacks.get('force_order', [])):
             try:
+                logger.debug(f"[WS] Calling force order callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(force_order_info))
                 else:
                     callback(force_order_info)
+                logger.debug(f"[WS] Force order callback {idx+1}/{callback_count} completed")
             except Exception as e:
-                logger.error(f"Error in force order callback: {e}")
+                logger.error(f"[WS] ✗ Error in force order callback {idx+1}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        logger.info(f"[WS] All force order callbacks completed")
     
     async def listen(self) -> None:
         """Listen for incoming messages from WebSocket"""
+        logger.info("[WS] Starting listen loop...")
         if not self.is_connected or not self.websocket:
+            logger.error("[WS] ✗ Cannot listen: WebSocket is not connected")
             raise RuntimeError("WebSocket is not connected")
+        
+        logger.info("[WS] ✓ WebSocket is connected, starting to receive messages...")
+        message_count = 0
         
         try:
             async for message in self.websocket:
+                message_count += 1
+                if message_count % 100 == 0:
+                    logger.info(f"[WS] Received {message_count} messages so far...")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
-            logger.error(f"✗ Binance Futures WebSocket connection closed: {e}")
+            logger.error(f"[WS] ✗ Binance Futures WebSocket connection closed: {e}")
+            logger.error(f"[WS] Total messages received: {message_count}")
             self.is_connected = False
             for callback in self.callbacks['error']:
                 try:
                     callback({'type': 'connection_closed', 'error': str(e)})
                 except Exception as err:
-                    logger.error(f"Error in error callback: {err}")
+                    logger.error(f"[WS] Error in error callback: {err}")
         except Exception as e:
-            logger.error(f"✗ Error while listening: {e}")
+            logger.error(f"[WS] ✗ Error while listening: {e}")
+            logger.error(f"[WS] Total messages received: {message_count}")
+            import traceback
+            logger.error(traceback.format_exc())
             self.is_connected = False
     
     async def start(self) -> None:

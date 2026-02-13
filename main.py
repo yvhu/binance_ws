@@ -505,20 +505,37 @@ class BinanceTelegramBot:
                 if loop_count % 60 == 0:  # 每分钟记录一次
                     self.logger.info(f"Main loop running... (iteration {loop_count})")
                     # 检查 WebSocket 任务状态
-                    if self.user_data_task and self.user_data_task.done():
-                        self.logger.warning("User data task has stopped!")
-                        try:
-                            result = self.user_data_task.result()
-                            self.logger.warning(f"User data task result: {result}")
-                        except Exception as e:
-                            self.logger.error(f"User data task exception: {e}")
-                    if self.market_data_task and self.market_data_task.done():
-                        self.logger.warning("Market data task has stopped!")
-                        try:
-                            result = self.market_data_task.result()
-                            self.logger.warning(f"Market data task result: {result}")
-                        except Exception as e:
-                            self.logger.error(f"Market data task exception: {e}")
+                    if self.user_data_task:
+                        if self.user_data_task.done():
+                            self.logger.warning("User data task has stopped!")
+                            try:
+                                result = self.user_data_task.result()
+                                self.logger.warning(f"User data task result: {result}")
+                            except Exception as e:
+                                self.logger.error(f"User data task exception: {e}")
+                        else:
+                            self.logger.info("User data task is still running")
+                    else:
+                        self.logger.warning("User data task is None!")
+                    
+                    if self.market_data_task:
+                        if self.market_data_task.done():
+                            self.logger.warning("Market data task has stopped!")
+                            try:
+                                result = self.market_data_task.result()
+                                self.logger.warning(f"Market data task result: {result}")
+                            except Exception as e:
+                                self.logger.error(f"Market data task exception: {e}")
+                        else:
+                            self.logger.info("Market data task is still running")
+                    else:
+                        self.logger.warning("Market data task is None!")
+                    
+                    # 检查 WebSocket 连接状态
+                    if self.binance_client:
+                        self.logger.info(f"Binance WS connected: {self.binance_client.is_connected}")
+                    if self.user_data_client:
+                        self.logger.info(f"User data WS connected: {self.user_data_client.is_connected}")
                 await asyncio.sleep(1)
             self.logger.info("Main event loop exited")
 
