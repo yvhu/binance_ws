@@ -129,6 +129,8 @@ class BinanceWSClient:
             logger.error(f"Traceback: {traceback.format_exc()}")
             self.is_connected = False
             raise
+        finally:
+            logger.info(f"WebSocket connection status: {self.is_connected}")
     
     async def disconnect(self) -> None:
         """Disconnect from Binance WebSocket"""
@@ -351,6 +353,8 @@ class BinanceWSClient:
         except Exception as e:
             logger.error(f"✗ Error while listening: {e}")
             self.is_connected = False
+        finally:
+            logger.info(f"WebSocket listening ended, connection status: {self.is_connected}")
     
     async def start(self) -> None:
         """Start WebSocket connection and listening"""

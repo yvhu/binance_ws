@@ -95,7 +95,7 @@ class FifteenMinuteStrategy:
         # Execute strategy logic
         await self._check_and_open_position(symbol)
     
-    def on_15m_kline_close(self, kline_info: Dict) -> None:
+    async def on_15m_kline_close(self, kline_info: Dict) -> None:
         """
         Handle 15-minute K-line close event (trigger for closing position)
         
@@ -106,8 +106,9 @@ class FifteenMinuteStrategy:
         
         logger.info(f"15m K-line closed for {symbol}, closing all positions...")
         
-        # Close all positions immediately
-        success = self.trading_executor.close_all_positions(symbol)
+        # Close all positions immediately asynchronously
+        import asyncio
+        success = await asyncio.to_thread(self.trading_executor.close_all_positions, symbol)
         
         if success:
             # Reset cycle state

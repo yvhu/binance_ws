@@ -484,9 +484,9 @@ class TradingExecutor:
             logger.error(f"Failed to get position for {symbol}: {e}")
             return None
     
-    def close_all_positions(self, symbol: str) -> bool:
+    async def close_all_positions(self, symbol: str) -> bool:
         """
-        Close all positions for a symbol
+        Close all positions for a symbol asynchronously
         
         Args:
             symbol: Trading pair symbol
@@ -494,8 +494,9 @@ class TradingExecutor:
         Returns:
             True if successful
         """
+        import asyncio
         try:
-            position = self.get_position(symbol)
+            position = await asyncio.to_thread(self.get_position, symbol)
             if not position:
                 logger.info(f"No positions to close for {symbol}")
                 return True
@@ -503,11 +504,11 @@ class TradingExecutor:
             position_amt = float(position['positionAmt'])
             
             if position_amt > 0:
-                # Close long position
-                self.close_long_position(symbol)
+                # Close long position asynchronously
+                await asyncio.to_thread(self.close_long_position, symbol)
             elif position_amt < 0:
-                # Close short position
-                self.close_short_position(symbol)
+                # Close short position asynchronously
+                await asyncio.to_thread(self.close_short_position, symbol)
             
             logger.info(f"All positions closed for {symbol}")
             return True
