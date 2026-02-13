@@ -286,10 +286,13 @@ class BinanceTelegramBot:
         try:
             balances = account_info.get('B', [])
             for b in balances:
-                if b.get('a') == 'USDC':
-                    self.user_data_client.account_balance = float(b.get('cw', 0))
-                    self.logger.info(f"Account balance updated via WebSocket: {b.get('cw', 0):.2f} USDC")
+                if b.get('a') == 'USDC':  # 或 'USDT'，根据实际账户稳定币调整
+                    balance = float(b.get('cw', 0))
+                    self.user_data_client.account_balance = balance
+                    self.logger.info(f"Account balance updated via WebSocket: {balance:.2f} USDC")
                     break
+            else:
+                self.logger.warning("USDC balance not found in ACCOUNT_UPDATE message")
         except Exception as e:
             self.logger.error(f"Error processing account update: {e}")
     
