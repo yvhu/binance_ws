@@ -188,8 +188,22 @@ class TradingExecutor:
         """
         try:
             account = self.client.futures_account()
+            
+            # 打印完整的账户信息用于调试
+            logger.info(f"Full account info: {account}")
+            
+            # 检查所有资产余额
+            if 'assets' in account:
+                logger.info("All assets in futures account:")
+                for asset in account['assets']:
+                    asset_name = asset.get('asset', 'N/A')
+                    wallet_balance = float(asset.get('walletBalance', 0))
+                    available_balance = float(asset.get('availableBalance', 0))
+                    if wallet_balance > 0 or available_balance > 0:
+                        logger.info(f"  {asset_name}: wallet={wallet_balance}, available={available_balance}")
+            
             balance = float(account['availableBalance'])
-            logger.info(f"Available balance: {balance} USDC")
+            logger.info(f"Total available balance: {balance} USDC")
             return balance
         except BinanceAPIException as e:
             logger.error(f"Failed to get account balance: {e}")
