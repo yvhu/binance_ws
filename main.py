@@ -192,19 +192,33 @@ class BinanceTelegramBot:
             
             symbol = kline_info['symbol']
             interval = kline_info['interval']
+            is_closed = kline_info.get('is_closed', False)
+            open_time = kline_info.get('open_time', 0)
             
-            # Only process closed klines
-            if not kline_info.get('is_closed', False):
+            # Track last seen 15m kline open time to detect new klines
+            if not hasattr(self, '_last_15m_open_time'):
+                self._last_15m_open_time = {}
+            
+            # Handle 15m K-line start event (new kline detected)
+            if interval == '15m':
+                last_open_time = self._last_15m_open_time.get(symbol, 0)
+                if open_time != last_open_time and not is_closed:
+                    # New 15m kline started
+                    self._last_15m_open_time[symbol] = open_time
+                    self.strategy.on_15m_kline_start(kline_info)
+            
+            # Only process closed klines for trading logic
+            if not is_closed:
                 return
             
             self.logger.debug(f"Processing closed kline for {symbol} {interval}")
             
             # Route to strategy based on interval
             if interval == '15m':
-                # Handle 15m K-line events
+                # Handle 15m K-line close event
                 self.strategy.on_15m_kline_close(kline_info)
             elif interval == '5m':
-                # Handle 5m K-line events (trigger for opening position)
+                # Handle 5m K-line close event (trigger for opening position)
                 await self.strategy.on_5m_kline_close(kline_info)
             
         except Exception as e:

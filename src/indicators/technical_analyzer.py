@@ -438,3 +438,70 @@ class TechnicalAnalyzer:
         }
         
         return summary
+    
+    def get_sar_direction(self, df: pd.DataFrame) -> Optional[str]:
+        """
+        Get SAR direction based on current price vs SAR value
+        
+        Args:
+            df: DataFrame with OHLCV data
+            
+        Returns:
+            'UP' if price > SAR, 'DOWN' if price < SAR, or None
+        """
+        try:
+            if df.empty or len(df) < 2:
+                return None
+            
+            # Calculate SAR
+            sar = talib.SAR(
+                df['high'].values,
+                df['low'].values,
+                acceleration=self.sar_acceleration,
+                maximum=self.sar_maximum
+            )
+            
+            if sar is None or len(sar) == 0:
+                return None
+            
+            # Get latest SAR value and current price
+            latest_sar = sar[-1]
+            current_price = df['close'].iloc[-1]
+            
+            # Determine direction
+            if current_price > latest_sar:
+                return 'UP'
+            else:
+                return 'DOWN'
+                
+        except Exception as e:
+            logger.error(f"Error calculating SAR direction: {e}")
+            return None
+    
+    def get_kline_direction(self, kline_info: Dict) -> Optional[str]:
+        """
+        Get K-line direction based on open and close prices
+        
+        Args:
+            kline_info: K-line information dictionary
+            
+        Returns:
+            'UP' if close > open, 'DOWN' if close < open, or None
+        """
+        try:
+            open_price = kline_info.get('open', 0)
+            close_price = kline_info.get('close', 0)
+            
+            if open_price == 0 or close_price == 0:
+                return None
+            
+            if close_price > open_price:
+                return 'UP'
+            elif close_price < open_price:
+                return 'DOWN'
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error determining K-line direction: {e}")
+            return None
