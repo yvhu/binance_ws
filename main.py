@@ -438,14 +438,8 @@ class BinanceTelegramBot:
             self.logger.info("Starting WebSocket services...")
 
             # --- 关键改动：后台启动 WebSocket，不阻塞主协程 ---
-            self.logger.info("Creating user data stream task...")
             self.user_data_task = asyncio.create_task(self.user_data_client.start())
-            self.logger.info(f"User data task created: {self.user_data_task}")
-            self.logger.info(f"User data task done: {self.user_data_task.done()}")
-            self.logger.info("Creating market data WebSocket task...")
             self.market_data_task = asyncio.create_task(self.binance_client.start())
-            self.logger.info(f"Market data task created: {self.market_data_task}")
-            self.logger.info("WebSocket tasks created and started in background")
             
             # 等待一小段时间让任务开始执行
             await asyncio.sleep(0.1)
@@ -459,11 +453,8 @@ class BinanceTelegramBot:
                     self.logger.error(f"User data task failed immediately: {e}")
                     import traceback
                     self.logger.error(traceback.format_exc())
-            else:
-                self.logger.info("User data task is running in background")
 
             # 等待 user data stream 连接并获取余额 (最多 10 秒)
-            self.logger.info("Waiting for account balance (up to 10 seconds)...")
             balance = None
             for i in range(10):
                 await asyncio.sleep(1)
@@ -471,8 +462,6 @@ class BinanceTelegramBot:
                 if balance is not None and balance > 0:
                     self.logger.info(f"✓ Account balance received: {balance:.2f} USDC")
                     break
-                else:
-                    self.logger.debug(f"Waiting for balance... ({i+1}/10)")
 
             # 如果还是没有余额，用 REST API 主动获取
             if balance is None or balance == 0:

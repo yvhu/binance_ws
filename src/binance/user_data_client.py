@@ -93,7 +93,6 @@ class UserDataClient:
     async def connect(self) -> None:
         """Connect to Binance user data stream"""
         # Get listen key
-        logger.info("Getting listen key for user data stream...")
         self.listen_key = await asyncio.to_thread(
             self.trading_executor.get_listen_key
         )
@@ -102,15 +101,10 @@ class UserDataClient:
             logger.error("Failed to get listen key: listen_key is None or empty")
             raise RuntimeError("Failed to get listen key")
         
-        # 打印 listen key 用于调试
-        logger.info(f"✓ Listen key obtained: {self.listen_key}")
-        
         # Build WebSocket URL per Binance docs: wss://fstream.binance.com/ws/<listenKey>
         url = f"wss://fstream.binance.com/ws/{self.listen_key}"
-        logger.info(f"Connecting to user data stream: {url}")
         
         try:
-            logger.info("Establishing user data stream connection...")
             # Set timeout to avoid hanging
             self.websocket = await asyncio.wait_for(
                 websockets.connect(url),
@@ -121,7 +115,6 @@ class UserDataClient:
             
             # Start keep-alive task
             self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
-            logger.info("✓ Keep-alive task started")
             
             # 主动用 REST 获取一次余额（否则可能永远收不到）
             try:
@@ -129,7 +122,6 @@ class UserDataClient:
                     self.trading_executor.get_account_balance
                 )
                 self.account_balance = balance
-                logger.info(f"Initial account balance (REST): {balance}")
             except Exception as e:
                 logger.error(f"Failed to fetch initial balance: {e}")
         except asyncio.TimeoutError:
@@ -362,17 +354,8 @@ class UserDataClient:
         if not self.is_connected or not self.websocket:
             raise RuntimeError("User data stream is not connected")
         
-        logger.info("✓ Starting to listen for user data...")
-        
         try:
-            message_count = 0
             async for message in self.websocket:
-                logger.debug(f"User data stream message received: {message}")
-                message_count += 1
-                if message_count == 1:
-                    logger.info("✓ First user data message received")
-                elif message_count % 10 == 0:
-                    logger.info(f"✓ Received {message_count} user data messages")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
             logger.error(f"✗ User data stream connection closed: {e}")
@@ -388,11 +371,9 @@ class UserDataClient:
     
     async def start(self) -> None:
         """Start user data stream connection and listening"""
-        logger.info(">>> USER DATA STREAM STARTING <<<")
         while True:
             try:
                 await self.connect()
-                logger.info("Connected to user data stream, starting listen loop...")
                 await self.listen()
             except Exception as e:
                 import traceback

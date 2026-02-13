@@ -181,7 +181,7 @@ class TradingExecutor:
     
     def get_account_balance(self) -> Optional[float]:
         """
-        Get available USDT balance via REST API (fallback method)
+        Get available balance (USDT or USDC) via REST API (fallback method)
         
         Returns:
             Available balance or None
@@ -189,21 +189,20 @@ class TradingExecutor:
         try:
             account = self.client.futures_account()
             
-            # 打印完整的账户信息用于调试
-            logger.info(f"Full account info: {account}")
-            
             # 检查所有资产余额
+            balance = 0.0
             if 'assets' in account:
-                logger.info("All assets in futures account:")
                 for asset in account['assets']:
                     asset_name = asset.get('asset', 'N/A')
-                    wallet_balance = float(asset.get('walletBalance', 0))
                     available_balance = float(asset.get('availableBalance', 0))
-                    if wallet_balance > 0 or available_balance > 0:
-                        logger.info(f"  {asset_name}: wallet={wallet_balance}, available={available_balance}")
+                    
+                    # 优先使用 USDC，如果没有则使用 USDT
+                    if asset_name == 'USDC' and available_balance > 0:
+                        balance = available_balance
+                    elif asset_name == 'USDT' and available_balance > 0 and balance == 0:
+                        balance = available_balance
             
-            balance = float(account['availableBalance'])
-            logger.info(f"Total available balance: {balance} USDC")
+            logger.info(f"Available balance: {balance} USDC/USDT")
             return balance
         except BinanceAPIException as e:
             logger.error(f"Failed to get account balance: {e}")

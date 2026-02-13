@@ -69,28 +69,21 @@ class BinanceWSClient:
             Complete WebSocket URL for futures
         """
         streams = []
-        logger.info(f"Building stream URL for symbols: {self.symbols}")
-        logger.info(f"Configured streams: {self.streams}")
         
         for symbol in self.symbols:
             symbol_lower = symbol.lower()
             for stream in self.streams:
                 if stream == 'ticker':
                     streams.append(f"{symbol_lower}@ticker")
-                    logger.debug(f"Added ticker stream for {symbol}")
                 elif stream.startswith('kline_'):
                     interval = stream.split('_')[1]
                     streams.append(f"{symbol_lower}@kline_{interval}")
-                    logger.debug(f"Added kline_{interval} stream for {symbol}")
                 elif stream == 'trade':
                     streams.append(f"{symbol_lower}@trade")
-                    logger.debug(f"Added trade stream for {symbol}")
                 elif stream == 'markPrice':
                     streams.append(f"{symbol_lower}@markPrice")
-                    logger.debug(f"Added markPrice stream for {symbol}")
                 elif stream == 'forceOrder':
                     streams.append(f"{symbol_lower}@forceOrder")
-                    logger.debug(f"Added forceOrder stream for {symbol}")
         
         if not streams:
             raise ValueError("No valid streams configured")
@@ -98,17 +91,13 @@ class BinanceWSClient:
         # Use combined streams URL format: /stream?streams=stream1/stream2/stream3
         stream_path = "/".join(streams)
         url = f"{self.ws_url}/stream?streams={stream_path}"
-        logger.info(f"Built combined WebSocket URL: {url}")
         return url
     
     async def connect(self) -> None:
         """Connect to Binance WebSocket"""
-        logger.info("Building WebSocket stream URL...")
         url = self._build_stream_url()
-        logger.info(f"Connecting to Binance Futures WebSocket: {url}")
         
         try:
-            logger.info("Establishing WebSocket connection...")
             # Set timeout to avoid hanging
             self.websocket = await asyncio.wait_for(
                 websockets.connect(
@@ -132,8 +121,6 @@ class BinanceWSClient:
             logger.error(traceback.format_exc())
             self.is_connected = False
             raise
-        finally:
-            logger.info(f"WebSocket connection status: {self.is_connected}")
     
     async def disconnect(self) -> None:
         """Disconnect from Binance WebSocket"""
@@ -338,17 +325,8 @@ class BinanceWSClient:
         if not self.is_connected or not self.websocket:
             raise RuntimeError("WebSocket is not connected")
         
-        logger.info("✓ Starting to listen for messages...")
-        logger.info("Waiting for market data...")
-        
         try:
-            message_count = 0
             async for message in self.websocket:
-                message_count += 1
-                if message_count == 1:
-                    logger.info("✓ First message received from Binance WebSocket")
-                elif message_count % 100 == 0:
-                    logger.info(f"✓ Received {message_count} messages from Binance WebSocket")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
             logger.error(f"✗ Binance Futures WebSocket connection closed: {e}")
@@ -361,22 +339,14 @@ class BinanceWSClient:
         except Exception as e:
             logger.error(f"✗ Error while listening: {e}")
             self.is_connected = False
-        finally:
-            logger.info(f"WebSocket listening ended, connection status: {self.is_connected}")
     
     async def start(self) -> None:
         """Start WebSocket connection and listening"""
         attempt = 0
         
-        logger.info(f">>> BINANCE WEBSOCKET STARTING <<<")
-        logger.info(f"Starting WebSocket connection (max {self.reconnect_attempts} attempts)...")
-        
         while attempt < self.reconnect_attempts:
             try:
-                logger.info(f"Connection attempt {attempt + 1}/{self.reconnect_attempts}")
                 await self.connect()
-                logger.info("Connected successfully, starting listen loop...")
-                # Start a background task to send periodic pongs to keep connection alive
                 await self.listen()
             except Exception as e:
                 import traceback
