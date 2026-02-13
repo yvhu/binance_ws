@@ -171,7 +171,10 @@ class BinanceWSClient:
         
         for callback in self.callbacks['ticker']:
             try:
-                callback(ticker_info)
+                if asyncio.iscoroutinefunction(callback):
+                    asyncio.create_task(callback(ticker_info))
+                else:
+                    callback(ticker_info)
             except Exception as e:
                 logger.error(f"Error in ticker callback: {e}")
     
@@ -204,7 +207,10 @@ class BinanceWSClient:
         
         for callback in self.callbacks['kline']:
             try:
-                callback(kline_info)
+                if asyncio.iscoroutinefunction(callback):
+                    asyncio.create_task(callback(kline_info))
+                else:
+                    callback(kline_info)
             except Exception as e:
                 logger.error(f"Error in kline callback: {e}")
     
@@ -228,7 +234,10 @@ class BinanceWSClient:
         
         for callback in self.callbacks['trade']:
             try:
-                callback(trade_info)
+                if asyncio.iscoroutinefunction(callback):
+                    asyncio.create_task(callback(trade_info))
+                else:
+                    callback(trade_info)
             except Exception as e:
                 logger.error(f"Error in trade callback: {e}")
     
@@ -253,7 +262,10 @@ class BinanceWSClient:
         
         for callback in self.callbacks.get('mark_price', []):
             try:
-                callback(mark_price_info)
+                if asyncio.iscoroutinefunction(callback):
+                    asyncio.create_task(callback(mark_price_info))
+                else:
+                    callback(mark_price_info)
             except Exception as e:
                 logger.error(f"Error in mark price callback: {e}")
     
@@ -283,7 +295,10 @@ class BinanceWSClient:
         
         for callback in self.callbacks.get('force_order', []):
             try:
-                callback(force_order_info)
+                if asyncio.iscoroutinefunction(callback):
+                    asyncio.create_task(callback(force_order_info))
+                else:
+                    callback(force_order_info)
             except Exception as e:
                 logger.error(f"Error in force order callback: {e}")
     
