@@ -284,8 +284,12 @@ class BinanceTelegramBot:
             account_info: Account information dictionary
         """
         try:
-            balance = account_info.get('balance', 0)
-            self.logger.info(f"Account balance updated via WebSocket: {balance:.2f} USDC")
+            balances = account_info.get('B', [])
+            for b in balances:
+                if b.get('a') == 'USDC':
+                    self.user_data_client.account_balance = float(b.get('cw', 0))
+                    self.logger.info(f"Account balance updated via WebSocket: {b.get('cw', 0):.2f} USDC")
+                    break
         except Exception as e:
             self.logger.error(f"Error processing account update: {e}")
     
