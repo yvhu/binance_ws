@@ -63,6 +63,7 @@ class BinanceWSClient:
     def _build_stream_url(self) -> str:
         """
         Build WebSocket stream URL for Binance Futures based on configured symbols and streams
+        using combined streams format per Binance docs
         
         Returns:
             Complete WebSocket URL for futures
@@ -75,34 +76,29 @@ class BinanceWSClient:
             symbol_lower = symbol.lower()
             for stream in self.streams:
                 if stream == 'ticker':
-                    # Futures ticker stream
                     streams.append(f"{symbol_lower}@ticker")
                     logger.debug(f"Added ticker stream for {symbol}")
                 elif stream.startswith('kline_'):
                     interval = stream.split('_')[1]
-                    # Futures kline stream
                     streams.append(f"{symbol_lower}@kline_{interval}")
                     logger.debug(f"Added kline_{interval} stream for {symbol}")
                 elif stream == 'trade':
-                    # Futures trade stream
                     streams.append(f"{symbol_lower}@trade")
                     logger.debug(f"Added trade stream for {symbol}")
                 elif stream == 'markPrice':
-                    # Futures mark price stream
                     streams.append(f"{symbol_lower}@markPrice")
                     logger.debug(f"Added markPrice stream for {symbol}")
                 elif stream == 'forceOrder':
-                    # Futures liquidation orders stream
                     streams.append(f"{symbol_lower}@forceOrder")
                     logger.debug(f"Added forceOrder stream for {symbol}")
         
         if not streams:
             raise ValueError("No valid streams configured")
         
+        # Use combined streams URL format: /stream?streams=stream1/stream2/stream3
         stream_path = "/".join(streams)
-        # Binance Futures WebSocket endpoint
-        url = f"{self.ws_url}/{stream_path}"
-        logger.info(f"Built WebSocket URL: {url}")
+        url = f"{self.ws_url}/stream?streams={stream_path}"
+        logger.info(f"Built combined WebSocket URL: {url}")
         return url
     
     async def connect(self) -> None:
@@ -141,7 +137,7 @@ class BinanceWSClient:
     
     async def _handle_message(self, message: str) -> None:
         """
-        Handle incoming WebSocket message
+        Handle incoming WebSocket message for combined streams format
         
         Args:
             message: JSON message string
@@ -149,20 +145,25 @@ class BinanceWSClient:
         try:
             data = json.loads(message)
             
-            # Determine message type and route to appropriate callback
-            if 'e' in data:
-                event_type = data['e']
+            # For combined streams, message has 'stream' and 'data' fields
+            if 'stream' in data and 'data' in data:
+                event_data = data['data']
+            else:
+                event_data = data
+            
+            if 'e' in event_data:
+                event_type = event_data['e']
                 
                 if event_type == '24hrTicker':
-                    self._process_ticker(data)
+                    self._process_ticker(event_data)
                 elif event_type == 'kline':
-                    self._process_kline(data)
+                    self._process_kline(event_data)
                 elif event_type == 'trade':
-                    self._process_trade(data)
+                    self._process_trade(event_data)
                 elif event_type == 'markPriceUpdate':
-                    self._process_mark_price(data)
+                    self._process_mark_price(event_data)
                 elif event_type == 'forceOrder':
-                    self._process_force_order(data)
+                    self._process_force_order(event_data)
                 else:
                     logger.warning(f"Unknown event type: {event_type}")
             
@@ -366,7 +367,10 @@ class BinanceWSClient:
             try:
                 logger.info(f"Connection attempt {attempt + 1}/{self.reconnect_attempts}")
                 await self.connect()
+                # Start a background task to send periodic pongs to keep connection alive
+                pong_task = asyncio.create_task(self._send_periodic_pong())
                 await self.listen()
+                pong_task.cancel()
             except Exception as e:
                 attempt += 1
                 logger.error(f"✗ Connection attempt {attempt} failed: {e}")
@@ -391,3 +395,17 @@ class BinanceWSClient:
         """
         key = f"{symbol}_{data_type}"
         return self.latest_data.get(key)
+    
+    async def _send_periodic_pong(self) -> None:
+        """
+        Send periodic pong frames every 5 minutes to keep WebSocket connection alive
+        """
+        try:
+            while self.is_connected and self.websocket:
+                await asyncio.sleep(300)  # 5 minutes
+                await self.websocket.pong()
+                logger.debug("Sent periodic pong frame to keep connection alive")
+        except asyncio.CancelledError:
+            logger.info("Periodic pong task cancelled")
+        except Exception as e:
+            logger.error(f"Error sending periodic pong: {e}")

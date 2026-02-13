@@ -99,8 +99,8 @@ class UserDataClient:
         if not self.listen_key:
             raise RuntimeError("Failed to get listen key")
         
-        # Build WebSocket URL
-        url = f"{self.ws_url}/{self.listen_key}"
+        # Build WebSocket URL per Binance docs: wss://fstream.binance.com/ws/<listenKey>
+        url = f"wss://fstream.binance.com/ws/{self.listen_key}"
         logger.info(f"Connecting to user data stream: {url}")
         
         try:
