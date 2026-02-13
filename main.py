@@ -258,6 +258,49 @@ class BinanceTelegramBot:
         except Exception as e:
             self.logger.error(f"Error sending signal notification: {e}")
     
+    async def _on_mark_price(self, mark_price_info: dict) -> None:
+        """
+        Handle mark price updates (Futures specific)
+        
+        Args:
+            mark_price_info: Mark price information dictionary
+        """
+        try:
+            symbol = mark_price_info.get('symbol', 'UNKNOWN')
+            mark_price = mark_price_info.get('mark_price', 0)
+            funding_rate = mark_price_info.get('funding_rate', 0)
+            
+            self.logger.debug(f"Mark price update for {symbol}: {mark_price}, funding rate: {funding_rate}")
+            
+            # Store data for strategy use
+            self.data_handler.process_mark_price(mark_price_info)
+            
+        except Exception as e:
+            self.logger.error(f"Error processing mark price: {e}")
+    
+    async def _on_force_order(self, force_order_info: dict) -> None:
+        """
+        Handle force order/liquidation updates (Futures specific)
+        
+        Args:
+            force_order_info: Force order information dictionary
+        """
+        try:
+            symbol = force_order_info.get('symbol', 'UNKNOWN')
+            side = force_order_info.get('side', 'UNKNOWN')
+            order_type = force_order_info.get('order_type', 'UNKNOWN')
+            
+            self.logger.info(f"Force order for {symbol}: {side} {order_type}")
+            
+            # Send liquidation alert to Telegram
+            await self.telegram_client.send_error_message(
+                error=f"Force order detected: {side} {order_type}",
+                context=f"Liquidation alert for {symbol}"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error processing force order: {e}")
+    
     async def _on_error(self, error_info: dict) -> None:
         """
         Handle WebSocket errors
@@ -434,6 +477,30 @@ class BinanceTelegramBot:
             await self.telegram_client.send_error_message(str(e), "Bot runtime error")
         finally:
             await self.shutdown()
+    
+    async def shutdown(self) -> None:
+        """Shutdown the bot gracefully"""
+        self.logger.info("Shutting down bot...")
+        
+        try:
+            # Send shutdown notification
+            await self.send_shutdown_notification()
+            
+            # Disconnect WebSocket clients
+            if self.binance_client:
+                await self.binance_client.disconnect()
+            
+            if self.user_data_client:
+                await self.user_data_client.disconnect()
+            
+            # Stop Telegram bot
+            if self.telegram_client:
+                await self.telegram_client.stop_bot()
+            
+            self.logger.info("Bot shutdown complete")
+            
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {e}")
 
 
 async def main():

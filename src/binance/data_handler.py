@@ -28,6 +28,7 @@ class BinanceDataHandler:
         self.ticker_data: Dict[str, Dict] = {}
         self.kline_data: Dict[str, deque] = {}
         self.trade_data: Dict[str, deque] = {}
+        self.mark_price_data: Dict[str, Dict] = {}
     
     def process_ticker(self, ticker_info: Dict) -> None:
         """
@@ -78,6 +79,17 @@ class BinanceDataHandler:
         
         self.trade_data[symbol].append(trade_info)
         logger.debug(f"Added trade data for {symbol}")
+    
+    def process_mark_price(self, mark_price_info: Dict) -> None:
+        """
+        Process mark price data (Futures specific)
+        
+        Args:
+            mark_price_info: Mark price information dictionary
+        """
+        symbol = mark_price_info['symbol']
+        self.mark_price_data[symbol] = mark_price_info
+        logger.debug(f"Updated mark price data for {symbol}")
     
     def get_ticker(self, symbol: str) -> Optional[Dict]:
         """
@@ -226,5 +238,6 @@ class BinanceDataHandler:
             self.ticker_data.clear()
             self.kline_data.clear()
             self.trade_data.clear()
+            self.mark_price_data.clear()
         
         logger.info(f"Cleared data for {symbol if symbol else 'all symbols'}")
