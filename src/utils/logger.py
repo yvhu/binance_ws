@@ -50,7 +50,34 @@ def setup_logger(
     # Console handler - add to root logger to capture all child logger messages
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
+    
+    # Add color formatter for console output
+    try:
+        import colorama
+        colorama.init()
+        from colorama import Fore, Style
+        
+        class ColorFormatter(logging.Formatter):
+            def format(self, record):
+                levelno = record.levelno
+                if levelno >= logging.ERROR:
+                    color = Fore.RED
+                elif levelno >= logging.WARNING:
+                    color = Fore.YELLOW
+                elif levelno >= logging.INFO:
+                    color = Fore.GREEN
+                else:
+                    color = Fore.BLUE
+                
+                record.msg = f"{color}{record.msg}{Style.RESET_ALL}"
+                return super().format(record)
+        
+        color_formatter = ColorFormatter(format_string)
+        console_handler.setFormatter(color_formatter)
+    except ImportError:
+        # Fallback to default formatter if colorama not installed
+        console_handler.setFormatter(formatter)
+    
     root_logger.addHandler(console_handler)
     
     # File handler (if log file specified) - add to root logger

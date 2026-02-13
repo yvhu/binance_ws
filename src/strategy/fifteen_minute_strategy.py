@@ -194,6 +194,9 @@ class FifteenMinuteStrategy:
                 logger.warning(f"Could not determine 5m K-line direction for {symbol}")
                 return
             
+            # Log all directions for debugging
+            logger.info(f"Directions for {symbol}: SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}")
+            
             # Check if all directions match
             if sar_direction == direction_3m == direction_5m:
                 logger.info(f"All directions match for {symbol}: {sar_direction}")
@@ -208,6 +211,9 @@ class FifteenMinuteStrategy:
                     f"Directions do not match for {symbol}: "
                     f"SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}"
                 )
+            
+            # Add explicit log to confirm completion of check
+            logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")
                 
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")
@@ -232,6 +238,16 @@ class FifteenMinuteStrategy:
             
             # Allow SAR calculation on incomplete current 15m K-line (last row)
             # So do not require len(df) >= 2, just check if df has at least 1 row
+            
+            # Filter df to only include rows up to current 15m cycle start time + 15 minutes
+            # to exclude future or partial data beyond current 15m cycle
+            current_15m_start = self.position_manager.current_15m_start_time
+            if current_15m_start is not None:
+                cycle_end_time = current_15m_start + 15 * 60 * 1000  # 15 minutes in ms
+                df = df[df['open_time'] < cycle_end_time]
+                if df.empty:
+                    logger.warning(f"No 15m K-line data within current 15m cycle for SAR calculation")
+                    return None
             
             # Calculate SAR direction based on current price vs SAR
             sar_direction = self.technical_analyzer.get_sar_direction(df)
