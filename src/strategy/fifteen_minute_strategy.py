@@ -232,6 +232,9 @@ class FifteenMinuteStrategy:
             # Get 15m K-line data including the current incomplete K-line
             df = self.data_handler.get_klines_dataframe(symbol, "15m")
             
+            # Add debug log to print dataframe info for troubleshooting
+            logger.debug(f"15m K-line dataframe for {symbol}:\n{df.head()}\nColumns: {df.columns.tolist()}")
+            
             if df.empty:
                 logger.warning(f"No 15m K-line data available for SAR calculation")
                 return None
