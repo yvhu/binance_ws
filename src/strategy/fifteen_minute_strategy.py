@@ -81,9 +81,9 @@ class FifteenMinuteStrategy:
             kline_info: K-line information
         """
         symbol = kline_info['symbol']
-        interval = kline_info['interval']
+        # interval = kline_info['interval']
         
-        logger.info(f"[STRATEGY] on_5m_kline_close called for {symbol} {interval}")
+        # logger.info(f"[STRATEGY] on_5m_kline_close called for {symbol} {interval}")
         
         # Only process if it's the first 5m K-line in the 15m cycle
         if not self._is_first_5m_in_15m_cycle(kline_info):
@@ -95,18 +95,18 @@ class FifteenMinuteStrategy:
             logger.info(f"Position already opened in current cycle for {symbol}")
             return
         
-        logger.info(f"First 5m K-line closed for {symbol}, checking entry conditions...")
+        # logger.info(f"First 5m K-line closed for {symbol}, checking entry conditions...")
         
         # Execute strategy logic
         await self._check_and_open_position(symbol)
         
         # Also trigger SAR calculation and direction check for 15m interval here
-        logger.info(f"Triggering SAR calculation and direction check for 15m interval at 5m close for {symbol}")
-        sar_direction = self._get_sar_direction(symbol)
-        if sar_direction is not None:
-            logger.info(f"SAR direction at 5m close: {sar_direction}")
-        else:
-            logger.warning(f"Could not determine SAR direction at 5m close for {symbol}")
+        # logger.info(f"Triggering SAR calculation and direction check for 15m interval at 5m close for {symbol}")
+        # sar_direction = self._get_sar_direction(symbol)
+        # if sar_direction is not None:
+        #     logger.info(f"SAR direction at 5m close: {sar_direction}")
+        # else:
+        #     logger.warning(f"Could not determine SAR direction at 5m close for {symbol}")
     
     async def on_15m_kline_close(self, kline_info: Dict) -> None:
         """
@@ -121,8 +121,7 @@ class FifteenMinuteStrategy:
         logger.info(f"15m K-line closed for {symbol}, closing all positions...")
         
         # Close all positions immediately asynchronously
-        import asyncio
-        success = await asyncio.to_thread(self.trading_executor.close_all_positions, symbol)
+        success = await self.trading_executor.close_all_positions(symbol)
         
         if success:
             # Reset cycle state
@@ -165,7 +164,7 @@ class FifteenMinuteStrategy:
         Args:
             symbol: Trading pair symbol
         """
-        logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
+        # logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
             # Get SAR direction from current running 15m K-line (not closed)
             sar_direction = self._get_sar_direction(symbol)
@@ -214,7 +213,7 @@ class FifteenMinuteStrategy:
                 )
             
             # Add explicit log to confirm completion of check
-            logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")
+            # logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")
                 
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")
