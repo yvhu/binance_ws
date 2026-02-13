@@ -144,42 +144,42 @@ class BinanceWSClient:
             message: JSON message string
         """
         try:
-            logger.debug(f"[WS] Raw message received (length: {len(message)} bytes)")
+            # logger.debug(f"[WS] Raw message received (length: {len(message)} bytes)")
             data = json.loads(message)
             
             # For combined streams, message has 'stream' and 'data' fields
             if 'stream' in data and 'data' in data:
                 stream_name = data['stream']
                 event_data = data['data']
-                logger.info(f"[WS] ✓ Received message from stream: {stream_name}")
+                # logger.info(f"[WS] ✓ Received message from stream: {stream_name}")
             else:
                 event_data = data
-                logger.info(f"[WS] ✓ Received message without stream field")
+                # logger.info(f"[WS] ✓ Received message without stream field")
             
             if 'e' in event_data:
                 event_type = event_data['e']
-                logger.info(f"[WS] ✓ Event type: {event_type}")
+                # logger.info(f"[WS] ✓ Event type: {event_type}")
                 
                 if event_type == '24hrTicker':
-                    logger.debug(f"[WS] Processing ticker event...")
+                    # logger.debug(f"[WS] Processing ticker event...")
                     self._process_ticker(event_data)
-                    logger.debug(f"[WS] Ticker event processed")
+                    # logger.debug(f"[WS] Ticker event processed")
                 elif event_type == 'kline':
-                    logger.debug(f"[WS] Processing kline event...")
+                    # logger.debug(f"[WS] Processing kline event...")
                     self._process_kline(event_data)
-                    logger.debug(f"[WS] Kline event processed")
+                    # logger.debug(f"[WS] Kline event processed")
                 elif event_type == 'trade':
-                    logger.debug(f"[WS] Processing trade event...")
+                    # logger.debug(f"[WS] Processing trade event...")
                     self._process_trade(event_data)
-                    logger.debug(f"[WS] Trade event processed")
+                    # logger.debug(f"[WS] Trade event processed")
                 elif event_type == 'markPriceUpdate':
-                    logger.debug(f"[WS] Processing mark price event...")
+                    # logger.debug(f"[WS] Processing mark price event...")
                     self._process_mark_price(event_data)
-                    logger.debug(f"[WS] Mark price event processed")
+                    # logger.debug(f"[WS] Mark price event processed")
                 elif event_type == 'forceOrder':
-                    logger.debug(f"[WS] Processing force order event...")
+                    # logger.debug(f"[WS] Processing force order event...")
                     self._process_force_order(event_data)
-                    logger.debug(f"[WS] Force order event processed")
+                    # logger.debug(f"[WS] Force order event processed")
                 else:
                     logger.warning(f"[WS] Unknown event type: {event_type}")
             else:
@@ -201,7 +201,7 @@ class BinanceWSClient:
             data: Ticker data from Binance
         """
         symbol = data.get('s', 'UNKNOWN')
-        logger.info(f"[WS] Processing ticker for {symbol}")
+        # logger.info(f"[WS] Processing ticker for {symbol}")
         self.latest_data[f"{symbol}_ticker"] = data
         
         ticker_info = {
@@ -215,25 +215,25 @@ class BinanceWSClient:
             'timestamp': data.get('E', 0)
         }
         
-        logger.info(f"[WS] Ticker info: {symbol} price={ticker_info['current_price']}")
+        # logger.info(f"[WS] Ticker info: {symbol} price={ticker_info['current_price']}")
         
         callback_count = len(self.callbacks['ticker'])
-        logger.info(f"[WS] Calling {callback_count} ticker callback(s)...")
+        # logger.info(f"[WS] Calling {callback_count} ticker callback(s)...")
         
         for idx, callback in enumerate(self.callbacks['ticker']):
             try:
-                logger.debug(f"[WS] Calling ticker callback {idx+1}/{callback_count}...")
+                # logger.debug(f"[WS] Calling ticker callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(ticker_info))
                 else:
                     callback(ticker_info)
-                logger.debug(f"[WS] Ticker callback {idx+1}/{callback_count} completed")
+                # logger.debug(f"[WS] Ticker callback {idx+1}/{callback_count} completed")
             except Exception as e:
                 logger.error(f"[WS] ✗ Error in ticker callback {idx+1}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
         
-        logger.info(f"[WS] All ticker callbacks completed")
+        # logger.info(f"[WS] All ticker callbacks completed")
     
     def _process_kline(self, data: Dict) -> None:
         """
@@ -271,12 +271,12 @@ class BinanceWSClient:
         
         for idx, callback in enumerate(self.callbacks['kline']):
             try:
-                logger.debug(f"[WS] Calling kline callback {idx+1}/{callback_count}...")
+                # logger.debug(f"[WS] Calling kline callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(kline_info))
                 else:
                     callback(kline_info)
-                logger.debug(f"[WS] Kline callback {idx+1}/{callback_count} completed")
+                # logger.debug(f"[WS] Kline callback {idx+1}/{callback_count} completed")
             except Exception as e:
                 logger.error(f"[WS] ✗ Error in kline callback {idx+1}: {e}")
                 import traceback
@@ -331,18 +331,18 @@ class BinanceWSClient:
         
         for idx, callback in enumerate(self.callbacks['trade']):
             try:
-                logger.debug(f"[WS] Calling trade callback {idx+1}/{callback_count}...")
+                # logger.debug(f"[WS] Calling trade callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(trade_info))
                 else:
                     callback(trade_info)
-                logger.debug(f"[WS] Trade callback {idx+1}/{callback_count} completed")
+                # logger.debug(f"[WS] Trade callback {idx+1}/{callback_count} completed")
             except Exception as e:
                 logger.error(f"[WS] ✗ Error in trade callback {idx+1}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
         
-        logger.info(f"[WS] All trade callbacks completed")
+        # logger.info(f"[WS] All trade callbacks completed")
     
     def _process_mark_price(self, data: Dict) -> None:
         """
@@ -369,12 +369,12 @@ class BinanceWSClient:
         
         for idx, callback in enumerate(self.callbacks.get('mark_price', [])):
             try:
-                logger.debug(f"[WS] Calling mark price callback {idx+1}/{callback_count}...")
+                # logger.debug(f"[WS] Calling mark price callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(mark_price_info))
                 else:
                     callback(mark_price_info)
-                logger.debug(f"[WS] Mark price callback {idx+1}/{callback_count} completed")
+                # logger.debug(f"[WS] Mark price callback {idx+1}/{callback_count} completed")
             except Exception as e:
                 logger.error(f"[WS] ✗ Error in mark price callback {idx+1}: {e}")
                 import traceback
@@ -412,12 +412,12 @@ class BinanceWSClient:
         
         for idx, callback in enumerate(self.callbacks.get('force_order', [])):
             try:
-                logger.debug(f"[WS] Calling force order callback {idx+1}/{callback_count}...")
+                # logger.debug(f"[WS] Calling force order callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
                     asyncio.create_task(callback(force_order_info))
                 else:
                     callback(force_order_info)
-                logger.debug(f"[WS] Force order callback {idx+1}/{callback_count} completed")
+                # logger.debug(f"[WS] Force order callback {idx+1}/{callback_count} completed")
             except Exception as e:
                 logger.error(f"[WS] ✗ Error in force order callback {idx+1}: {e}")
                 import traceback
