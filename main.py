@@ -385,7 +385,6 @@ class BinanceTelegramBot:
             self.logger.info("Starting user data stream...")
             # Start user data stream in background
             try:
-                user_data_task = asyncio.create_task(self.user_data_client.start())
                 self.logger.info("✓ User data stream task created")
             except Exception as e:
                 self.logger.error(f"✗ Failed to create user data stream task: {e}")
@@ -411,7 +410,11 @@ class BinanceTelegramBot:
             
             # Start Binance WebSocket connection
             try:
-                await self.binance_client.start()
+                # 同时启动两个 WebSocket
+                await asyncio.gather(
+                    self.user_data_client.start(),
+                    self.binance_client.start()
+                )
             except Exception as e:
                 self.logger.error(f"✗ Failed to start Binance WebSocket: {e}")
                 raise

@@ -94,7 +94,9 @@ class UserDataClient:
         """Connect to Binance user data stream"""
         # Get listen key
         logger.info("Getting listen key for user data stream...")
-        self.listen_key = self.trading_executor.get_listen_key()
+        self.listen_key = await asyncio.to_thread(
+            self.trading_executor.get_listen_key
+        )
         
         if not self.listen_key:
             raise RuntimeError("Failed to get listen key")
@@ -112,6 +114,16 @@ class UserDataClient:
             )
             self.is_connected = True
             logger.info("✓ Successfully connected to user data stream")
+            # 主动用 REST 获取一次余额（否则可能永远收不到）
+            try:
+                balance = await asyncio.to_thread(
+                    self.trading_executor.get_account_balance
+                )
+                self.account_balance = balance
+                logger.info(f"Initial account balance (REST): {balance}")
+            except Exception as e:
+                logger.error(f"Failed to fetch initial balance: {e}")
+
             
             # Start keep-alive task
             self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
@@ -148,7 +160,10 @@ class UserDataClient:
                 
                 # Keep alive
                 if self.listen_key:
-                    success = self.trading_executor.keep_alive_listen_key(self.listen_key)
+                    success = await asyncio.to_thread(
+                        self.trading_executor.keep_alive_listen_key,
+                        self.listen_key
+                    )
                     if success:
                         logger.info("Listen key kept alive")
                     else:
@@ -202,28 +217,33 @@ class UserDataClient:
             # Find USDC balance (Binance USDC-M Futures uses USDC)
             for balance in balances:
                 asset = balance.get('a', '')
+                
                 if asset == 'USDC':
-                    available_balance = float(balance.get('cw', 0))  # Cross wallet balance
+                    available_balance = float(balance.get('cw', 0))
                     self.account_balance = available_balance
-                    logger.info(f"Account balance updated: {available_balance:.2f} USDC")
                     
+                    logger.info(f"Account balance updated: {available_balance:.2f} USDC")
+
                     # Trigger callback
                     if self.callbacks['account_update']:
                         try:
+                            payload = {
+                                'balance': available_balance,
+                                'timestamp': data.get('E', 0)
+                            }
+
                             if asyncio.iscoroutinefunction(self.callbacks['account_update']):
-                                asyncio.create_task(self.callbacks['account_update']({
-                                    'balance': available_balance,
-                                    'timestamp': data.get('E', 0)
-                                }))
+                                asyncio.create_task(
+                                    self.callbacks['account_update'](payload)
+                                )
                             else:
-                                self.callbacks['account_update']({
-                                    'balance': available_balance,
-                                    'timestamp': data.get('E', 0)
-                                })
+                                self.callbacks['account_update'](payload)
+
                         except Exception as e:
                             logger.error(f"Error in account update callback: {e}")
+
                     break
-            
+
             # Update positions
             positions = account_data.get('P', [])
             for position in positions:

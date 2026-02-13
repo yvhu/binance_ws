@@ -110,7 +110,13 @@ class BinanceWSClient:
             logger.info("Establishing WebSocket connection...")
             # Set timeout to avoid hanging
             self.websocket = await asyncio.wait_for(
-                websockets.connect(url),
+                websockets.connect(
+                    url,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    close_timeout=5,
+                    max_queue=1000
+                ),
                 timeout=30.0
             )
             self.is_connected = True
@@ -368,9 +374,7 @@ class BinanceWSClient:
                 logger.info(f"Connection attempt {attempt + 1}/{self.reconnect_attempts}")
                 await self.connect()
                 # Start a background task to send periodic pongs to keep connection alive
-                pong_task = asyncio.create_task(self._send_periodic_pong())
                 await self.listen()
-                pong_task.cancel()
             except Exception as e:
                 attempt += 1
                 logger.error(f"✗ Connection attempt {attempt} failed: {e}")
@@ -396,16 +400,3 @@ class BinanceWSClient:
         key = f"{symbol}_{data_type}"
         return self.latest_data.get(key)
     
-    async def _send_periodic_pong(self) -> None:
-        """
-        Send periodic pong frames every 5 minutes to keep WebSocket connection alive
-        """
-        try:
-            while self.is_connected and self.websocket:
-                await asyncio.sleep(300)  # 5 minutes
-                await self.websocket.pong()
-                logger.debug("Sent periodic pong frame to keep connection alive")
-        except asyncio.CancelledError:
-            logger.info("Periodic pong task cancelled")
-        except Exception as e:
-            logger.error(f"Error sending periodic pong: {e}")
