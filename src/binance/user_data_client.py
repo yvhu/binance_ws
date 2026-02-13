@@ -99,6 +99,7 @@ class UserDataClient:
         )
         
         if not self.listen_key:
+            logger.error("Failed to get listen key: listen_key is None or empty")
             raise RuntimeError("Failed to get listen key")
         
         # Build WebSocket URL per Binance docs: wss://fstream.binance.com/ws/<listenKey>
@@ -393,24 +394,27 @@ class UserDataClient:
     async def start(self) -> None:
         """Start user data stream connection and listening"""
         logger.info(">>> USER DATA STREAM STARTING <<<")
-        try:
-            await self.connect()
-            logger.info("Connected to user data stream, starting listen loop...")
-            await self.listen()
-        except Exception as e:
-            import traceback
-            logger.error(f"UserDataClient.start() error: {e}")
-            logger.error(traceback.format_exc())
-            # Trigger error callback
-            if self.callbacks['error']:
-                try:
-                    error_dict = {'type': 'start_error', 'error': str(e)}
-                    if asyncio.iscoroutinefunction(self.callbacks['error']):
-                        await self.callbacks['error'](error_dict)
-                    else:
-                        self.callbacks['error'](error_dict)
-                except Exception as cb_err:
-                    logger.error(f"Error callback raised exception: {cb_err}")
+        while True:
+            try:
+                await self.connect()
+                logger.info("Connected to user data stream, starting listen loop...")
+                await self.listen()
+            except Exception as e:
+                import traceback
+                logger.error(f"UserDataClient.start() error: {e}")
+                logger.error(traceback.format_exc())
+                # Trigger error callback
+                if self.callbacks['error']:
+                    try:
+                        error_dict = {'type': 'start_error', 'error': str(e)}
+                        if asyncio.iscoroutinefunction(self.callbacks['error']):
+                            await self.callbacks['error'](error_dict)
+                        else:
+                            self.callbacks['error'](error_dict)
+                    except Exception as cb_err:
+                        logger.error(f"Error callback raised exception: {cb_err}")
+                logger.info("Reconnecting to user data stream in 5 seconds...")
+                await asyncio.sleep(5)
     
     def get_account_balance(self) -> Optional[float]:
         """
