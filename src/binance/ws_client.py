@@ -295,6 +295,17 @@ class BinanceWSClient:
                         asyncio.create_task(callback(kline_info))
                     else:
                         callback(kline_info)
+        
+        # Add explicit logging for 15m kline close to help debug strategy callback
+        if interval == '15m' and is_closed:
+            logger.info(f"[WS] 15m kline closed for {symbol}, triggering strategy callbacks if any")
+            for callback in self.callbacks['kline']:
+                if hasattr(callback, '__name__') and callback.__name__ == 'on_15m_kline_close':
+                    logger.info(f"[WS] Calling on_15m_kline_close callback for {symbol}")
+                    if asyncio.iscoroutinefunction(callback):
+                        asyncio.create_task(callback(kline_info))
+                    else:
+                        callback(kline_info)
     
     def _process_trade(self, data: Dict) -> None:
         """
