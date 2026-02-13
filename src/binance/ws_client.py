@@ -343,11 +343,15 @@ class BinanceWSClient:
     async def start(self) -> None:
         """Start WebSocket connection and listening"""
         attempt = 0
+        logger.info(f"Starting BinanceWSClient with {self.reconnect_attempts} max reconnect attempts")
         
         while attempt < self.reconnect_attempts:
             try:
+                logger.info(f"Connection attempt {attempt + 1}/{self.reconnect_attempts}")
                 await self.connect()
+                logger.info("Starting to listen for messages...")
                 await self.listen()
+                logger.warning("Listen loop ended unexpectedly")
             except Exception as e:
                 import traceback
                 attempt += 1
@@ -360,6 +364,7 @@ class BinanceWSClient:
                 else:
                     logger.error("✗ Max reconnection attempts reached. Giving up.")
                     raise
+        logger.error("BinanceWSClient.start() exited")
     
     def get_latest_data(self, symbol: str, data_type: str = 'ticker') -> Optional[Dict]:
         """

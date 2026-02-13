@@ -195,6 +195,9 @@ class BinanceTelegramBot:
             is_closed = kline_info.get('is_closed', False)
             open_time = kline_info.get('open_time', 0)
             
+            # Debug log for all kline events
+            self.logger.debug(f"[KLINE] Received: {symbol} {interval} closed={is_closed}")
+            
             # Track last seen 15m kline open time to detect new klines
             if not hasattr(self, '_last_15m_open_time'):
                 self._last_15m_open_time = {}
@@ -205,6 +208,7 @@ class BinanceTelegramBot:
                 if open_time != last_open_time and not is_closed:
                     # New 15m kline started
                     self._last_15m_open_time[symbol] = open_time
+                    self.logger.info(f"[KLINE] Calling on_15m_kline_start for {symbol}")
                     self.strategy.on_15m_kline_start(kline_info)
             
             # Only process closed klines for trading logic
@@ -216,9 +220,11 @@ class BinanceTelegramBot:
             # Route to strategy based on interval
             if interval == '15m':
                 # Handle 15m K-line close event
+                self.logger.info(f"[KLINE] Calling on_15m_kline_close for {symbol}")
                 self.strategy.on_15m_kline_close(kline_info)
             elif interval == '5m':
                 # Handle 5m K-line close event (trigger for opening position)
+                self.logger.info(f"[KLINE] Calling on_5m_kline_close for {symbol}")
                 await self.strategy.on_5m_kline_close(kline_info)
             
         except Exception as e:
@@ -492,8 +498,29 @@ class BinanceTelegramBot:
             self.logger.info("Bot started successfully")
 
             # --- 主协程可以继续做其他任务，WebSocket 永远在后台运行 ---
+            self.logger.info("Entering main event loop...")
+            loop_count = 0
             while self.is_running:
+                loop_count += 1
+                if loop_count % 60 == 0:  # 每分钟记录一次
+                    self.logger.info(f"Main loop running... (iteration {loop_count})")
+                    # 检查 WebSocket 任务状态
+                    if self.user_data_task and self.user_data_task.done():
+                        self.logger.warning("User data task has stopped!")
+                        try:
+                            result = self.user_data_task.result()
+                            self.logger.warning(f"User data task result: {result}")
+                        except Exception as e:
+                            self.logger.error(f"User data task exception: {e}")
+                    if self.market_data_task and self.market_data_task.done():
+                        self.logger.warning("Market data task has stopped!")
+                        try:
+                            result = self.market_data_task.result()
+                            self.logger.warning(f"Market data task result: {result}")
+                        except Exception as e:
+                            self.logger.error(f"Market data task exception: {e}")
                 await asyncio.sleep(1)
+            self.logger.info("Main event loop exited")
 
         except asyncio.CancelledError:
             self.logger.info("Bot cancelled")

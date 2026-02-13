@@ -65,6 +65,8 @@ class FifteenMinuteStrategy:
         symbol = kline_info['symbol']
         start_time = kline_info['open_time']
         
+        logger.info(f"[STRATEGY] on_15m_kline_start called for {symbol}")
+        
         # Set new cycle start time
         self.position_manager.set_15m_cycle_start(start_time)
         
@@ -79,6 +81,8 @@ class FifteenMinuteStrategy:
         """
         symbol = kline_info['symbol']
         interval = kline_info['interval']
+        
+        logger.info(f"[STRATEGY] on_5m_kline_close called for {symbol} {interval}")
         
         # Only process if it's the first 5m K-line in the 15m cycle
         if not self._is_first_5m_in_15m_cycle(kline_info):
@@ -104,6 +108,7 @@ class FifteenMinuteStrategy:
         """
         symbol = kline_info['symbol']
         
+        logger.info(f"[STRATEGY] on_15m_kline_close called for {symbol}")
         logger.info(f"15m K-line closed for {symbol}, closing all positions...")
         
         # Close all positions immediately asynchronously
@@ -151,6 +156,7 @@ class FifteenMinuteStrategy:
         Args:
             symbol: Trading pair symbol
         """
+        logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
             # Get SAR direction from current 15m K-line
             sar_direction = self._get_sar_direction(symbol)

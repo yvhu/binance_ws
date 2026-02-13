@@ -371,10 +371,14 @@ class UserDataClient:
     
     async def start(self) -> None:
         """Start user data stream connection and listening"""
+        logger.info("Starting UserDataClient...")
         while True:
             try:
+                logger.info("Attempting to connect to user data stream...")
                 await self.connect()
+                logger.info("Starting to listen for user data messages...")
                 await self.listen()
+                logger.warning("User data listen loop ended unexpectedly")
             except Exception as e:
                 import traceback
                 logger.error(f"UserDataClient.start() error: {e}")
@@ -391,6 +395,7 @@ class UserDataClient:
                         logger.error(f"Error callback raised exception: {cb_err}")
                 logger.info("Reconnecting to user data stream in 5 seconds...")
                 await asyncio.sleep(5)
+        logger.error("UserDataClient.start() exited unexpectedly")
     
     def get_account_balance(self) -> Optional[float]:
         """
