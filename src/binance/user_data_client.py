@@ -367,7 +367,21 @@ class UserDataClient:
             await self.connect()
             await self.listen()
         except Exception as e:
+            import traceback
             logger.error(f"✗ User data stream error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            # Trigger error callback
+            if self.callbacks['error']:
+                try:
+                    error_dict = {'type': 'start_error', 'error': str(e)}
+                    logger.debug(f"Calling error callback with: {error_dict}")
+                    if asyncio.iscoroutinefunction(self.callbacks['error']):
+                        await self.callbacks['error'](error_dict)
+                    else:
+                        self.callbacks['error'](error_dict)
+                except Exception as err:
+                    logger.error(f"Error in error callback: {err}")
+                    logger.error(f"Error callback traceback: {traceback.format_exc()}")
             raise
     
     def get_account_balance(self) -> Optional[float]:
