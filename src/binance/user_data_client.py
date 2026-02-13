@@ -123,6 +123,14 @@ class UserDataClient:
                 logger.info(f"Initial account balance (REST): {balance}")
             except Exception as e:
                 logger.error(f"Failed to fetch initial balance: {e}")
+        except asyncio.TimeoutError:
+            logger.error("✗ User data stream connection timeout after 30 seconds")
+            self.is_connected = False
+            raise
+        except Exception as e:
+            logger.error(f"✗ Failed to connect to user data stream: {e}")
+            self.is_connected = False
+            raise
 
             
             # Start keep-alive task
@@ -363,6 +371,7 @@ class UserDataClient:
         try:
             message_count = 0
             async for message in self.websocket:
+                logger.debug(f"User data stream message received: {message}")
                 message_count += 1
                 if message_count == 1:
                     logger.info("✓ First user data message received")
