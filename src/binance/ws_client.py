@@ -248,10 +248,10 @@ class BinanceWSClient:
         is_closed = kline.get('x', False)
         
         # Log all kline events, especially 15m
-        if interval == '15m':
-            logger.info(f"[WS] ✓ Processing 15m kline: {symbol} closed={is_closed}")
-        else:
-            logger.debug(f"[WS] ✓ Processing kline: {symbol} {interval} closed={is_closed}")
+        # if interval == '15m':
+        #     logger.info(f"[WS] ✓ Processing 15m kline: {symbol} closed={is_closed}")
+        # else:
+        #     logger.debug(f"[WS] ✓ Processing kline: {symbol} {interval} closed={is_closed}")
         
         self.latest_data[f"{symbol}_kline_{interval}"] = data
         
