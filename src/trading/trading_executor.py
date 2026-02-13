@@ -56,14 +56,19 @@ class TradingExecutor:
         symbols = self.config.binance_symbols
         
         logger.info(f"Initializing leverage for {len(symbols)} symbol(s)...")
+        logger.info(f"Symbols to configure: {symbols}")
         
         for symbol in symbols:
-            success = self.set_leverage(symbol)
-            if success:
-                self.leverage_cache.add(symbol)
-                logger.info(f"✓ Leverage {self.leverage}x set for {symbol}")
-            else:
-                logger.error(f"✗ Failed to set leverage for {symbol}")
+            logger.info(f"Processing symbol: {symbol}")
+            try:
+                success = self.set_leverage(symbol)
+                if success:
+                    self.leverage_cache.add(symbol)
+                    logger.info(f"✓ Leverage {self.leverage}x set for {symbol}")
+                else:
+                    logger.error(f"✗ Failed to set leverage for {symbol}")
+            except Exception as e:
+                logger.error(f"✗ Exception while setting leverage for {symbol}: {e}")
         
         logger.info(f"Leverage initialization complete. Set for {len(self.leverage_cache)}/{len(symbols)} symbols")
     

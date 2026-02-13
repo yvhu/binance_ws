@@ -56,7 +56,12 @@ class BinanceTelegramBot:
         self.position_manager = PositionManager()
         
         self.logger.info("Initializing trading executor (this may take a moment)...")
-        self.trading_executor = TradingExecutor(self.config)
+        try:
+            self.trading_executor = TradingExecutor(self.config)
+            self.logger.info("✓ Trading executor initialized successfully")
+        except Exception as e:
+            self.logger.error(f"✗ Failed to initialize trading executor: {e}")
+            raise
         
         self.logger.info("Initializing 15-minute strategy...")
         self.strategy = FifteenMinuteStrategy(
@@ -247,11 +252,17 @@ class BinanceTelegramBot:
     async def send_startup_notification(self) -> None:
         """Send startup notification to Telegram"""
         symbols = self.config.binance_symbols
+        
+        # Get account balance
+        balance = self.trading_executor.get_account_balance()
+        balance_str = f"{balance:.2f} USDC" if balance is not None else "获取失败"
+        
         details = {
             "交易对": ", ".join(symbols),
             "杠杆": f"{self.config.leverage}倍",
             "策略": "15分钟K线 + SAR指标",
             "仓位大小": "100% (全仓)",
+            "可用资金": balance_str,
             "数据流": ", ".join(self.config.binance_streams)
         }
         
