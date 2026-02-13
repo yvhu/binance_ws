@@ -87,6 +87,10 @@ class BinanceTelegramBot:
         self.is_running = False
         self.last_signal_time = {}
         
+        # Task references
+        self.user_data_task = None
+        self.market_data_task = None
+        
         # Register signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -434,9 +438,11 @@ class BinanceTelegramBot:
             self.logger.info("Starting WebSocket services...")
 
             # --- 关键改动：后台启动 WebSocket，不阻塞主协程 ---
-            asyncio.create_task(self.user_data_client.start())
-            asyncio.create_task(self.binance_client.start())
-            self.logger.info("WebSocket tasks started in background")
+            self.logger.info("Creating user data stream task...")
+            self.user_data_task = asyncio.create_task(self.user_data_client.start())
+            self.logger.info("Creating market data WebSocket task...")
+            self.market_data_task = asyncio.create_task(self.binance_client.start())
+            self.logger.info("WebSocket tasks created and started in background")
 
             # 等待 user data stream 连接并获取余额 (最多 10 秒)
             self.logger.info("Waiting for account balance (up to 10 seconds)...")

@@ -118,6 +118,11 @@ class UserDataClient:
             )
             self.is_connected = True
             logger.info("✓ Successfully connected to user data stream")
+            
+            # Start keep-alive task
+            self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
+            logger.info("✓ Keep-alive task started")
+            
             # 主动用 REST 获取一次余额（否则可能永远收不到）
             try:
                 balance = await asyncio.to_thread(
@@ -127,19 +132,6 @@ class UserDataClient:
                 logger.info(f"Initial account balance (REST): {balance}")
             except Exception as e:
                 logger.error(f"Failed to fetch initial balance: {e}")
-        except asyncio.TimeoutError:
-            logger.error("✗ User data stream connection timeout after 30 seconds")
-            self.is_connected = False
-            raise
-        except Exception as e:
-            logger.error(f"✗ Failed to connect to user data stream: {e}")
-            self.is_connected = False
-            raise
-
-            
-            # Start keep-alive task
-            self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
-            
         except asyncio.TimeoutError:
             logger.error("✗ User data stream connection timeout after 30 seconds")
             self.is_connected = False
