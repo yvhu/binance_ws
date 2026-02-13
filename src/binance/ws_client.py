@@ -124,7 +124,9 @@ class BinanceWSClient:
             self.is_connected = False
             raise
         except Exception as e:
+            import traceback
             logger.error(f"✗ Failed to connect to Binance WebSocket: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             self.is_connected = False
             raise
     
