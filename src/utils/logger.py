@@ -27,10 +27,18 @@ def setup_logger(
     Returns:
         Configured logger instance
     """
+    # Configure root logger to capture all logs from child loggers
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    
+    # Remove existing handlers from root logger
+    root_logger.handlers.clear()
+    
+    # Get the named logger
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     
-    # Remove existing handlers
+    # Remove existing handlers from named logger
     logger.handlers.clear()
     
     # Default format
@@ -39,13 +47,13 @@ def setup_logger(
     
     formatter = logging.Formatter(format_string)
     
-    # Console handler
+    # Console handler - add to root logger to capture all child logger messages
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
+    root_logger.addHandler(console_handler)
     
-    # File handler (if log file specified)
+    # File handler (if log file specified) - add to root logger
     if log_file:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,6 +66,6 @@ def setup_logger(
         )
         file_handler.setLevel(getattr(logging, level.upper(), logging.INFO))
         file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+        root_logger.addHandler(file_handler)
     
     return logger
