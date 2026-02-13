@@ -351,9 +351,9 @@ class BinanceTelegramBot:
         # Get account balance from user data stream (WebSocket)
         balance = self.user_data_client.get_account_balance()
         
-        # If balance not available yet, try REST API as fallback
-        if balance is None:
-            self.logger.warning("Balance not available from WebSocket, using REST API fallback")
+        # If balance not available yet or zero, try REST API as fallback
+        if balance is None or balance == 0:
+            self.logger.warning("Balance not available or zero from WebSocket, using REST API fallback")
             balance = self.trading_executor.get_account_balance()
         
         balance_str = f"{balance:.2f} USDC" if balance is not None else "获取失败"

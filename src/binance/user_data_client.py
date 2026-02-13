@@ -199,7 +199,7 @@ class UserDataClient:
             account_data = data.get('a', {})
             balances = account_data.get('B', [])
             
-            # Find USDC balance
+            # Find USDC balance (Binance USDC-M Futures uses USDC)
             for balance in balances:
                 asset = balance.get('a', '')
                 if asset == 'USDC':
