@@ -113,17 +113,14 @@ class BinanceTelegramBot:
             # Store data
             self.data_handler.process_ticker(ticker_info)
             
-            symbol = ticker_info['symbol']
-            price_change = ticker_info.get('price_change_percent', 0)
-            
-            # Check for significant price changes
-            min_change = self.config.strategy_config.get('min_price_change', 0.5)
-            
-            if abs(price_change) >= min_change:
-                self.logger.info(f"Significant price change for {symbol}: {price_change:.2f}%")
-                
-                # Send alert to Telegram
-                await self.telegram_client.send_ticker_alert(ticker_info)
+            # Price alerts disabled - only store data for strategy use
+            # Uncomment below to enable price alerts
+            # symbol = ticker_info['symbol']
+            # price_change = ticker_info.get('price_change_percent', 0)
+            # min_change = self.config.strategy_config.get('min_price_change', 0.5)
+            # if abs(price_change) >= min_change:
+            #     self.logger.info(f"Significant price change for {symbol}: {price_change:.2f}%")
+            #     await self.telegram_client.send_ticker_alert(ticker_info)
             
         except Exception as e:
             self.logger.error(f"Error processing ticker: {e}")
