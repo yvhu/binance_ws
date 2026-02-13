@@ -98,6 +98,14 @@ class FifteenMinuteStrategy:
         
         # Execute strategy logic
         await self._check_and_open_position(symbol)
+        
+        # Also trigger SAR calculation and direction check for 15m interval here
+        logger.info(f"Triggering SAR calculation and direction check for 15m interval at 5m close for {symbol}")
+        sar_direction = self._get_sar_direction(symbol)
+        if sar_direction is not None:
+            logger.info(f"SAR direction at 5m close: {sar_direction}")
+        else:
+            logger.warning(f"Could not determine SAR direction at 5m close for {symbol}")
     
     async def on_15m_kline_close(self, kline_info: Dict) -> None:
         """

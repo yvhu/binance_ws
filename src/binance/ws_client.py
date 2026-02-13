@@ -283,6 +283,18 @@ class BinanceWSClient:
                 logger.error(traceback.format_exc())
         
         logger.info(f"[WS] All kline callbacks completed")
+        
+        # Add explicit logging for 5m kline close to help debug strategy callback
+        if interval == '5m' and is_closed:
+            logger.info(f"[WS] 5m kline closed for {symbol}, triggering strategy callbacks if any")
+            for callback in self.callbacks['kline']:
+                # Check if callback is coroutine function and named on_5m_kline_close or similar
+                if hasattr(callback, '__name__') and callback.__name__ == 'on_5m_kline_close':
+                    logger.info(f"[WS] Calling on_5m_kline_close callback for {symbol}")
+                    if asyncio.iscoroutinefunction(callback):
+                        asyncio.create_task(callback(kline_info))
+                    else:
+                        callback(kline_info)
     
     def _process_trade(self, data: Dict) -> None:
         """
