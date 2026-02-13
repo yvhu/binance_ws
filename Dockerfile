@@ -9,9 +9,10 @@ RUN apt-get update && apt-get install -y \
     g++ \
     make \
     wget \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install TA-Lib
+# Install TA-Lib C library
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     tar -xzf ta-lib-0.4.0-src.tar.gz && \
     cd ta-lib/ && \
@@ -19,7 +20,8 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     make && \
     make install && \
     cd .. && \
-    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+    rm -rf ta-lib ta-lib-0.4.0-src.tar.gz && \
+    ldconfig
 
 # Copy requirements first for better caching
 COPY requirements.txt .
