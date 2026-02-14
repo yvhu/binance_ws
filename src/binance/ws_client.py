@@ -151,14 +151,14 @@ class BinanceWSClient:
             if 'stream' in data and 'data' in data:
                 stream_name = data['stream']
                 event_data = data['data']
-                # logger.info(f"[WS] ✓ Received message from stream: {stream_name}")
+                logger.info(f"[WS] ✓ Received message from stream: {stream_name}")
             else:
                 event_data = data
-                # logger.info(f"[WS] ✓ Received message without stream field")
+                logger.info(f"[WS] ✓ Received message without stream field")
             
             if 'e' in event_data:
                 event_type = event_data['e']
-                # logger.info(f"[WS] ✓ Event type: {event_type}")
+                logger.info(f"[WS] ✓ Event type: {event_type}")
                 
                 if event_type == '24hrTicker':
                     # logger.debug(f"[WS] Processing ticker event...")
@@ -201,7 +201,7 @@ class BinanceWSClient:
             data: Ticker data from Binance
         """
         symbol = data.get('s', 'UNKNOWN')
-        # logger.info(f"[WS] Processing ticker for {symbol}")
+        logger.info(f"[WS] Processing ticker for {symbol}")
         self.latest_data[f"{symbol}_ticker"] = data
         
         ticker_info = {
@@ -215,10 +215,10 @@ class BinanceWSClient:
             'timestamp': data.get('E', 0)
         }
         
-        # logger.info(f"[WS] Ticker info: {symbol} price={ticker_info['current_price']}")
+        logger.info(f"[WS] Ticker info: {symbol} price={ticker_info['current_price']}")
         
         callback_count = len(self.callbacks['ticker'])
-        # logger.info(f"[WS] Calling {callback_count} ticker callback(s)...")
+        logger.info(f"[WS] Calling {callback_count} ticker callback(s)...")
         
         for idx, callback in enumerate(self.callbacks['ticker']):
             try:
@@ -233,7 +233,7 @@ class BinanceWSClient:
                 import traceback
                 logger.error(traceback.format_exc())
         
-        # logger.info(f"[WS] All ticker callbacks completed")
+        logger.info(f"[WS] All ticker callbacks completed")
     
     def _process_kline(self, data: Dict) -> None:
         """
@@ -269,10 +269,10 @@ class BinanceWSClient:
             'number_of_trades': kline.get('n', 0)
         }
         
-        # logger.info(f"[WS] Kline info: {symbol} {interval} O={kline_info['open']} H={kline_info['high']} L={kline_info['low']} C={kline_info['close']}")
+        logger.info(f"[WS] Kline info: {symbol} {interval} O={kline_info['open']} H={kline_info['high']} L={kline_info['low']} C={kline_info['close']}")
         
-        # callback_count = len(self.callbacks['kline'])
-        # logger.info(f"[WS] Calling {callback_count} kline callback(s)...")
+        callback_count = len(self.callbacks['kline'])
+        logger.info(f"[WS] Calling {callback_count} kline callback(s)...")
         
         for idx, callback in enumerate(self.callbacks['kline']):
             try:
@@ -287,11 +287,11 @@ class BinanceWSClient:
                 import traceback
                 logger.error(traceback.format_exc())
         
-        # logger.info(f"[WS] All kline callbacks completed")
+        logger.info(f"[WS] All kline callbacks completed")
         
         # Add explicit logging for 5m kline close to help debug strategy callback
         if interval == '5m' and is_closed:
-            # logger.info(f"[WS] 5m kline closed for {symbol}, triggering strategy callbacks if any")
+            logger.info(f"[WS] 5m kline closed for {symbol}, triggering strategy callbacks if any")
             for callback in self.callbacks['kline']:
                 # Check if callback is coroutine function and named on_5m_kline_close or similar
                 if hasattr(callback, '__name__') and callback.__name__ == 'on_5m_kline_close':
@@ -303,10 +303,10 @@ class BinanceWSClient:
         
         # Add explicit logging for 15m kline close to help debug strategy callback
         if interval == '15m' and is_closed:
-            # logger.info(f"[WS] 15m kline closed for {symbol}, triggering strategy callbacks if any")
+            logger.info(f"[WS] 15m kline closed for {symbol}, triggering strategy callbacks if any")
             for callback in self.callbacks['kline']:
                 if hasattr(callback, '__name__') and callback.__name__ == 'on_15m_kline_close':
-                    # logger.info(f"[WS] Calling on_15m_kline_close callback for {symbol}")
+                    logger.info(f"[WS] Calling on_15m_kline_close callback for {symbol}")
                     if asyncio.iscoroutinefunction(callback):
                         asyncio.create_task(callback(kline_info))
                     else:
@@ -347,7 +347,7 @@ class BinanceWSClient:
                 import traceback
                 logger.error(traceback.format_exc())
         
-        # logger.info(f"[WS] All trade callbacks completed")
+        logger.info(f"[WS] All trade callbacks completed")
     
     def _process_mark_price(self, data: Dict) -> None:
         """
@@ -443,8 +443,8 @@ class BinanceWSClient:
         try:
             async for message in self.websocket:
                 message_count += 1
-                # if message_count % 100 == 0:
-                    # logger.info(f"[WS] Received {message_count} messages so far...")
+                if message_count % 100 == 0:
+                   logger.info(f"[WS] Received {message_count} messages so far...")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
             logger.error(f"[WS] ✗ Binance Futures WebSocket connection closed: {e}")

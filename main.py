@@ -202,7 +202,7 @@ class BinanceTelegramBot:
             if interval == '15m':
                 key = f"{symbol}_{interval}"
                 klines_count = len(self.data_handler.kline_data.get(key, []))
-                # self.logger.info(f"[KLINE] 15m kline stored for {symbol}, total count: {klines_count}, closed={is_closed}")
+                self.logger.info(f"[KLINE] 15m kline stored for {symbol}, total count: {klines_count}, closed={is_closed}")
             
             # Track last seen 15m kline open time to detect new klines
             if not hasattr(self, '_last_15m_open_time'):
@@ -214,7 +214,7 @@ class BinanceTelegramBot:
                 if open_time != last_open_time and not is_closed:
                     # New 15m kline started
                     self._last_15m_open_time[symbol] = open_time
-                    # self.logger.info(f"[KLINE] Calling on_15m_kline_start for {symbol}")
+                    self.logger.info(f"[KLINE] Calling on_15m_kline_start for {symbol}")
                     self.strategy.on_15m_kline_start(kline_info)
             
             # Only process closed klines for trading logic
@@ -226,11 +226,11 @@ class BinanceTelegramBot:
             # Route to strategy based on interval
             if interval == '15m':
                 # Handle 15m K-line close event
-                # self.logger.info(f"[KLINE] Calling on_15m_kline_close for {symbol}")
+                self.logger.info(f"[KLINE] Calling on_15m_kline_close for {symbol}")
                 await self.strategy.on_15m_kline_close(kline_info)
             elif interval == '5m':
                 # Handle 5m K-line close event (trigger for opening position)
-                # self.logger.info(f"[KLINE] Calling on_5m_kline_close for {symbol}")
+                self.logger.info(f"[KLINE] Calling on_5m_kline_close for {symbol}")
                 await self.strategy.on_5m_kline_close(kline_info)
             
         except Exception as e:
@@ -509,7 +509,7 @@ class BinanceTelegramBot:
             while self.is_running:
                 loop_count += 1
                 if loop_count % 60 == 0:  # 每分钟记录一次
-                    # self.logger.info(f"Main loop running... (iteration {loop_count})")
+                    self.logger.info(f"Main loop running... (iteration {loop_count})")
                     # 检查 WebSocket 任务状态
                     if self.user_data_task:
                         if self.user_data_task.done():
@@ -520,7 +520,7 @@ class BinanceTelegramBot:
                             except Exception as e:
                                 self.logger.error(f"User data task exception: {e}")
                         # else:
-                            # self.logger.info("User data task is still running")
+                            self.logger.info("User data task is still running")
                     else:
                         self.logger.warning("User data task is None!")
                     
@@ -538,12 +538,12 @@ class BinanceTelegramBot:
                         self.logger.warning("Market data task is None!")
                     
                     # 检查 WebSocket 连接状态
-                    # if self.binance_client:
-                    #     self.logger.info(f"Binance WS connected: {self.binance_client.is_connected}")
-                    # if self.user_data_client:
-                    #     self.logger.info(f"User data WS connected: {self.user_data_client.is_connected}")
-            #     await asyncio.sleep(1)
-            # self.logger.info("Main event loop exited")
+                    if self.binance_client:
+                        self.logger.info(f"Binance WS connected: {self.binance_client.is_connected}")
+                    if self.user_data_client:
+                        self.logger.info(f"User data WS connected: {self.user_data_client.is_connected}")
+                await asyncio.sleep(1)
+            self.logger.info("Main event loop exited")
 
         except asyncio.CancelledError:
             self.logger.info("Bot cancelled")
