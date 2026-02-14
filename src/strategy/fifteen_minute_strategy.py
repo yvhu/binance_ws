@@ -167,6 +167,54 @@ class FifteenMinuteStrategy:
         
         return is_first
     
+    def _get_first_closed_kline_in_cycle(self, symbol: str, interval: str) -> Optional[Dict]:
+        """
+        Get the first closed K-line in the current 15m cycle for a given interval
+        
+        Args:
+            symbol: Trading pair symbol
+            interval: K-line interval (3m, 5m, etc.)
+            
+        Returns:
+            First closed K-line in the current 15m cycle, or None
+        """
+        if self.position_manager.current_15m_start_time is None:
+            logger.warning(f"No current 15m cycle start time set")
+            return None
+        
+        cycle_start_time = self.position_manager.current_15m_start_time
+        cycle_end_time = cycle_start_time + 15 * 60 * 1000  # 15 minutes in ms
+        
+        # Get all K-lines for this interval
+        all_klines = self.data_handler.get_klines(symbol, interval)
+        if not all_klines:
+            logger.warning(f"No {interval} K-line data for {symbol}")
+            return None
+        
+        # Filter K-lines that are:
+        # 1. Within the current 15m cycle (open_time >= cycle_start_time and open_time < cycle_end_time)
+        # 2. Closed (is_closed == True)
+        cycle_klines = [
+            k for k in all_klines
+            if k['is_closed'] and cycle_start_time <= k['open_time'] < cycle_end_time
+        ]
+        
+        if not cycle_klines:
+            logger.warning(f"No closed {interval} K-lines in current 15m cycle for {symbol}")
+            return None
+        
+        # Sort by open_time to get the first one
+        cycle_klines.sort(key=lambda k: k['open_time'])
+        first_kline = cycle_klines[0]
+        
+        logger.info(
+            f"Found first closed {interval} K-line in current 15m cycle for {symbol}: "
+            f"open_time={datetime.fromtimestamp(first_kline['open_time']/1000)}, "
+            f"close_time={datetime.fromtimestamp(first_kline['close_time']/1000)}"
+        )
+        
+        return first_kline
+    
     async def _check_and_open_position(self, symbol: str) -> None:
         """
         Check entry conditions and open position if met
@@ -185,23 +233,23 @@ class FifteenMinuteStrategy:
             sar_direction, sar_value = sar_result
             
             # Get 3m K-line direction for the first closed 3m K-line in current 15m cycle
-            kline_3m = self.data_handler.get_klines(symbol, "3m", count=1)
-            if not kline_3m:
-                logger.warning(f"No 3m K-line data for {symbol}")
+            kline_3m = self._get_first_closed_kline_in_cycle(symbol, "3m")
+            if kline_3m is None:
+                logger.warning(f"No closed 3m K-line in current 15m cycle for {symbol}")
                 return
             
-            direction_3m = self.technical_analyzer.get_kline_direction(kline_3m[0])
+            direction_3m = self.technical_analyzer.get_kline_direction(kline_3m)
             if direction_3m is None:
                 logger.warning(f"Could not determine 3m K-line direction for {symbol}")
                 return
             
             # Get 5m K-line direction for the first closed 5m K-line in current 15m cycle
-            kline_5m = self.data_handler.get_klines(symbol, "5m", count=1)
-            if not kline_5m:
-                logger.warning(f"No 5m K-line data for {symbol}")
+            kline_5m = self._get_first_closed_kline_in_cycle(symbol, "5m")
+            if kline_5m is None:
+                logger.warning(f"No closed 5m K-line in current 15m cycle for {symbol}")
                 return
             
-            direction_5m = self.technical_analyzer.get_kline_direction(kline_5m[0])
+            direction_5m = self.technical_analyzer.get_kline_direction(kline_5m)
             if direction_5m is None:
                 logger.warning(f"Could not determine 5m K-line direction for {symbol}")
                 return

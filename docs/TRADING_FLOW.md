@@ -154,6 +154,93 @@
     - 收盘 < 开盘 → DOWN
 ```
 
+#### 3.4.1 K线数据获取逻辑（重要）
+
+**核心原则：**
+策略必须获取**当前15m周期内第一个已关闭的3m和5m K线**进行方向判断，而不是最新的K线。
+
+**实现方法：**
+
+使用 [`_get_first_closed_kline_in_cycle()`](src/strategy/fifteen_minute_strategy.py:171) 方法：
+
+```python
+def _get_first_closed_kline_in_cycle(symbol: str, interval: str) -> Optional[Dict]:
+    """
+    获取当前15m周期内第一个已关闭的K线
+    
+    过滤条件：
+    1. K线必须在当前15m周期内（open_time >= cycle_start_time）
+    2. K线必须是已关闭的（is_closed == True）
+    3. 返回时间最早的K线（第一个）
+    """
+```
+
+**过滤逻辑：**
+
+```
+步骤1：获取当前15m周期时间范围
+├── cycle_start_time = 15m K线开始时间
+└── cycle_end_time = cycle_start_time + 15分钟
+
+步骤2：获取所有K线数据
+└── all_klines = data_handler.get_klines(symbol, interval)
+
+步骤3：过滤符合条件的K线
+├── 条件1：is_closed == True（已关闭）
+├── 条件2：cycle_start_time <= open_time < cycle_end_time（在周期内）
+└── cycle_klines = [k for k in all_klines if 满足条件]
+
+步骤4：排序并返回第一个
+├── cycle_klines.sort(key=lambda k: k['open_time'])
+└── return cycle_klines[0]  # 第一个（时间最早）
+```
+
+**为什么需要这个逻辑？**
+
+❌ **错误做法（修复前）：**
+```python
+# 获取最新的1个K线
+kline_3m = data_handler.get_klines(symbol, "3m", count=1)
+```
+问题：
+- 可能获取到未关闭的K线（正在进行的K线）
+- 可能获取到不在当前15m周期内的K线
+- 无法保证是第一个K线
+
+✅ **正确做法（修复后）：**
+```python
+# 获取当前15m周期内第一个已关闭的K线
+kline_3m = _get_first_closed_kline_in_cycle(symbol, "3m")
+```
+优势：
+- 确保获取已关闭的K线（数据完整）
+- 确保在当前15m周期内（时间正确）
+- 确保是第一个K线（符合策略逻辑）
+
+**时间线示例：**
+
+```
+15m周期：13:30 - 13:45
+
+3m K线时间线：
+├── 13:30 - 13:33  (第一个3m K线) ✓ 已关闭，在周期内
+├── 13:33 - 13:36  (第二个3m K线) ✓ 已关闭，在周期内
+├── 13:36 - 13:39  (第三个3m K线) ✓ 已关闭，在周期内
+├── 13:39 - 13:42  (第四个3m K线) ✓ 已关闭，在周期内
+└── 13:42 - 13:45  (第五个3m K线) ✗ 未关闭（正在进行）
+
+在13:35时（第一个5m K线关闭）：
+- 应该获取：13:30 - 13:33 的3m K线（第一个已关闭）
+- 不应该获取：13:42 - 13:45 的3m K线（未关闭）
+```
+
+**日志输出：**
+
+```
+Found first closed 3m K-line in current 15m cycle for BTCUSDC:
+open_time=2024-01-01 13:30:00, close_time=2024-01-01 13:33:00
+```
+
 #### 3.5 开仓条件判断
 
 ```
@@ -432,3 +519,65 @@ sar_maximum = 0.2  # SAR最大值
 ✅ 完整日志，便于追踪
 
 请谨慎使用，充分理解风险后再进行实盘交易。
+
+## 代码更新记录
+
+### 2026-02-14：修复K线获取逻辑
+
+**问题描述：**
+原代码在获取3m和5m K线进行方向判断时，使用的是最新的K线，而不是当前15m周期内第一个已关闭的K线。
+
+**影响范围：**
+- [`src/strategy/fifteen_minute_strategy.py`](src/strategy/fifteen_minute_strategy.py)
+- [`_check_and_open_position()`](src/strategy/fifteen_minute_strategy.py:227) 方法
+
+**修复内容：**
+
+1. **新增方法** [`_get_first_closed_kline_in_cycle()`](src/strategy/fifteen_minute_strategy.py:171)
+   - 获取当前15m周期内所有已关闭的K线
+   - 过滤条件：
+     - `is_closed == True`（已关闭）
+     - `cycle_start_time <= open_time < cycle_end_time`（在周期内）
+   - 按时间排序，返回第一个（时间最早）的K线
+   - 添加详细日志记录
+
+2. **修改方法** [`_check_and_open_position()`](src/strategy/fifteen_minute_strategy.py:227)
+   - 使用新的 `_get_first_closed_kline_in_cycle()` 方法
+   - 替换原来的 `get_klines(symbol, interval, count=1)`
+
+**修复前代码：**
+```python
+# 获取最新的1个K线（可能未关闭或不在周期内）
+kline_3m = self.data_handler.get_klines(symbol, "3m", count=1)
+if not kline_3m:
+    logger.warning(f"No 3m K-line data for {symbol}")
+    return
+
+direction_3m = self.technical_analyzer.get_kline_direction(kline_3m[0])
+```
+
+**修复后代码：**
+```python
+# 获取当前15m周期内第一个已关闭的K线
+kline_3m = self._get_first_closed_kline_in_cycle(symbol, "3m")
+if kline_3m is None:
+    logger.warning(f"No closed 3m K-line in current 15m cycle for {symbol}")
+    return
+
+direction_3m = self.technical_analyzer.get_kline_direction(kline_3m)
+```
+
+**修复原因：**
+
+1. **数据完整性**：已关闭的K线数据完整，未关闭的K线可能还在变化
+2. **时间准确性**：确保使用的是当前15m周期内的K线
+3. **策略一致性**：符合策略设计，使用第一个K线进行确认
+
+**测试建议：**
+
+1. 检查日志输出，确认获取的K线时间正确
+2. 验证在15m周期开始后5分钟时，获取的是第一个已关闭的3m和5m K线
+3. 确认不会获取到未关闭的K线或不在周期内的K线
+
+**相关文档：**
+- 详见 [3.4.1 K线数据获取逻辑](#341-k线数据获取逻辑重要) 章节
