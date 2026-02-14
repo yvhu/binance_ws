@@ -260,8 +260,18 @@ class TradingExecutor:
             max_qty = float(lot_size_filter['maxQty'])
             step_size = float(lot_size_filter['stepSize'])
             
-            # Round down to step size
-            rounded_qty = int(quantity / step_size) * step_size
+            # Calculate precision (number of decimal places)
+            precision = 0
+            if step_size < 1:
+                precision = len(str(step_size).rstrip('0').split('.')[1])
+            
+            # Round down to step size using proper precision
+            # Use floor division to avoid floating point precision issues
+            steps = int(quantity / step_size)
+            rounded_qty = steps * step_size
+            
+            # Format to exact precision to avoid floating point representation issues
+            rounded_qty = float(f"{rounded_qty:.{precision}f}")
             
             # Ensure quantity is within limits
             if rounded_qty < min_qty:
@@ -276,15 +286,17 @@ class TradingExecutor:
                 )
                 return None
             
-            logger.debug(
+            logger.info(
                 f"Quantity rounded: {quantity:.6f} -> {rounded_qty:.6f} "
-                f"(step: {step_size:.6f}, min: {min_qty:.6f}, max: {max_qty:.6f})"
+                f"(step: {step_size:.6f}, min: {min_qty:.6f}, max: {max_qty:.6f}, precision: {precision})"
             )
             
             return rounded_qty
             
         except Exception as e:
             logger.error(f"Error rounding quantity for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
     
     def calculate_position_size(self, current_price: float, symbol: str) -> Optional[float]:
