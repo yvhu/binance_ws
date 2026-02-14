@@ -52,6 +52,9 @@ confirm_interval_2 = "5m"  # Second confirmation interval
 sar_acceleration = 0.02
 sar_maximum = 0.2
 
+# Volume check parameters
+volume_ratio_threshold = 0.55  # Minimum volume ratio (current volume / average volume of last 10 klines)
+
 # Trading Configuration
 [trading]
 # Fee rate (0.0002 = 0.02%, 0.0004 = 0.04%)

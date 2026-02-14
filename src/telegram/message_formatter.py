@@ -204,7 +204,8 @@ class MessageFormatter:
         return message
     
     @staticmethod
-    def format_trade_notification(symbol: str, side: str, price: float, quantity: float, leverage: int) -> str:
+    def format_trade_notification(symbol: str, side: str, price: float, quantity: float, leverage: int,
+                                   volume_info: Optional[Dict] = None) -> str:
         """
         Format trade notification message
         
@@ -214,6 +215,7 @@ class MessageFormatter:
             price: Entry price
             quantity: Position quantity
             leverage: Leverage multiplier
+            volume_info: Volume information dictionary (optional)
             
         Returns:
             Formatted message string
@@ -230,8 +232,25 @@ class MessageFormatter:
             f"📦 数量: {quantity:.4f}\n"
             f"💵 仓位价值: ${position_value:,.2f}\n"
             f"⚡ 杠杆: {leverage}倍\n"
-            f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
+        
+        # Add volume information if available
+        if volume_info:
+            current_volume = volume_info.get('current_volume', 0)
+            avg_volume_5 = volume_info.get('avg_volume_5', 0)
+            avg_volume_10 = volume_info.get('avg_volume_10', 0)
+            ratio_5 = volume_info.get('ratio_5', 0)
+            ratio_10 = volume_info.get('ratio_10', 0)
+            
+            message += (
+                f"\n"
+                f"📦 <b>5m K线成交量:</b>\n"
+                f"  • 第一个5m成交量: {current_volume:,.2f}\n"
+                f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
+                f"  • 近10根平均: {avg_volume_10:,.2f} (比例: {ratio_10:.2f}x)\n"
+            )
+        
+        message += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
     
@@ -291,7 +310,8 @@ class MessageFormatter:
     @staticmethod
     def format_indicator_analysis(symbol: str, sar_direction: str, direction_3m: str, direction_5m: str,
                                    sar_value: Optional[float] = None, current_price: Optional[float] = None,
-                                   decision: Optional[str] = None) -> str:
+                                   decision: Optional[str] = None,
+                                   volume_info: Optional[Dict] = None) -> str:
         """
         Format indicator analysis message
         
@@ -303,6 +323,7 @@ class MessageFormatter:
             sar_value: SAR value (optional)
             current_price: Current price (optional)
             decision: Trading decision (optional)
+            volume_info: Volume information dictionary (optional)
             
         Returns:
             Formatted message string
@@ -340,6 +361,28 @@ class MessageFormatter:
             f"📊 <b>5m K线方向:</b>\n"
             f"  • {direction_emoji.get(direction_5m, direction_5m)}\n"
         )
+        
+        # Add volume information if available
+        if volume_info:
+            current_volume = volume_info.get('current_volume', 0)
+            avg_volume_5 = volume_info.get('avg_volume_5', 0)
+            avg_volume_10 = volume_info.get('avg_volume_10', 0)
+            ratio_5 = volume_info.get('ratio_5', 0)
+            ratio_10 = volume_info.get('ratio_10', 0)
+            threshold = volume_info.get('threshold', 0)
+            
+            volume_valid = ratio_10 >= threshold
+            volume_status = "✅ 通过" if volume_valid else "❌ 未通过"
+            
+            message += (
+                f"\n"
+                f"📦 <b>5m K线成交量:</b>\n"
+                f"  • 第一个5m成交量: {current_volume:,.2f}\n"
+                f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
+                f"  • 近10根平均: {avg_volume_10:,.2f} (比例: {ratio_10:.2f}x)\n"
+                f"  • 阈值要求: ≥{threshold:.2f}x\n"
+                f"  • 成交量检查: {volume_status}\n"
+            )
         
         # Check if all directions match
         all_match = sar_direction == direction_3m == direction_5m

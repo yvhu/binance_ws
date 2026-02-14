@@ -274,7 +274,8 @@ class TelegramClient:
         message = self.formatter.format_system_status(status, details)
         await update.message.reply_text(message, parse_mode='HTML')
     
-    async def send_trade_notification(self, symbol: str, side: str, price: float, quantity: float, leverage: int) -> bool:
+    async def send_trade_notification(self, symbol: str, side: str, price: float, quantity: float, leverage: int,
+                                       volume_info: Optional[Dict] = None) -> bool:
         """
         Send trade notification to Telegram
         
@@ -284,11 +285,12 @@ class TelegramClient:
             price: Entry price
             quantity: Position quantity
             leverage: Leverage multiplier
+            volume_info: Volume information dictionary (optional)
             
         Returns:
             True if message sent successfully
         """
-        message = self.formatter.format_trade_notification(symbol, side, price, quantity, leverage)
+        message = self.formatter.format_trade_notification(symbol, side, price, quantity, leverage, volume_info)
         return await self.send_message(message, parse_mode='HTML')
     
     async def send_close_notification(self, symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float) -> bool:
@@ -326,7 +328,8 @@ class TelegramClient:
     async def send_indicator_analysis(self, symbol: str, sar_direction: str, direction_3m: str,
                                        direction_5m: str, sar_value: Optional[float] = None,
                                        current_price: Optional[float] = None,
-                                       decision: Optional[str] = None) -> bool:
+                                       decision: Optional[str] = None,
+                                       volume_info: Optional[Dict] = None) -> bool:
         """
         Send indicator analysis notification to Telegram
         
@@ -338,13 +341,14 @@ class TelegramClient:
             sar_value: SAR value (optional)
             current_price: Current price (optional)
             decision: Trading decision (optional)
+            volume_info: Volume information dictionary (optional)
             
         Returns:
             True if message sent successfully
         """
         message = self.formatter.format_indicator_analysis(
             symbol, sar_direction, direction_3m, direction_5m,
-            sar_value, current_price, decision
+            sar_value, current_price, decision, volume_info
         )
         return await self.send_message(message, parse_mode='HTML')
     

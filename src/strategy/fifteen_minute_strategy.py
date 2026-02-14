@@ -53,6 +53,7 @@ class FifteenMinuteStrategy:
         self.check_interval = config.get_config("strategy", "check_interval", default="5m")
         self.confirm_interval_1 = config.get_config("strategy", "confirm_interval_1", default="3m")
         self.confirm_interval_2 = config.get_config("strategy", "confirm_interval_2", default="5m")
+        self.volume_ratio_threshold = config.get_config("strategy", "volume_ratio_threshold", default=0.55)
         
         logger.info("15-minute strategy initialized")
     
@@ -215,6 +216,86 @@ class FifteenMinuteStrategy:
         
         return first_kline
     
+    def _check_volume_condition(self, symbol: str, current_kline: Dict) -> Tuple[bool, Dict]:
+        """
+        Check if the current 5m K-line volume meets the minimum requirement
+        
+        Args:
+            symbol: Trading pair symbol
+            current_kline: The current 5m K-line to check
+            
+        Returns:
+            Tuple of (is_valid, volume_info) where volume_info contains:
+            - current_volume: Current K-line volume
+            - avg_volume_5: Average volume of last 5 K-lines
+            - avg_volume_10: Average volume of last 10 K-lines
+            - ratio_5: Current volume / avg_volume_5
+            - ratio_10: Current volume / avg_volume_10
+        """
+        try:
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return False, {}
+            
+            # Find the index of current K-line
+            current_open_time = current_kline['open_time']
+            current_index = -1
+            for i, k in enumerate(all_klines):
+                if k['open_time'] == current_open_time:
+                    current_index = i
+                    break
+            
+            if current_index == -1:
+                logger.warning(f"Current K-line not found in data for {symbol}")
+                return False, {}
+            
+            # Get previous K-lines (excluding current)
+            previous_klines = all_klines[:current_index]
+            
+            if len(previous_klines) < 10:
+                logger.warning(f"Not enough previous K-lines for volume check: {len(previous_klines)} (need at least 10)")
+                return False, {}
+            
+            # Calculate average volumes
+            current_volume = current_kline['volume']
+            avg_volume_5 = sum(k['volume'] for k in previous_klines[-5:]) / 5
+            avg_volume_10 = sum(k['volume'] for k in previous_klines[-10:]) / 10
+            
+            # Calculate ratios
+            ratio_5 = current_volume / avg_volume_5 if avg_volume_5 > 0 else 0
+            ratio_10 = current_volume / avg_volume_10 if avg_volume_10 > 0 else 0
+            
+            # Check if volume meets threshold (use 10-period average as reference)
+            is_valid = ratio_10 >= self.volume_ratio_threshold
+            
+            volume_info = {
+                'current_volume': current_volume,
+                'avg_volume_5': avg_volume_5,
+                'avg_volume_10': avg_volume_10,
+                'ratio_5': ratio_5,
+                'ratio_10': ratio_10,
+                'threshold': self.volume_ratio_threshold
+            }
+            
+            logger.info(
+                f"Volume check for {symbol}: "
+                f"current={current_volume:.2f}, "
+                f"avg_5={avg_volume_5:.2f} (ratio={ratio_5:.2f}), "
+                f"avg_10={avg_volume_10:.2f} (ratio={ratio_10:.2f}), "
+                f"threshold={self.volume_ratio_threshold}, "
+                f"valid={is_valid}"
+            )
+            
+            return is_valid, volume_info
+            
+        except Exception as e:
+            logger.error(f"Error checking volume condition for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, {}
+    
     async def _check_and_open_position(self, symbol: str) -> None:
         """
         Check entry conditions and open position if met
@@ -254,6 +335,24 @@ class FifteenMinuteStrategy:
                 logger.warning(f"Could not determine 5m K-line direction for {symbol}")
                 return
             
+            # Check volume condition
+            volume_valid, volume_info = self._check_volume_condition(symbol, kline_5m)
+            if not volume_valid:
+                logger.warning(f"Volume condition not met for {symbol}")
+                # Send notification with volume info
+                current_price = self.data_handler.get_current_price(symbol)
+                await self.telegram_client.send_indicator_analysis(
+                    symbol=symbol,
+                    sar_direction=sar_direction,
+                    direction_3m=direction_3m,
+                    direction_5m=direction_5m,
+                    sar_value=sar_value,
+                    current_price=current_price,
+                    decision='NO_TRADE',
+                    volume_info=volume_info
+                )
+                return
+            
             # Log all directions for debugging
             logger.info(f"Directions for {symbol}: SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}")
             
@@ -273,14 +372,15 @@ class FifteenMinuteStrategy:
                     direction_5m=direction_5m,
                     sar_value=sar_value,
                     current_price=current_price,
-                    decision=decision
+                    decision=decision,
+                    volume_info=volume_info
                 )
                 
-                # Open position
+                # Open position with volume info
                 if sar_direction == 'UP':
-                    await self._open_long_position(symbol)
+                    await self._open_long_position(symbol, volume_info)
                 else:  # DOWN
-                    await self._open_short_position(symbol)
+                    await self._open_short_position(symbol, volume_info)
             else:
                 logger.info(
                     f"Directions do not match for {symbol}: "
@@ -295,7 +395,8 @@ class FifteenMinuteStrategy:
                     direction_5m=direction_5m,
                     sar_value=sar_value,
                     current_price=current_price,
-                    decision='NO_TRADE'
+                    decision='NO_TRADE',
+                    volume_info=volume_info
                 )
             
             # Add explicit log to confirm completion of check
@@ -373,12 +474,13 @@ class FifteenMinuteStrategy:
             logger.error(traceback.format_exc())
             return None
     
-    async def _open_long_position(self, symbol: str) -> None:
+    async def _open_long_position(self, symbol: str, volume_info: Optional[Dict] = None) -> None:
         """
         Open a long position
         
         Args:
             symbol: Trading pair symbol
+            volume_info: Volume information dictionary (optional)
         """
         try:
             # Get current price
@@ -407,13 +509,14 @@ class FifteenMinuteStrategy:
                 
                 logger.info(f"Long position opened successfully for {symbol}")
                 
-                # Send trade notification
+                # Send trade notification with volume info
                 await self.telegram_client.send_trade_notification(
                     symbol=symbol,
                     side='LONG',
                     price=current_price,
                     quantity=quantity,
-                    leverage=self.config.leverage
+                    leverage=self.config.leverage,
+                    volume_info=volume_info
                 )
             else:
                 logger.error(f"Failed to open long position for {symbol}")
@@ -427,12 +530,13 @@ class FifteenMinuteStrategy:
         except Exception as e:
             logger.error(f"Error opening long position for {symbol}: {e}")
     
-    async def _open_short_position(self, symbol: str) -> None:
+    async def _open_short_position(self, symbol: str, volume_info: Optional[Dict] = None) -> None:
         """
         Open a short position
         
         Args:
             symbol: Trading pair symbol
+            volume_info: Volume information dictionary (optional)
         """
         try:
             # Get current price
@@ -461,13 +565,14 @@ class FifteenMinuteStrategy:
                 
                 logger.info(f"Short position opened successfully for {symbol}")
                 
-                # Send trade notification
+                # Send trade notification with volume info
                 await self.telegram_client.send_trade_notification(
                     symbol=symbol,
                     side='SHORT',
                     price=current_price,
                     quantity=quantity,
-                    leverage=self.config.leverage
+                    leverage=self.config.leverage,
+                    volume_info=volume_info
                 )
             else:
                 logger.error(f"Failed to open short position for {symbol}")
