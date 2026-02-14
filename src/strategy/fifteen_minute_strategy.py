@@ -81,9 +81,9 @@ class FifteenMinuteStrategy:
             kline_info: K-line information
         """
         symbol = kline_info['symbol']
-        # interval = kline_info['interval']
+        interval = kline_info['interval']
         
-        # logger.info(f"[STRATEGY] on_5m_kline_close called for {symbol} {interval}")
+        logger.info(f"[STRATEGY] on_5m_kline_close called for {symbol} {interval}")
         
         # Only process if it's the first 5m K-line in the 15m cycle
         if not self._is_first_5m_in_15m_cycle(kline_info):
@@ -95,18 +95,18 @@ class FifteenMinuteStrategy:
             logger.info(f"Position already opened in current cycle for {symbol}")
             return
         
-        # logger.info(f"First 5m K-line closed for {symbol}, checking entry conditions...")
+        logger.info(f"First 5m K-line closed for {symbol}, checking entry conditions...")
         
         # Execute strategy logic
         await self._check_and_open_position(symbol)
         
         # Also trigger SAR calculation and direction check for 15m interval here
-        # logger.info(f"Triggering SAR calculation and direction check for 15m interval at 5m close for {symbol}")
-        # sar_direction = self._get_sar_direction(symbol)
-        # if sar_direction is not None:
-        #     logger.info(f"SAR direction at 5m close: {sar_direction}")
-        # else:
-        #     logger.warning(f"Could not determine SAR direction at 5m close for {symbol}")
+        logger.info(f"Triggering SAR calculation and direction check for 15m interval at 5m close for {symbol}")
+        sar_direction = self._get_sar_direction(symbol)
+        if sar_direction is not None:
+            logger.info(f"SAR direction at 5m close: {sar_direction}")
+        else:
+            logger.warning(f"Could not determine SAR direction at 5m close for {symbol}")
     
     async def on_15m_kline_close(self, kline_info: Dict) -> None:
         """
@@ -121,7 +121,8 @@ class FifteenMinuteStrategy:
         logger.info(f"15m K-line closed for {symbol}, closing all positions...")
         
         # Close all positions immediately asynchronously
-        success = await self.trading_executor.close_all_positions(symbol)
+        import asyncio
+        success = await asyncio.to_thread(self.trading_executor.close_all_positions, symbol)
         
         if success:
             # Reset cycle state
@@ -164,7 +165,7 @@ class FifteenMinuteStrategy:
         Args:
             symbol: Trading pair symbol
         """
-        # logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
+        logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
             # Get SAR direction from current running 15m K-line (not closed)
             sar_direction = self._get_sar_direction(symbol)
@@ -213,7 +214,7 @@ class FifteenMinuteStrategy:
                 )
             
             # Add explicit log to confirm completion of check
-            # logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")
+            logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")
                 
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")
@@ -233,14 +234,10 @@ class FifteenMinuteStrategy:
             df = self.data_handler.get_klines_dataframe(symbol, "15m")
             
             # Add debug log to print dataframe info for troubleshooting
-            logger.info(f"[SAR] 15m K-line dataframe for {symbol}: shape={df.shape}, empty={df.empty}")
-            if not df.empty:
-                logger.info(f"[SAR] DataFrame columns: {df.columns.tolist()}")
-                logger.info(f"[SAR] DataFrame index: {df.index.tolist()}")
-                logger.info(f"[SAR] DataFrame head:\n{df.head()}")
+            logger.debug(f"15m K-line dataframe for {symbol}:\n{df.head()}\nColumns: {df.columns.tolist()}")
             
             if df.empty:
-                logger.warning(f"[SAR] No 15m K-line data available for SAR calculation")
+                logger.warning(f"No 15m K-line data available for SAR calculation")
                 return None
             
             # Allow SAR calculation on incomplete current 15m K-line (last row)
@@ -249,30 +246,23 @@ class FifteenMinuteStrategy:
             # Filter df to only include rows up to current 15m cycle start time + 15 minutes
             # to exclude future or partial data beyond current 15m cycle
             current_15m_start = self.position_manager.current_15m_start_time
-            logger.info(f"[SAR] Current 15m cycle start time: {current_15m_start}")
-            
             if current_15m_start is not None:
                 cycle_end_time = current_15m_start + 15 * 60 * 1000  # 15 minutes in ms
-                logger.info(f"[SAR] Cycle end time: {cycle_end_time}")
                 # Use df.index since open_time is set as index in get_klines_dataframe
                 df = df[df.index < pd.to_datetime(cycle_end_time, unit='ms')]
-                logger.info(f"[SAR] After filtering: shape={df.shape}, empty={df.empty}")
                 if df.empty:
-                    logger.warning(f"[SAR] No 15m K-line data within current 15m cycle for SAR calculation")
+                    logger.warning(f"No 15m K-line data within current 15m cycle for SAR calculation")
                     return None
             
             # Calculate SAR direction based on current price vs SAR
-            logger.info(f"[SAR] Calculating SAR direction for {symbol} with {len(df)} rows")
             sar_direction = self.technical_analyzer.get_sar_direction(df)
             
-            logger.info(f"[SAR] SAR direction for {symbol}: {sar_direction}")
+            logger.debug(f"SAR direction for {symbol}: {sar_direction}")
             
             return sar_direction
             
         except Exception as e:
-            logger.error(f"[SAR] Error getting SAR direction for {symbol}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"Error getting SAR direction for {symbol}: {e}")
             return None
     
     async def _open_long_position(self, symbol: str) -> None:
