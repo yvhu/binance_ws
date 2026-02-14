@@ -16,7 +16,7 @@ def setup_logger(
     format_string: Optional[str] = None
 ) -> logging.Logger:
     """
-    Setup logger with console and file handlers
+    Setup logger with console and file handlers with color support
     
     Args:
         name: Logger name
@@ -49,33 +49,30 @@ def setup_logger(
     
     # Console handler - add to root logger to capture all child logger messages
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(getattr(logging, level.upper(), logging.INFO))
     
-    # Add color formatter for console output
+    # Add color formatter for console output using colorlog
     try:
-        import colorama
-        colorama.init()
-        from colorama import Fore, Style
+        import colorlog
         
-        class ColorFormatter(logging.Formatter):
-            def format(self, record):
-                levelno = record.levelno
-                if levelno >= logging.ERROR:
-                    color = Fore.RED
-                elif levelno >= logging.WARNING:
-                    color = Fore.YELLOW
-                elif levelno >= logging.INFO:
-                    color = Fore.GREEN
-                else:
-                    color = Fore.BLUE
-                
-                record.msg = f"{color}{record.msg}{Style.RESET_ALL}"
-                return super().format(record)
-        
-        color_formatter = ColorFormatter(format_string)
+        # Define color scheme
+        color_formatter = colorlog.ColoredFormatter(
+            '%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            reset=True,
+            log_colors={
+                'DEBUG': 'cyan',
+                'INFO': 'green',
+                'WARNING': 'yellow',
+                'ERROR': 'red',
+                'CRITICAL': 'red,bg_white',
+            },
+            secondary_log_colors={},
+            style='%'
+        )
         console_handler.setFormatter(color_formatter)
     except ImportError:
-        # Fallback to default formatter if colorama not installed
+        # Fallback to default formatter if colorlog not installed
         console_handler.setFormatter(formatter)
     
     root_logger.addHandler(console_handler)
