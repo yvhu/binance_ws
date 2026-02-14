@@ -439,7 +439,7 @@ class TechnicalAnalyzer:
         
         return summary
     
-    def get_sar_direction(self, df: pd.DataFrame) -> Optional[str]:
+    def get_sar_direction(self, df: pd.DataFrame) -> Optional[Tuple[str, float]]:
         """
         Get SAR direction based on current price vs SAR value
         
@@ -447,7 +447,7 @@ class TechnicalAnalyzer:
             df: DataFrame with OHLCV data
             
         Returns:
-            'UP' if price > SAR, 'DOWN' if price < SAR, or None
+            Tuple of (direction, sar_value) where direction is 'UP' or 'DOWN', or None
         """
         try:
             if df.empty:
@@ -498,10 +498,10 @@ class TechnicalAnalyzer:
             # Determine direction
             if current_price > latest_sar:
                 logger.info(f"[SAR] Price ({current_price}) > SAR ({latest_sar}) -> UP")
-                return 'UP'
+                return ('UP', latest_sar)
             else:
                 logger.info(f"[SAR] Price ({current_price}) <= SAR ({latest_sar}) -> DOWN")
-                return 'DOWN'
+                return ('DOWN', latest_sar)
                 
         except Exception as e:
             logger.error(f"[SAR] Error calculating SAR direction: {e}")

@@ -323,6 +323,31 @@ class TelegramClient:
         message = self.formatter.format_no_trade_notification(symbol, reason)
         return await self.send_message(message, parse_mode='HTML')
     
+    async def send_indicator_analysis(self, symbol: str, sar_direction: str, direction_3m: str,
+                                       direction_5m: str, sar_value: Optional[float] = None,
+                                       current_price: Optional[float] = None,
+                                       decision: Optional[str] = None) -> bool:
+        """
+        Send indicator analysis notification to Telegram
+        
+        Args:
+            symbol: Trading pair symbol
+            sar_direction: SAR direction ('UP' or 'DOWN')
+            direction_3m: 3m K-line direction ('UP' or 'DOWN')
+            direction_5m: 5m K-line direction ('UP' or 'DOWN')
+            sar_value: SAR value (optional)
+            current_price: Current price (optional)
+            decision: Trading decision (optional)
+            
+        Returns:
+            True if message sent successfully
+        """
+        message = self.formatter.format_indicator_analysis(
+            symbol, sar_direction, direction_3m, direction_5m,
+            sar_value, current_price, decision
+        )
+        return await self.send_message(message, parse_mode='HTML')
+    
     async def _summary_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /summary command"""
         message = "📊 <b>Market Summary</b>\n\nSummary report will be sent when data is available."

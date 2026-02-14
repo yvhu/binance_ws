@@ -289,6 +289,71 @@ class MessageFormatter:
         return message
     
     @staticmethod
+    def format_indicator_analysis(symbol: str, sar_direction: str, direction_3m: str, direction_5m: str,
+                                   sar_value: Optional[float] = None, current_price: Optional[float] = None,
+                                   decision: Optional[str] = None) -> str:
+        """
+        Format indicator analysis message
+        
+        Args:
+            symbol: Trading pair symbol
+            sar_direction: SAR direction ('UP' or 'DOWN')
+            direction_3m: 3m K-line direction ('UP' or 'DOWN')
+            direction_5m: 5m K-line direction ('UP' or 'DOWN')
+            sar_value: SAR value (optional)
+            current_price: Current price (optional)
+            decision: Trading decision (optional)
+            
+        Returns:
+            Formatted message string
+        """
+        # Direction emojis
+        direction_emoji = {
+            'UP': '🟢 上涨',
+            'DOWN': '🔴 下跌'
+        }
+        
+        # Decision emoji
+        decision_emoji = {
+            'LONG': '🟢 做多',
+            'SHORT': '🔴 做空',
+            'NO_TRADE': '⏭️ 不交易'
+        }
+        
+        message = (
+            f"📊 <b>{symbol} 指标分析</b>\n\n"
+            f"📈 <b>15m SAR 指标:</b>\n"
+            f"  • 方向: {direction_emoji.get(sar_direction, sar_direction)}\n"
+        )
+        
+        if sar_value is not None:
+            message += f"  • SAR值: ${sar_value:,.2f}\n"
+        
+        if current_price is not None:
+            message += f"  • 当前价格: ${current_price:,.2f}\n"
+        
+        message += (
+            f"\n"
+            f"📊 <b>3m K线方向:</b>\n"
+            f"  • {direction_emoji.get(direction_3m, direction_3m)}\n"
+            f"\n"
+            f"📊 <b>5m K线方向:</b>\n"
+            f"  • {direction_emoji.get(direction_5m, direction_5m)}\n"
+        )
+        
+        # Check if all directions match
+        all_match = sar_direction == direction_3m == direction_5m
+        match_status = "✅ 一致" if all_match else "❌ 不一致"
+        message += f"\n<b>方向一致性:</b> {match_status}\n"
+        
+        if decision:
+            message += f"\n<b>交易决策:</b> {decision_emoji.get(decision, decision)}\n"
+        
+        message += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        return message
+    
+    @staticmethod
     def escape_markdown(text: str) -> str:
         """
         Escape special characters for MarkdownV2

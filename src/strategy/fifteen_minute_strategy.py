@@ -102,9 +102,10 @@ class FifteenMinuteStrategy:
         
         # Also trigger SAR calculation and direction check for 15m interval here
         logger.info(f"Triggering SAR calculation and direction check for 15m interval at 5m close for {symbol}")
-        sar_direction = self._get_sar_direction(symbol)
-        if sar_direction is not None:
-            logger.info(f"SAR direction at 5m close: {sar_direction}")
+        sar_result = self._get_sar_direction(symbol)
+        if sar_result is not None:
+            sar_direction, sar_value = sar_result
+            logger.info(f"SAR direction at 5m close: {sar_direction}, SAR value: {sar_value}")
         else:
             logger.warning(f"Could not determine SAR direction at 5m close for {symbol}")
     
@@ -176,10 +177,12 @@ class FifteenMinuteStrategy:
         logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
             # Get SAR direction from current running 15m K-line (not closed)
-            sar_direction = self._get_sar_direction(symbol)
-            if sar_direction is None:
+            sar_result = self._get_sar_direction(symbol)
+            if sar_result is None:
                 logger.warning(f"Could not determine SAR direction for {symbol}")
                 return
+            
+            sar_direction, sar_value = sar_result
             
             # Get 3m K-line direction for the first closed 3m K-line in current 15m cycle
             kline_3m = self.data_handler.get_klines(symbol, "3m", count=1)
@@ -206,9 +209,24 @@ class FifteenMinuteStrategy:
             # Log all directions for debugging
             logger.info(f"Directions for {symbol}: SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}")
             
+            # Get current price for notification
+            current_price = self.data_handler.get_current_price(symbol)
+            
             # Check if all directions match
             if sar_direction == direction_3m == direction_5m:
                 logger.info(f"All directions match for {symbol}: {sar_direction}")
+                
+                # Send indicator analysis notification with decision
+                decision = 'LONG' if sar_direction == 'UP' else 'SHORT'
+                await self.telegram_client.send_indicator_analysis(
+                    symbol=symbol,
+                    sar_direction=sar_direction,
+                    direction_3m=direction_3m,
+                    direction_5m=direction_5m,
+                    sar_value=sar_value,
+                    current_price=current_price,
+                    decision=decision
+                )
                 
                 # Open position
                 if sar_direction == 'UP':
@@ -220,6 +238,17 @@ class FifteenMinuteStrategy:
                     f"Directions do not match for {symbol}: "
                     f"SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}"
                 )
+                
+                # Send indicator analysis notification with no trade decision
+                await self.telegram_client.send_indicator_analysis(
+                    symbol=symbol,
+                    sar_direction=sar_direction,
+                    direction_3m=direction_3m,
+                    direction_5m=direction_5m,
+                    sar_value=sar_value,
+                    current_price=current_price,
+                    decision='NO_TRADE'
+                )
             
             # Add explicit log to confirm completion of check
             logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")
@@ -227,7 +256,7 @@ class FifteenMinuteStrategy:
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")
     
-    def _get_sar_direction(self, symbol: str) -> Optional[str]:
+    def _get_sar_direction(self, symbol: str) -> Optional[Tuple[str, float]]:
         """
         Get SAR direction based on current 15m K-line data
         
@@ -235,7 +264,7 @@ class FifteenMinuteStrategy:
             symbol: Trading pair symbol
             
         Returns:
-            'UP' or 'DOWN' or None
+            Tuple of (direction, sar_value) or None
         """
         try:
             # Get 15m K-line data including the current incomplete K-line
@@ -279,11 +308,15 @@ class FifteenMinuteStrategy:
             
             # Calculate SAR direction based on current price vs SAR
             logger.info(f"[SAR] Calculating SAR direction for {symbol} with {len(df)} rows")
-            sar_direction = self.technical_analyzer.get_sar_direction(df)
+            sar_result = self.technical_analyzer.get_sar_direction(df)
             
-            logger.info(f"[SAR] SAR direction for {symbol}: {sar_direction}")
-            
-            return sar_direction
+            if sar_result:
+                sar_direction, sar_value = sar_result
+                logger.info(f"[SAR] SAR direction for {symbol}: {sar_direction}, SAR value: {sar_value}")
+                return sar_result
+            else:
+                logger.warning(f"[SAR] Could not determine SAR direction for {symbol}")
+                return None
             
         except Exception as e:
             logger.error(f"[SAR] Error getting SAR direction for {symbol}: {e}")
