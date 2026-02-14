@@ -233,36 +233,54 @@ class FifteenMinuteStrategy:
             # Get 15m K-line data including the current incomplete K-line
             df = self.data_handler.get_klines_dataframe(symbol, "15m")
             
-            # Add debug log to print dataframe info for troubleshooting
-            logger.debug(f"15m K-line dataframe for {symbol}:\n{df.head()}\nColumns: {df.columns.tolist()}")
+            # Add detailed debug log to print dataframe info for troubleshooting
+            logger.info(f"[SAR] 15m K-line dataframe for {symbol}: shape={df.shape}, empty={df.empty}")
+            if not df.empty:
+                logger.info(f"[SAR] DataFrame columns: {df.columns.tolist()}")
+                logger.info(f"[SAR] DataFrame index: {df.index.tolist()}")
+                logger.info(f"[SAR] DataFrame head:\n{df.head()}")
             
             if df.empty:
-                logger.warning(f"No 15m K-line data available for SAR calculation")
+                logger.warning(f"[SAR] No 15m K-line data available for SAR calculation")
                 return None
             
-            # Allow SAR calculation on incomplete current 15m K-line (last row)
-            # So do not require len(df) >= 2, just check if df has at least 1 row
+            # Check if we have enough data for SAR calculation (need at least 2 rows)
+            if len(df) < 2:
+                logger.warning(f"[SAR] Not enough 15m K-line data for SAR calculation: {len(df)} rows (need at least 2)")
+                return None
             
             # Filter df to only include rows up to current 15m cycle start time + 15 minutes
             # to exclude future or partial data beyond current 15m cycle
             current_15m_start = self.position_manager.current_15m_start_time
+            logger.info(f"[SAR] Current 15m cycle start time: {current_15m_start}")
+            
             if current_15m_start is not None:
                 cycle_end_time = current_15m_start + 15 * 60 * 1000  # 15 minutes in ms
+                logger.info(f"[SAR] Cycle end time: {cycle_end_time}")
                 # Use df.index since open_time is set as index in get_klines_dataframe
                 df = df[df.index < pd.to_datetime(cycle_end_time, unit='ms')]
+                logger.info(f"[SAR] After filtering: shape={df.shape}, empty={df.empty}")
                 if df.empty:
-                    logger.warning(f"No 15m K-line data within current 15m cycle for SAR calculation")
+                    logger.warning(f"[SAR] No 15m K-line data within current 15m cycle for SAR calculation")
+                    return None
+                
+                # Check again if we have enough data after filtering
+                if len(df) < 2:
+                    logger.warning(f"[SAR] Not enough 15m K-line data after filtering: {len(df)} rows (need at least 2)")
                     return None
             
             # Calculate SAR direction based on current price vs SAR
+            logger.info(f"[SAR] Calculating SAR direction for {symbol} with {len(df)} rows")
             sar_direction = self.technical_analyzer.get_sar_direction(df)
             
-            logger.debug(f"SAR direction for {symbol}: {sar_direction}")
+            logger.info(f"[SAR] SAR direction for {symbol}: {sar_direction}")
             
             return sar_direction
             
         except Exception as e:
-            logger.error(f"Error getting SAR direction for {symbol}: {e}")
+            logger.error(f"[SAR] Error getting SAR direction for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
     
     async def _open_long_position(self, symbol: str) -> None:
