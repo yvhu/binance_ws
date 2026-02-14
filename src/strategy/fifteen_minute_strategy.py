@@ -258,7 +258,8 @@ class FifteenMinuteStrategy:
     
     def _get_sar_direction(self, symbol: str) -> Optional[Tuple[str, float]]:
         """
-        Get SAR direction based on current 15m K-line data
+        Get SAR direction based on current 15m K-line data (including unclosed kline)
+        This provides real-time dynamic SAR values
         
         Args:
             symbol: Trading pair symbol
@@ -306,8 +307,8 @@ class FifteenMinuteStrategy:
                     logger.warning(f"[SAR] Not enough 15m K-line data after filtering: {len(df)} rows (need at least 2)")
                     return None
             
-            # Calculate SAR direction based on current price vs SAR
-            logger.info(f"[SAR] Calculating SAR direction for {symbol} with {len(df)} rows")
+            # Calculate SAR direction based on current price vs SAR (including unclosed kline)
+            logger.info(f"[SAR] Calculating SAR direction for {symbol} with {len(df)} rows (including unclosed)")
             sar_result = self.technical_analyzer.get_sar_direction(df)
             
             if sar_result:

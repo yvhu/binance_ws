@@ -109,6 +109,14 @@ class BinanceTelegramBot:
             await self.telegram_client.start_bot()
             self.logger.info("Telegram bot initialized successfully")
             
+            self.logger.info("Setting trading executor for data handler...")
+            # Set trading executor for data handler to fetch historical data
+            self.data_handler.set_trading_executor(self.trading_executor)
+            
+            self.logger.info("Loading historical kline data...")
+            # Load historical klines for all configured symbols and intervals
+            await self._load_historical_data()
+            
             self.logger.info("Registering WebSocket callbacks...")
             # Register Binance Futures WebSocket callbacks
             self._register_callbacks()
@@ -155,6 +163,34 @@ class BinanceTelegramBot:
         
         # Error callback
         self.user_data_client.on_error(self._on_user_data_error)
+    
+    async def _load_historical_data(self) -> None:
+        """Load historical kline data for all configured symbols and intervals"""
+        try:
+            symbols = self.config.binance_symbols
+            intervals = ['15m', '5m', '3m']  # Load data for all intervals used in strategy
+            
+            for symbol in symbols:
+                for interval in intervals:
+                    # Load 100 historical klines (enough for SAR calculation)
+                    success = await asyncio.to_thread(
+                        self.data_handler.load_historical_klines,
+                        symbol,
+                        interval,
+                        limit=100
+                    )
+                    
+                    if success:
+                        self.logger.info(f"✓ Loaded historical data for {symbol} {interval}")
+                    else:
+                        self.logger.warning(f"✗ Failed to load historical data for {symbol} {interval}")
+            
+            self.logger.info("Historical data loading completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading historical data: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
     
     async def _on_ticker(self, ticker_info: dict) -> None:
         """

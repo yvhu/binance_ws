@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from collections import deque
 import pandas as pd
 import numpy as np
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,9 @@ class BinanceDataHandler:
         self.kline_data: Dict[str, deque] = {}
         self.trade_data: Dict[str, deque] = {}
         self.mark_price_data: Dict[str, Dict] = {}
+        
+        # Trading executor for fetching historical data
+        self.trading_executor = None
     
     def process_ticker(self, ticker_info: Dict) -> None:
         """
@@ -250,3 +254,75 @@ class BinanceDataHandler:
             self.mark_price_data.clear()
         
         logger.info(f"Cleared data for {symbol if symbol else 'all symbols'}")
+    
+    def set_trading_executor(self, trading_executor) -> None:
+        """
+        Set trading executor for fetching historical data
+        
+        Args:
+            trading_executor: Trading executor instance
+        """
+        self.trading_executor = trading_executor
+        logger.info("Trading executor set for data handler")
+    
+    def load_historical_klines(self, symbol: str, interval: str, limit: int = 100) -> bool:
+        """
+        Load historical klines from REST API
+        
+        Args:
+            symbol: Trading pair symbol
+            interval: Kline interval (1m, 5m, 15m, etc.)
+            limit: Number of klines to fetch (max 1000)
+            
+        Returns:
+            True if successful
+        """
+        if self.trading_executor is None:
+            logger.error("Trading executor not set, cannot fetch historical klines")
+            return False
+        
+        try:
+            logger.info(f"Fetching {limit} historical klines for {symbol} {interval}...")
+            
+            # Fetch historical klines from Binance API
+            klines = self.trading_executor.client.futures_klines(
+                symbol=symbol,
+                interval=interval,
+                limit=limit
+            )
+            
+            if not klines:
+                logger.warning(f"No historical klines returned for {symbol} {interval}")
+                return False
+            
+            # Convert to kline_info format
+            for kline in klines:
+                kline_info = {
+                    'symbol': symbol,
+                    'interval': interval,
+                    'open_time': kline[0],
+                    'close_time': kline[6],
+                    'open': float(kline[1]),
+                    'high': float(kline[2]),
+                    'low': float(kline[3]),
+                    'close': float(kline[4]),
+                    'volume': float(kline[5]),
+                    'is_closed': True,  # Historical klines are always closed
+                    'number_of_trades': kline[8]
+                }
+                
+                # Store in kline_data
+                key = f"{symbol}_{interval}"
+                if key not in self.kline_data:
+                    self.kline_data[key] = deque(maxlen=self.max_history)
+                
+                self.kline_data[key].append(kline_info)
+            
+            logger.info(f"✓ Loaded {len(klines)} historical klines for {symbol} {interval}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to load historical klines for {symbol} {interval}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
