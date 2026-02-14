@@ -572,7 +572,7 @@ class BinanceTelegramBot:
             
             # Stop Telegram bot
             if self.telegram_client:
-                await self.telegram_client.stop_bot()
+                await self.telegram_client.shutdown()
             
             self.logger.info("Bot shutdown complete")
             

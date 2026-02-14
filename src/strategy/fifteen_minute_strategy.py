@@ -118,11 +118,19 @@ class FifteenMinuteStrategy:
         symbol = kline_info['symbol']
         
         logger.info(f"[STRATEGY] on_15m_kline_close called for {symbol}")
+        
+        # Check if there is any open position before attempting to close
+        if not self.position_manager.has_position(symbol):
+            logger.info(f"No open position for {symbol}, skipping close operation")
+            # Reset cycle state even if no position
+            self.position_manager.reset_cycle()
+            logger.info(f"Cycle reset for {symbol} (no position to close)")
+            return
+        
         logger.info(f"15m K-line closed for {symbol}, closing all positions...")
         
         # Close all positions immediately asynchronously
-        import asyncio
-        success = await asyncio.to_thread(self.trading_executor.close_all_positions, symbol)
+        success = await self.trading_executor.close_all_positions(symbol)
         
         if success:
             # Reset cycle state
