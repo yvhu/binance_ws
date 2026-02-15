@@ -49,7 +49,10 @@ confirm_interval_1 = "3m"  # First confirmation interval
 confirm_interval_2 = "5m"  # Second confirmation interval
 
 # Volume check parameters
-volume_ratio_threshold = 0.55  # Minimum volume ratio (current volume / average volume of last 10 klines)
+volume_ratio_threshold = 0.70  # Minimum volume ratio (current volume / average volume of last 10 klines)
+
+# K-line body ratio check parameters
+body_ratio_threshold = 0.6  # Minimum body ratio (body / range), filters klines with too much resistance
 
 # Trading Configuration
 [trading]

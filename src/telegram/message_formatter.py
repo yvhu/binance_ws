@@ -311,7 +311,8 @@ class MessageFormatter:
     def format_indicator_analysis(symbol: str, sar_direction: Optional[str], direction_3m: str, direction_5m: str,
                                    sar_value: Optional[float] = None, current_price: Optional[float] = None,
                                    decision: Optional[str] = None,
-                                   volume_info: Optional[Dict] = None) -> str:
+                                   volume_info: Optional[Dict] = None,
+                                   body_info: Optional[Dict] = None) -> str:
         """
         Format indicator analysis message
         
@@ -324,6 +325,7 @@ class MessageFormatter:
             current_price: Current price (optional)
             decision: Trading decision (optional)
             volume_info: Volume information dictionary (optional)
+            body_info: Body ratio information dictionary (optional)
             
         Returns:
             Formatted message string
@@ -382,6 +384,26 @@ class MessageFormatter:
         all_match = direction_3m == direction_5m
         match_status = "✅ 一致" if all_match else "❌ 不一致"
         message += f"\n<b>方向一致性:</b> {match_status}\n"
+        
+        # Add body ratio information if available
+        if body_info:
+            body = body_info.get('body', 0)
+            range_val = body_info.get('range', 0)
+            body_ratio = body_info.get('body_ratio', 0)
+            threshold = body_info.get('threshold', 0)
+            
+            body_valid = body_ratio >= threshold
+            body_status = "✅ 通过" if body_valid else "❌ 未通过"
+            
+            message += (
+                f"\n"
+                f"📊 <b>5m K线实体比例:</b>\n"
+                f"  • 实体长度: {body:.2f}\n"
+                f"  • 整体振幅: {range_val:.2f}\n"
+                f"  • 实体比例: {body_ratio:.4f}\n"
+                f"  • 阈值要求: ≥{threshold:.4f}\n"
+                f"  • 实体检查: {body_status}\n"
+            )
         
         if decision:
             message += f"\n<b>交易决策:</b> {decision_emoji.get(decision, decision)}\n"

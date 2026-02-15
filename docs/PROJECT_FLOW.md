@@ -121,6 +121,10 @@ Get 3m K-line direction
     ↓
 Get 5m K-line direction
     ↓
+Check volume condition (ratio >= threshold)
+    ↓
+Check body ratio condition (body/range >= threshold)
+    ↓
 Check if both directions match
 ```
 
@@ -149,7 +153,16 @@ _open_long_position(symbol)
     ↓
 Get current price
     ↓
-Calculate position size (100% full position)
+Calculate position size:
+    ├── Get account balance
+    ├── max_position_value = balance × leverage
+    ├── opening_fee = max_position_value × fee_rate
+    ├── safety_margin = max_position_value × safety_margin_rate
+    ├── available_position_value = max_position_value - opening_fee - safety_margin
+    ├── quantity = available_position_value / current_price
+    ├── required_margin = available_position_value / leverage
+    ├── Validate: required_margin <= balance
+    └── Round quantity to symbol precision
     ↓
 TradingExecutor.open_long_position()
     ↓
@@ -168,7 +181,16 @@ _open_short_position(symbol)
     ↓
 Get current price
     ↓
-Calculate position size (100% full position)
+Calculate position size (same as LONG):
+    ├── Get account balance
+    ├── max_position_value = balance × leverage
+    ├── opening_fee = max_position_value × fee_rate
+    ├── safety_margin = max_position_value × safety_margin_rate
+    ├── available_position_value = max_position_value - opening_fee - safety_margin
+    ├── quantity = available_position_value / current price
+    ├── required_margin = available_position_value / leverage
+    ├── Validate: required_margin <= balance
+    └── Round quantity to symbol precision
     ↓
 TradingExecutor.open_short_position()
     ↓
@@ -302,6 +324,8 @@ First 5m K-line closes
 Check opening conditions:
     - 3m K-line direction: UP
     - 5m K-line direction: UP
+    - Volume ratio >= 0.70
+    - Body ratio >= 0.6
     ↓
 All match → Open LONG position
     ↓

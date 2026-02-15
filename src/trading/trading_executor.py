@@ -314,36 +314,54 @@ class TradingExecutor:
         if balance is None:
             return None
         
-        # Reserve opening fee and safety margin from balance
-        # These are deducted from available margin before applying leverage
-        opening_fee = balance * self.fee_rate
-        safety_margin_amount = balance * self.safety_margin
+        # Calculate maximum position value using leverage
+        # Maximum position value = Balance * Leverage
+        max_position_value = balance * self.leverage
         
-        # Available margin after reserving fees and safety margin
-        available_margin = balance - opening_fee - safety_margin_amount
+        # Calculate opening fee based on position value
+        # Opening fee = Position value * Fee rate
+        opening_fee = max_position_value * self.fee_rate
         
-        # Calculate position value using leverage
-        # Position value = Available margin * Leverage
-        position_value = available_margin * self.leverage
+        # Calculate safety margin based on position value
+        # Safety margin = Position value * Safety margin rate
+        safety_margin_amount = max_position_value * self.safety_margin
+        
+        # Calculate actual available position value after deducting fees and safety margin
+        # Available position value = Max position value - Opening fee - Safety margin
+        available_position_value = max_position_value - opening_fee - safety_margin_amount
         
         # Calculate quantity
-        # Quantity = Position value / Current price
-        quantity = position_value / current_price
+        # Quantity = Available position value / Current price
+        quantity = available_position_value / current_price
         
         # Estimate closing fee for information only
-        closing_fee = position_value * self.fee_rate
+        closing_fee = available_position_value * self.fee_rate
+        
+        # Calculate required margin
+        # Required margin = Available position value / Leverage
+        required_margin = available_position_value / self.leverage
         
         logger.info(
             f"Position size calculated:\n"
             f"  Balance: {balance:.2f} USDC\n"
+            f"  Leverage: {self.leverage}x\n"
+            f"  Max position value: {max_position_value:.2f} USDC\n"
             f"  Opening fee: {opening_fee:.4f} USDC ({self.fee_rate*100:.2f}%)\n"
             f"  Safety margin: {safety_margin_amount:.4f} USDC ({self.safety_margin*100:.1f}%)\n"
-            f"  Available margin: {available_margin:.2f} USDC\n"
-            f"  Position value: {position_value:.2f} USDC\n"
+            f"  Available position value: {available_position_value:.2f} USDC\n"
+            f"  Required margin: {required_margin:.2f} USDC\n"
             f"  Closing fee (est): {closing_fee:.4f} USDC\n"
-            f"  Raw quantity: {quantity:.6f} BTC\n"
-            f"  Leverage: {self.leverage}x"
+            f"  Raw quantity: {quantity:.6f}\n"
+            f"  Current price: {current_price:.2f} USDC"
         )
+        
+        # Validate that required margin doesn't exceed balance
+        if required_margin > balance:
+            logger.error(
+                f"Required margin {required_margin:.2f} USDC exceeds balance {balance:.2f} USDC. "
+                f"Cannot open position."
+            )
+            return None
         
         # Round quantity to match symbol precision
         rounded_quantity = self.round_quantity(quantity, symbol)
@@ -351,7 +369,7 @@ class TradingExecutor:
             logger.error(f"Failed to round quantity for {symbol}")
             return None
         
-        logger.info(f"Final quantity after rounding: {rounded_quantity:.6f} BTC")
+        logger.info(f"Final quantity after rounding: {rounded_quantity:.6f}")
         
         return rounded_quantity
     
@@ -379,6 +397,25 @@ class TradingExecutor:
             if not self.ensure_leverage(symbol):
                 logger.error(f"Failed to ensure leverage for {symbol}")
                 return None
+            
+            # Get current price to recalculate position size with latest balance
+            try:
+                ticker = self.client.futures_symbol_ticker(symbol=symbol)
+                current_price = float(ticker['price'])
+                logger.info(f"Current price for {symbol}: {current_price:.2f} USDC")
+            except Exception as e:
+                logger.error(f"Failed to get current price for {symbol}: {e}")
+                return None
+            
+            # Recalculate position size with latest balance to ensure sufficient margin
+            recalculated_quantity = self.calculate_position_size(current_price, symbol)
+            if recalculated_quantity is None:
+                logger.error(f"Failed to recalculate position size for {symbol}")
+                return None
+            
+            # Use the recalculated quantity instead of the original one
+            logger.info(f"Using recalculated quantity: {recalculated_quantity:.6f} (original: {quantity:.6f})")
+            quantity = recalculated_quantity
             
             # Place market order
             order = self.client.futures_create_order(
@@ -419,6 +456,25 @@ class TradingExecutor:
             if not self.ensure_leverage(symbol):
                 logger.error(f"Failed to ensure leverage for {symbol}")
                 return None
+            
+            # Get current price to recalculate position size with latest balance
+            try:
+                ticker = self.client.futures_symbol_ticker(symbol=symbol)
+                current_price = float(ticker['price'])
+                logger.info(f"Current price for {symbol}: {current_price:.2f} USDC")
+            except Exception as e:
+                logger.error(f"Failed to get current price for {symbol}: {e}")
+                return None
+            
+            # Recalculate position size with latest balance to ensure sufficient margin
+            recalculated_quantity = self.calculate_position_size(current_price, symbol)
+            if recalculated_quantity is None:
+                logger.error(f"Failed to recalculate position size for {symbol}")
+                return None
+            
+            # Use the recalculated quantity instead of the original one
+            logger.info(f"Using recalculated quantity: {recalculated_quantity:.6f} (original: {quantity:.6f})")
+            quantity = recalculated_quantity
             
             # Place market order
             order = self.client.futures_create_order(

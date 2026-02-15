@@ -54,6 +54,7 @@ class FifteenMinuteStrategy:
         self.confirm_interval_1 = config.get_config("strategy", "confirm_interval_1", default="3m")
         self.confirm_interval_2 = config.get_config("strategy", "confirm_interval_2", default="5m")
         self.volume_ratio_threshold = config.get_config("strategy", "volume_ratio_threshold", default=0.55)
+        self.body_ratio_threshold = config.get_config("strategy", "body_ratio_threshold", default=0.3)
         
         logger.info("15-minute strategy initialized")
     
@@ -288,6 +289,65 @@ class FifteenMinuteStrategy:
             logger.error(traceback.format_exc())
             return False, {}
     
+    def _check_body_ratio(self, kline: Dict) -> Tuple[bool, Dict]:
+        """
+        Check if the K-line body ratio meets the minimum requirement
+        
+        Args:
+            kline: K-line information dictionary
+            
+        Returns:
+            Tuple of (is_valid, body_info) where body_info contains:
+            - body: Body length (|close - open|)
+            - range: Total range (high - low)
+            - body_ratio: Body / range
+            - threshold: Minimum body ratio threshold
+        """
+        try:
+            open_price = kline.get('open', 0)
+            close_price = kline.get('close', 0)
+            high_price = kline.get('high', 0)
+            low_price = kline.get('low', 0)
+            
+            # Calculate body and range
+            body = abs(close_price - open_price)
+            range_val = high_price - low_price
+            
+            # Avoid division by zero
+            if range_val == 0:
+                logger.warning(f"K-line range is zero, cannot calculate body ratio")
+                return False, {}
+            
+            # Calculate body ratio
+            body_ratio = body / range_val
+            
+            # Check if body ratio meets threshold
+            is_valid = body_ratio >= self.body_ratio_threshold
+            
+            body_info = {
+                'body': body,
+                'range': range_val,
+                'body_ratio': body_ratio,
+                'threshold': self.body_ratio_threshold
+            }
+            
+            logger.info(
+                f"Body ratio check: "
+                f"body={body:.2f}, "
+                f"range={range_val:.2f}, "
+                f"body_ratio={body_ratio:.4f}, "
+                f"threshold={self.body_ratio_threshold}, "
+                f"valid={is_valid}"
+            )
+            
+            return is_valid, body_info
+            
+        except Exception as e:
+            logger.error(f"Error checking body ratio: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, {}
+    
     async def _check_and_open_position(self, symbol: str) -> None:
         """
         Check entry conditions and open position if met
@@ -333,7 +393,27 @@ class FifteenMinuteStrategy:
                     sar_value=None,
                     current_price=current_price,
                     decision='NO_TRADE',
-                    volume_info=volume_info
+                    volume_info=volume_info,
+                    body_info=None
+                )
+                return
+            
+            # Check body ratio condition
+            body_valid, body_info = self._check_body_ratio(kline_5m)
+            if not body_valid:
+                logger.warning(f"Body ratio condition not met for {symbol}")
+                # Send notification with body info
+                current_price = self.data_handler.get_current_price(symbol)
+                await self.telegram_client.send_indicator_analysis(
+                    symbol=symbol,
+                    sar_direction=None,
+                    direction_3m=direction_3m,
+                    direction_5m=direction_5m,
+                    sar_value=None,
+                    current_price=current_price,
+                    decision='NO_TRADE',
+                    volume_info=volume_info,
+                    body_info=body_info
                 )
                 return
             
@@ -357,7 +437,8 @@ class FifteenMinuteStrategy:
                     sar_value=None,
                     current_price=current_price,
                     decision=decision,
-                    volume_info=volume_info
+                    volume_info=volume_info,
+                    body_info=body_info
                 )
                 
                 # Open position with volume info
@@ -380,7 +461,8 @@ class FifteenMinuteStrategy:
                     sar_value=None,
                     current_price=current_price,
                     decision='NO_TRADE',
-                    volume_info=volume_info
+                    volume_info=volume_info,
+                    body_info=body_info
                 )
             
             # Add explicit log to confirm completion of check
