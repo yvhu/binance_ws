@@ -493,27 +493,34 @@ class FifteenMinuteStrategy:
                 return
             
             # Execute order
-            order = self.trading_executor.open_long_position(symbol, quantity)
+            result = self.trading_executor.open_long_position(symbol, quantity)
             
-            if order:
+            if result:
+                # Extract order and position calculation info
+                order = result.get('order')
+                position_calc_info = result.get('position_calc_info')
+                final_quantity = result.get('final_quantity', quantity)
+                final_price = result.get('final_price', current_price)
+                
                 # Record position
                 self.position_manager.open_position(
                     symbol=symbol,
                     side='LONG',
-                    entry_price=current_price,
-                    quantity=quantity
+                    entry_price=final_price,
+                    quantity=final_quantity
                 )
                 
                 logger.info(f"Long position opened successfully for {symbol}")
                 
-                # Send trade notification with volume info
+                # Send trade notification with volume info and position calculation info
                 await self.telegram_client.send_trade_notification(
                     symbol=symbol,
                     side='LONG',
-                    price=current_price,
-                    quantity=quantity,
+                    price=final_price,
+                    quantity=final_quantity,
                     leverage=self.config.leverage,
-                    volume_info=volume_info
+                    volume_info=volume_info,
+                    position_calc_info=position_calc_info
                 )
             else:
                 logger.error(f"Failed to open long position for {symbol}")
@@ -549,27 +556,34 @@ class FifteenMinuteStrategy:
                 return
             
             # Execute order
-            order = self.trading_executor.open_short_position(symbol, quantity)
+            result = self.trading_executor.open_short_position(symbol, quantity)
             
-            if order:
+            if result:
+                # Extract order and position calculation info
+                order = result.get('order')
+                position_calc_info = result.get('position_calc_info')
+                final_quantity = result.get('final_quantity', quantity)
+                final_price = result.get('final_price', current_price)
+                
                 # Record position
                 self.position_manager.open_position(
                     symbol=symbol,
                     side='SHORT',
-                    entry_price=current_price,
-                    quantity=quantity
+                    entry_price=final_price,
+                    quantity=final_quantity
                 )
                 
                 logger.info(f"Short position opened successfully for {symbol}")
                 
-                # Send trade notification with volume info
+                # Send trade notification with volume info and position calculation info
                 await self.telegram_client.send_trade_notification(
                     symbol=symbol,
                     side='SHORT',
-                    price=current_price,
-                    quantity=quantity,
+                    price=final_price,
+                    quantity=final_quantity,
                     leverage=self.config.leverage,
-                    volume_info=volume_info
+                    volume_info=volume_info,
+                    position_calc_info=position_calc_info
                 )
             else:
                 logger.error(f"Failed to open short position for {symbol}")

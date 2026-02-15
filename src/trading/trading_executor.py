@@ -382,7 +382,7 @@ class TradingExecutor:
             quantity: Position quantity (already rounded)
             
         Returns:
-            Order result or None
+            Dictionary containing order result and position calculation info, or None
         """
         try:
             # Re-check balance before opening position to ensure sufficient margin
@@ -417,6 +417,22 @@ class TradingExecutor:
             logger.info(f"Using recalculated quantity: {recalculated_quantity:.6f} (original: {quantity:.6f})")
             quantity = recalculated_quantity
             
+            # Calculate position info for notification
+            max_position_value = balance * self.leverage
+            opening_fee = max_position_value * self.fee_rate
+            safety_margin = max_position_value * self.safety_margin
+            available_position_value = max_position_value - opening_fee - safety_margin
+            required_margin = available_position_value / self.leverage
+            
+            position_calc_info = {
+                'balance': balance,
+                'max_position_value': max_position_value,
+                'opening_fee': opening_fee,
+                'safety_margin': safety_margin,
+                'available_position_value': available_position_value,
+                'required_margin': required_margin
+            }
+            
             # Place market order
             order = self.client.futures_create_order(
                 symbol=symbol,
@@ -426,7 +442,14 @@ class TradingExecutor:
             )
             
             logger.info(f"Long position opened for {symbol}: {order}")
-            return order
+            
+            # Return both order and position calculation info
+            return {
+                'order': order,
+                'position_calc_info': position_calc_info,
+                'final_quantity': quantity,
+                'final_price': current_price
+            }
             
         except BinanceAPIException as e:
             logger.error(f"Failed to open long position for {symbol}: {e}")
@@ -441,7 +464,7 @@ class TradingExecutor:
             quantity: Position quantity (already rounded)
             
         Returns:
-            Order result or None
+            Dictionary containing order result and position calculation info, or None
         """
         try:
             # Re-check balance before opening position to ensure sufficient margin
@@ -476,6 +499,22 @@ class TradingExecutor:
             logger.info(f"Using recalculated quantity: {recalculated_quantity:.6f} (original: {quantity:.6f})")
             quantity = recalculated_quantity
             
+            # Calculate position info for notification
+            max_position_value = balance * self.leverage
+            opening_fee = max_position_value * self.fee_rate
+            safety_margin = max_position_value * self.safety_margin
+            available_position_value = max_position_value - opening_fee - safety_margin
+            required_margin = available_position_value / self.leverage
+            
+            position_calc_info = {
+                'balance': balance,
+                'max_position_value': max_position_value,
+                'opening_fee': opening_fee,
+                'safety_margin': safety_margin,
+                'available_position_value': available_position_value,
+                'required_margin': required_margin
+            }
+            
             # Place market order
             order = self.client.futures_create_order(
                 symbol=symbol,
@@ -485,7 +524,14 @@ class TradingExecutor:
             )
             
             logger.info(f"Short position opened for {symbol}: {order}")
-            return order
+            
+            # Return both order and position calculation info
+            return {
+                'order': order,
+                'position_calc_info': position_calc_info,
+                'final_quantity': quantity,
+                'final_price': current_price
+            }
             
         except BinanceAPIException as e:
             logger.error(f"Failed to open short position for {symbol}: {e}")

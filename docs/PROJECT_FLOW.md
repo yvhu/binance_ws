@@ -166,6 +166,23 @@ Calculate position size:
     ↓
 TradingExecutor.open_long_position()
     ↓
+Re-check account balance
+    ↓
+Get latest current price
+    ↓
+Recalculate position size with latest balance and price:
+    ├── Get account balance (latest)
+    ├── max_position_value = balance × leverage
+    ├── opening_fee = max_position_value × fee_rate
+    ├── safety_margin = max_position_value × safety_margin_rate
+    ├── available_position_value = max_position_value - opening_fee - safety_margin
+    ├── quantity = available_position_value / current_price
+    ├── required_margin = available_position_value / leverage
+    ├── Validate: required_margin <= balance
+    └── Round quantity to symbol precision
+    ↓
+Use recalculated quantity for order
+    ↓
 Send market buy order to Binance
     ↓
 PositionManager.open_position()
@@ -193,6 +210,23 @@ Calculate position size (same as LONG):
     └── Round quantity to symbol precision
     ↓
 TradingExecutor.open_short_position()
+    ↓
+Re-check account balance
+    ↓
+Get latest current price
+    ↓
+Recalculate position size with latest balance and price:
+    ├── Get account balance (latest)
+    ├── max_position_value = balance × leverage
+    ├── opening_fee = max_position_value × fee_rate
+    ├── safety_margin = max_position_value × safety_margin_rate
+    ├── available_position_value = max_position_value - opening_fee - safety_margin
+    ├── quantity = available_position_value / current price
+    ├── required_margin = available_position_value / leverage
+    ├── Validate: required_margin <= balance
+    └── Round quantity to symbol precision
+    ↓
+Use recalculated quantity for order
     ↓
 Send market sell order to Binance
     ↓

@@ -205,7 +205,8 @@ class MessageFormatter:
     
     @staticmethod
     def format_trade_notification(symbol: str, side: str, price: float, quantity: float, leverage: int,
-                                   volume_info: Optional[Dict] = None) -> str:
+                                   volume_info: Optional[Dict] = None,
+                                   position_calc_info: Optional[Dict] = None) -> str:
         """
         Format trade notification message
         
@@ -216,6 +217,7 @@ class MessageFormatter:
             quantity: Position quantity
             leverage: Leverage multiplier
             volume_info: Volume information dictionary (optional)
+            position_calc_info: Position calculation information (optional)
             
         Returns:
             Formatted message string
@@ -233,6 +235,26 @@ class MessageFormatter:
             f"💵 仓位价值: ${position_value:,.2f}\n"
             f"⚡ 杠杆: {leverage}倍\n"
         )
+        
+        # Add position calculation information if available
+        if position_calc_info:
+            balance = position_calc_info.get('balance', 0)
+            max_position_value = position_calc_info.get('max_position_value', 0)
+            opening_fee = position_calc_info.get('opening_fee', 0)
+            safety_margin = position_calc_info.get('safety_margin', 0)
+            available_position_value = position_calc_info.get('available_position_value', 0)
+            required_margin = position_calc_info.get('required_margin', 0)
+            
+            message += (
+                f"\n"
+                f"💰 <b>仓位计算详情:</b>\n"
+                f"  • 账户余额: ${balance:.2f}\n"
+                f"  • 最大仓位价值: ${max_position_value:.2f}\n"
+                f"  • 开仓手续费: ${opening_fee:.4f}\n"
+                f"  • 安全边际: ${safety_margin:.4f}\n"
+                f"  • 可用仓位价值: ${available_position_value:.2f}\n"
+                f"  • 所需保证金: ${required_margin:.2f}\n"
+            )
         
         # Add volume information if available
         if volume_info:

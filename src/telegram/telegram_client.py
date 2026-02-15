@@ -275,7 +275,8 @@ class TelegramClient:
         await update.message.reply_text(message, parse_mode='HTML')
     
     async def send_trade_notification(self, symbol: str, side: str, price: float, quantity: float, leverage: int,
-                                       volume_info: Optional[Dict] = None) -> bool:
+                                       volume_info: Optional[Dict] = None,
+                                       position_calc_info: Optional[Dict] = None) -> bool:
         """
         Send trade notification to Telegram
         
@@ -286,11 +287,14 @@ class TelegramClient:
             quantity: Position quantity
             leverage: Leverage multiplier
             volume_info: Volume information dictionary (optional)
+            position_calc_info: Position calculation information (optional)
             
         Returns:
             True if message sent successfully
         """
-        message = self.formatter.format_trade_notification(symbol, side, price, quantity, leverage, volume_info)
+        message = self.formatter.format_trade_notification(
+            symbol, side, price, quantity, leverage, volume_info, position_calc_info
+        )
         return await self.send_message(message, parse_mode='HTML')
     
     async def send_close_notification(self, symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float) -> bool:
