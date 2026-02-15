@@ -1,6 +1,6 @@
 """
 15-Minute K-Line Trading Strategy
-Implements the 15m K-line trading strategy with SAR and confirmation intervals
+Implements the 15m K-line trading strategy with confirmation intervals
 """
 
 import logging
@@ -101,14 +101,6 @@ class FifteenMinuteStrategy:
         # Execute strategy logic
         await self._check_and_open_position(symbol)
         
-        # Also trigger SAR calculation and direction check for 15m interval here
-        logger.info(f"Triggering SAR calculation and direction check for 15m interval at 5m close for {symbol}")
-        sar_result = self._get_sar_direction(symbol)
-        if sar_result is not None:
-            sar_direction, sar_value = sar_result
-            logger.info(f"SAR direction at 5m close: {sar_direction}, SAR value: {sar_value}")
-        else:
-            logger.warning(f"Could not determine SAR direction at 5m close for {symbol}")
     
     async def on_15m_kline_close(self, kline_info: Dict) -> None:
         """
@@ -305,14 +297,6 @@ class FifteenMinuteStrategy:
         """
         logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
-            # Get SAR direction from current running 15m K-line (not closed)
-            sar_result = self._get_sar_direction(symbol)
-            if sar_result is None:
-                logger.warning(f"Could not determine SAR direction for {symbol}")
-                return
-            
-            sar_direction, sar_value = sar_result
-            
             # Get 3m K-line direction for the first closed 3m K-line in current 15m cycle
             kline_3m = self._get_first_closed_kline_in_cycle(symbol, "3m")
             if kline_3m is None:
@@ -343,10 +327,10 @@ class FifteenMinuteStrategy:
                 current_price = self.data_handler.get_current_price(symbol)
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
-                    sar_direction=sar_direction,
+                    sar_direction=None,
                     direction_3m=direction_3m,
                     direction_5m=direction_5m,
-                    sar_value=sar_value,
+                    sar_value=None,
                     current_price=current_price,
                     decision='NO_TRADE',
                     volume_info=volume_info
@@ -354,46 +338,46 @@ class FifteenMinuteStrategy:
                 return
             
             # Log all directions for debugging
-            logger.info(f"Directions for {symbol}: SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}")
+            logger.info(f"Directions for {symbol}: 3m={direction_3m}, 5m={direction_5m}")
             
             # Get current price for notification
             current_price = self.data_handler.get_current_price(symbol)
             
-            # Check if all directions match
-            if sar_direction == direction_3m == direction_5m:
-                logger.info(f"All directions match for {symbol}: {sar_direction}")
+            # Check if 3m and 5m directions match
+            if direction_3m == direction_5m:
+                logger.info(f"3m and 5m directions match for {symbol}: {direction_3m}")
                 
                 # Send indicator analysis notification with decision
-                decision = 'LONG' if sar_direction == 'UP' else 'SHORT'
+                decision = 'LONG' if direction_3m == 'UP' else 'SHORT'
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
-                    sar_direction=sar_direction,
+                    sar_direction=None,
                     direction_3m=direction_3m,
                     direction_5m=direction_5m,
-                    sar_value=sar_value,
+                    sar_value=None,
                     current_price=current_price,
                     decision=decision,
                     volume_info=volume_info
                 )
                 
                 # Open position with volume info
-                if sar_direction == 'UP':
+                if direction_3m == 'UP':
                     await self._open_long_position(symbol, volume_info)
                 else:  # DOWN
                     await self._open_short_position(symbol, volume_info)
             else:
                 logger.info(
                     f"Directions do not match for {symbol}: "
-                    f"SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}"
+                    f"3m={direction_3m}, 5m={direction_5m}"
                 )
                 
                 # Send indicator analysis notification with no trade decision
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
-                    sar_direction=sar_direction,
+                    sar_direction=None,
                     direction_3m=direction_3m,
                     direction_5m=direction_5m,
-                    sar_value=sar_value,
+                    sar_value=None,
                     current_price=current_price,
                     decision='NO_TRADE',
                     volume_info=volume_info
@@ -404,75 +388,6 @@ class FifteenMinuteStrategy:
                 
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")
-    
-    def _get_sar_direction(self, symbol: str) -> Optional[Tuple[str, float]]:
-        """
-        Get SAR direction based on current 15m K-line data (including unclosed kline)
-        This provides real-time dynamic SAR values
-        
-        Args:
-            symbol: Trading pair symbol
-            
-        Returns:
-            Tuple of (direction, sar_value) or None
-        """
-        try:
-            # Get 15m K-line data including the current incomplete K-line
-            df = self.data_handler.get_klines_dataframe(symbol, "15m")
-            
-            # Add detailed debug log to print dataframe info for troubleshooting
-            logger.info(f"[SAR] 15m K-line dataframe for {symbol}: shape={df.shape}, empty={df.empty}")
-            if not df.empty:
-                logger.info(f"[SAR] DataFrame columns: {df.columns.tolist()}")
-                logger.info(f"[SAR] DataFrame index: {df.index.tolist()}")
-                logger.info(f"[SAR] DataFrame head:\n{df.head()}")
-            
-            if df.empty:
-                logger.warning(f"[SAR] No 15m K-line data available for SAR calculation")
-                return None
-            
-            # Check if we have enough data for SAR calculation (need at least 2 rows)
-            if len(df) < 2:
-                logger.warning(f"[SAR] Not enough 15m K-line data for SAR calculation: {len(df)} rows (need at least 2)")
-                return None
-            
-            # Filter df to only include rows up to current 15m cycle start time + 15 minutes
-            # to exclude future or partial data beyond current 15m cycle
-            current_15m_start = self.position_manager.current_15m_start_time
-            logger.info(f"[SAR] Current 15m cycle start time: {current_15m_start}")
-            
-            if current_15m_start is not None:
-                cycle_end_time = current_15m_start + 15 * 60 * 1000  # 15 minutes in ms
-                logger.info(f"[SAR] Cycle end time: {cycle_end_time}")
-                # Use df.index since open_time is set as index in get_klines_dataframe
-                df = df[df.index < pd.to_datetime(cycle_end_time, unit='ms')]
-                logger.info(f"[SAR] After filtering: shape={df.shape}, empty={df.empty}")
-                if df.empty:
-                    logger.warning(f"[SAR] No 15m K-line data within current 15m cycle for SAR calculation")
-                    return None
-                
-                # Check again if we have enough data after filtering
-                if len(df) < 2:
-                    logger.warning(f"[SAR] Not enough 15m K-line data after filtering: {len(df)} rows (need at least 2)")
-                    return None
-            
-            # Calculate SAR direction based on current price vs SAR (including unclosed kline)
-            logger.info(f"[SAR] Calculating SAR direction for {symbol} with {len(df)} rows (including unclosed)")
-            sar_result = self.technical_analyzer.get_sar_direction(df)
-            
-            if sar_result:
-                sar_direction, sar_value = sar_result
-                logger.info(f"[SAR] SAR direction for {symbol}: {sar_direction}, SAR value: {sar_value}")
-                return sar_result
-            else:
-                logger.warning(f"[SAR] Could not determine SAR direction for {symbol}")
-                return None
-            
-        except Exception as e:
-            logger.error(f"[SAR] Error getting SAR direction for {symbol}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return None
     
     async def _open_long_position(self, symbol: str, volume_info: Optional[Dict] = None) -> None:
         """

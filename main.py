@@ -172,7 +172,7 @@ class BinanceTelegramBot:
             
             for symbol in symbols:
                 for interval in intervals:
-                    # Load 100 historical klines (enough for SAR calculation)
+                    # Load 100 historical klines
                     success = await asyncio.to_thread(
                         self.data_handler.load_historical_klines,
                         symbol,
@@ -477,7 +477,7 @@ class BinanceTelegramBot:
         details = {
             "交易对": ", ".join(symbols),
             "杠杆": f"{self.config.leverage}倍",
-            "策略": "15分钟K线 + SAR指标",
+            "策略": "15分钟K线策略",
             "仓位大小": "100% (全仓)",
             "可用资金": balance_str,
             "数据流": ", ".join(self.config.binance_streams)

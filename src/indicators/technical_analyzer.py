@@ -43,9 +43,6 @@ class TechnicalAnalyzer:
         self.bb_period = config.get('bb_period', 20)
         self.bb_std = config.get('bb_std', 2)
         
-        # SAR parameters
-        self.sar_acceleration = config.get('sar_acceleration', 0.02)
-        self.sar_maximum = config.get('sar_maximum', 0.2)
     
     def calculate_all_indicators(self, df: pd.DataFrame) -> Dict[str, pd.Series]:
         """
@@ -438,76 +435,6 @@ class TechnicalAnalyzer:
         }
         
         return summary
-    
-    def get_sar_direction(self, df: pd.DataFrame) -> Optional[Tuple[str, float]]:
-        """
-        Get SAR direction based on current price vs SAR value
-        
-        Args:
-            df: DataFrame with OHLCV data
-            
-        Returns:
-            Tuple of (direction, sar_value) where direction is 'UP' or 'DOWN', or None
-        """
-        try:
-            if df.empty:
-                logger.warning("[SAR] DataFrame is empty")
-                return None
-            
-            if len(df) < 2:
-                logger.warning(f"[SAR] Not enough data: {len(df)} rows (need at least 2)")
-                return None
-            
-            # Check required columns
-            required_columns = ['high', 'low', 'close']
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                logger.error(f"[SAR] Missing required columns: {missing_columns}")
-                return None
-            
-            # Log data for debugging
-            logger.debug(f"[SAR] Input data shape: {df.shape}")
-            logger.debug(f"[SAR] High values: {df['high'].values}")
-            logger.debug(f"[SAR] Low values: {df['low'].values}")
-            logger.debug(f"[SAR] Close values: {df['close'].values}")
-            
-            # Calculate SAR
-            sar = talib.SAR(
-                df['high'].values,
-                df['low'].values,
-                acceleration=self.sar_acceleration,
-                maximum=self.sar_maximum
-            )
-            
-            if sar is None or len(sar) == 0:
-                logger.error("[SAR] SAR calculation returned None or empty array")
-                return None
-            
-            # Get latest SAR value and current price
-            latest_sar = sar[-1]
-            current_price = df['close'].iloc[-1]
-            
-            logger.debug(f"[SAR] Latest SAR value: {latest_sar}")
-            logger.debug(f"[SAR] Current price: {current_price}")
-            
-            # Check for NaN values
-            if pd.isna(latest_sar) or pd.isna(current_price):
-                logger.error(f"[SAR] NaN values detected - SAR: {latest_sar}, Price: {current_price}")
-                return None
-            
-            # Determine direction
-            if current_price > latest_sar:
-                logger.info(f"[SAR] Price ({current_price}) > SAR ({latest_sar}) -> UP")
-                return ('UP', latest_sar)
-            else:
-                logger.info(f"[SAR] Price ({current_price}) <= SAR ({latest_sar}) -> DOWN")
-                return ('DOWN', latest_sar)
-                
-        except Exception as e:
-            logger.error(f"[SAR] Error calculating SAR direction: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return None
     
     def get_kline_direction(self, kline_info: Dict) -> Optional[str]:
         """

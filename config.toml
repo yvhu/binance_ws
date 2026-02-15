@@ -48,10 +48,6 @@ check_interval = "5m"  # Check interval for opening position
 confirm_interval_1 = "3m"  # First confirmation interval
 confirm_interval_2 = "5m"  # Second confirmation interval
 
-# SAR indicator parameters
-sar_acceleration = 0.02
-sar_maximum = 0.2
-
 # Volume check parameters
 volume_ratio_threshold = 0.55  # Minimum volume ratio (current volume / average volume of last 10 klines)
 

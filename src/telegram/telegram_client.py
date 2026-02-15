@@ -325,7 +325,7 @@ class TelegramClient:
         message = self.formatter.format_no_trade_notification(symbol, reason)
         return await self.send_message(message, parse_mode='HTML')
     
-    async def send_indicator_analysis(self, symbol: str, sar_direction: str, direction_3m: str,
+    async def send_indicator_analysis(self, symbol: str, sar_direction: Optional[str], direction_3m: str,
                                        direction_5m: str, sar_value: Optional[float] = None,
                                        current_price: Optional[float] = None,
                                        decision: Optional[str] = None,
@@ -335,10 +335,10 @@ class TelegramClient:
         
         Args:
             symbol: Trading pair symbol
-            sar_direction: SAR direction ('UP' or 'DOWN')
+            sar_direction: SAR direction (deprecated, always None)
             direction_3m: 3m K-line direction ('UP' or 'DOWN')
             direction_5m: 5m K-line direction ('UP' or 'DOWN')
-            sar_value: SAR value (optional)
+            sar_value: SAR value (deprecated, always None)
             current_price: Current price (optional)
             decision: Trading decision (optional)
             volume_info: Volume information dictionary (optional)

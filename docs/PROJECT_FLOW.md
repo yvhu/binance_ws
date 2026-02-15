@@ -117,24 +117,15 @@ Execute opening position check logic
 ```
 _check_and_open_position(symbol)
     ↓
-Get SAR direction (15m K-line)
-    ↓
 Get 3m K-line direction
     ↓
 Get 5m K-line direction
     ↓
-Check if all three directions match
+Check if both directions match
 ```
 
 ### 4.2 Direction Judgment Logic
 ```
-SAR direction judgment:
-    - Get 15m K-line data
-    - Calculate SAR indicator
-    - Compare current price with SAR value
-    - Price > SAR = UP (LONG)
-    - Price < SAR = DOWN (SHORT)
-
 K-line direction judgment:
     - Compare close price with open price
     - Close > Open = UP
@@ -143,7 +134,7 @@ K-line direction judgment:
 
 ### 4.3 Opening Execution
 ```
-All three directions match
+Both directions match
     ↓
 Choose based on direction:
     - UP → _open_long_position()
@@ -309,7 +300,6 @@ Record cycle start time
 First 5m K-line closes
     ↓
 Check opening conditions:
-    - SAR direction: UP
     - 3m K-line direction: UP
     - 5m K-line direction: UP
     ↓

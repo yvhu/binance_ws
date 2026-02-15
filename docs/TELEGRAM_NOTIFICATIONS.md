@@ -16,7 +16,7 @@ Example:
 
   Trading Pairs: BTCUSDC
   Leverage: 10x
-  Strategy: 15m K-line with SAR
+  Strategy: 15m K-line Strategy
   Position Size: 100% (Full Position)
   Streams: kline_3m, kline_5m, kline_15m
 
@@ -108,7 +108,7 @@ Example:
 ```
 ⏭️ No Trade - BTCUSDC
 
-📋 Reason: Directions mismatch: SAR=UP, 3m=DOWN, 5m=UP
+📋 Reason: Directions mismatch: 3m=DOWN, 5m=UP
 ⏰ Time: 2024-01-01 12:05:00
 ```
 
