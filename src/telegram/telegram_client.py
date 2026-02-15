@@ -276,7 +276,8 @@ class TelegramClient:
     
     async def send_trade_notification(self, symbol: str, side: str, price: float, quantity: float, leverage: int,
                                        volume_info: Optional[Dict] = None,
-                                       position_calc_info: Optional[Dict] = None) -> bool:
+                                       position_calc_info: Optional[Dict] = None,
+                                       kline_time: Optional[int] = None) -> bool:
         """
         Send trade notification to Telegram
         
@@ -288,12 +289,13 @@ class TelegramClient:
             leverage: Leverage multiplier
             volume_info: Volume information dictionary (optional)
             position_calc_info: Position calculation information (optional)
+            kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
             True if message sent successfully
         """
         message = self.formatter.format_trade_notification(
-            symbol, side, price, quantity, leverage, volume_info, position_calc_info
+            symbol, side, price, quantity, leverage, volume_info, position_calc_info, kline_time
         )
         return await self.send_message(message, parse_mode='HTML')
     
@@ -334,7 +336,8 @@ class TelegramClient:
                                        current_price: Optional[float] = None,
                                        decision: Optional[str] = None,
                                        volume_info: Optional[Dict] = None,
-                                       body_info: Optional[Dict] = None) -> bool:
+                                       body_info: Optional[Dict] = None,
+                                       kline_time: Optional[int] = None) -> bool:
         """
         Send indicator analysis notification to Telegram
         
@@ -348,13 +351,14 @@ class TelegramClient:
             decision: Trading decision (optional)
             volume_info: Volume information dictionary (optional)
             body_info: Body ratio information dictionary (optional)
+            kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
             True if message sent successfully
         """
         message = self.formatter.format_indicator_analysis(
             symbol, sar_direction, direction_3m, direction_5m,
-            sar_value, current_price, decision, volume_info, body_info
+            sar_value, current_price, decision, volume_info, body_info, kline_time
         )
         return await self.send_message(message, parse_mode='HTML')
     
