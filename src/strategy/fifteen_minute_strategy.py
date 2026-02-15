@@ -232,29 +232,38 @@ class FifteenMinuteStrategy:
                 logger.warning(f"No 5m K-line data for {symbol}")
                 return False, {}
             
-            # Find the index of current K-line
+            # Filter only closed K-lines to match Binance's calculation
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if not closed_klines:
+                logger.warning(f"No closed 5m K-line data for {symbol}")
+                return False, {}
+            
+            # Find the index of current K-line in closed klines
             current_open_time = current_kline['open_time']
             current_index = -1
-            for i, k in enumerate(all_klines):
+            for i, k in enumerate(closed_klines):
                 if k['open_time'] == current_open_time:
                     current_index = i
                     break
             
             if current_index == -1:
-                logger.warning(f"Current K-line not found in data for {symbol}")
+                logger.warning(f"Current K-line not found in closed klines for {symbol}")
                 return False, {}
             
-            # Get previous K-lines (excluding current)
-            previous_klines = all_klines[:current_index]
+            # Get closed K-lines including current (for MA calculation)
+            # Binance updates indicators after K-line closes, including the just-closed K-line
+            klines_for_ma = closed_klines[:current_index + 1]
             
-            if len(previous_klines) < 10:
-                logger.warning(f"Not enough previous K-lines for volume check: {len(previous_klines)} (need at least 10)")
+            if len(klines_for_ma) < 10:
+                logger.warning(f"Not enough closed K-lines for volume check: {len(klines_for_ma)} (need at least 10)")
                 return False, {}
             
-            # Calculate average volumes
+            # Calculate average volumes including the current K-line
+            # MA5 = current + previous 4, MA10 = current + previous 9
             current_volume = current_kline['volume']
-            avg_volume_5 = sum(k['volume'] for k in previous_klines[-5:]) / 5
-            avg_volume_10 = sum(k['volume'] for k in previous_klines[-10:]) / 10
+            avg_volume_5 = sum(k['volume'] for k in klines_for_ma[-5:]) / 5
+            avg_volume_10 = sum(k['volume'] for k in klines_for_ma[-10:]) / 10
             
             # Calculate ratios
             ratio_5 = current_volume / avg_volume_5 if avg_volume_5 > 0 else 0
@@ -394,7 +403,8 @@ class FifteenMinuteStrategy:
                     current_price=current_price,
                     decision='NO_TRADE',
                     volume_info=volume_info,
-                    body_info=None
+                    body_info=None,
+                    kline_time=kline_5m.get('close_time')
                 )
                 return
             
@@ -413,7 +423,8 @@ class FifteenMinuteStrategy:
                     current_price=current_price,
                     decision='NO_TRADE',
                     volume_info=volume_info,
-                    body_info=body_info
+                    body_info=body_info,
+                    kline_time=kline_5m.get('close_time')
                 )
                 return
             
@@ -438,14 +449,15 @@ class FifteenMinuteStrategy:
                     current_price=current_price,
                     decision=decision,
                     volume_info=volume_info,
-                    body_info=body_info
+                    body_info=body_info,
+                    kline_time=kline_5m.get('close_time')
                 )
                 
                 # Open position with volume info
                 if direction_3m == 'UP':
-                    await self._open_long_position(symbol, volume_info)
+                    await self._open_long_position(symbol, volume_info, kline_5m.get('close_time'))
                 else:  # DOWN
-                    await self._open_short_position(symbol, volume_info)
+                    await self._open_short_position(symbol, volume_info, kline_5m.get('close_time'))
             else:
                 logger.info(
                     f"Directions do not match for {symbol}: "
@@ -462,7 +474,8 @@ class FifteenMinuteStrategy:
                     current_price=current_price,
                     decision='NO_TRADE',
                     volume_info=volume_info,
-                    body_info=body_info
+                    body_info=body_info,
+                    kline_time=kline_5m.get('close_time')
                 )
             
             # Add explicit log to confirm completion of check
@@ -471,13 +484,14 @@ class FifteenMinuteStrategy:
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")
     
-    async def _open_long_position(self, symbol: str, volume_info: Optional[Dict] = None) -> None:
+    async def _open_long_position(self, symbol: str, volume_info: Optional[Dict] = None, kline_time: Optional[int] = None) -> None:
         """
         Open a long position
         
         Args:
             symbol: Trading pair symbol
             volume_info: Volume information dictionary (optional)
+            kline_time: K-line timestamp in milliseconds (optional)
         """
         try:
             # Get current price
@@ -520,7 +534,8 @@ class FifteenMinuteStrategy:
                     quantity=final_quantity,
                     leverage=self.config.leverage,
                     volume_info=volume_info,
-                    position_calc_info=position_calc_info
+                    position_calc_info=position_calc_info,
+                    kline_time=kline_time
                 )
             else:
                 logger.error(f"Failed to open long position for {symbol}")
@@ -534,13 +549,14 @@ class FifteenMinuteStrategy:
         except Exception as e:
             logger.error(f"Error opening long position for {symbol}: {e}")
     
-    async def _open_short_position(self, symbol: str, volume_info: Optional[Dict] = None) -> None:
+    async def _open_short_position(self, symbol: str, volume_info: Optional[Dict] = None, kline_time: Optional[int] = None) -> None:
         """
         Open a short position
         
         Args:
             symbol: Trading pair symbol
             volume_info: Volume information dictionary (optional)
+            kline_time: K-line timestamp in milliseconds (optional)
         """
         try:
             # Get current price
@@ -583,7 +599,8 @@ class FifteenMinuteStrategy:
                     quantity=final_quantity,
                     leverage=self.config.leverage,
                     volume_info=volume_info,
-                    position_calc_info=position_calc_info
+                    position_calc_info=position_calc_info,
+                    kline_time=kline_time
                 )
             else:
                 logger.error(f"Failed to open short position for {symbol}")

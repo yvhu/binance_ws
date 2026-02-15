@@ -206,7 +206,8 @@ class MessageFormatter:
     @staticmethod
     def format_trade_notification(symbol: str, side: str, price: float, quantity: float, leverage: int,
                                    volume_info: Optional[Dict] = None,
-                                   position_calc_info: Optional[Dict] = None) -> str:
+                                   position_calc_info: Optional[Dict] = None,
+                                   kline_time: Optional[int] = None) -> str:
         """
         Format trade notification message
         
@@ -218,6 +219,7 @@ class MessageFormatter:
             leverage: Leverage multiplier
             volume_info: Volume information dictionary (optional)
             position_calc_info: Position calculation information (optional)
+            kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
             Formatted message string
@@ -235,6 +237,11 @@ class MessageFormatter:
             f"💵 仓位价值: ${position_value:,.2f}\n"
             f"⚡ 杠杆: {leverage}倍\n"
         )
+        
+        # Add K-line time information
+        if kline_time is not None:
+            kline_datetime = datetime.fromtimestamp(kline_time / 1000)
+            message += f"⏰ <b>5m K线时间:</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n"
         
         # Add position calculation information if available
         if position_calc_info:
@@ -266,7 +273,7 @@ class MessageFormatter:
             
             message += (
                 f"\n"
-                f"📦 <b>5m K线成交量:</b>\n"
+                f"📦 <b>5m K线成交量 (基于已关闭K线):</b>\n"
                 f"  • 第一个5m成交量: {current_volume:,.2f}\n"
                 f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
                 f"  • 近10根平均: {avg_volume_10:,.2f} (比例: {ratio_10:.2f}x)\n"
@@ -334,7 +341,8 @@ class MessageFormatter:
                                    sar_value: Optional[float] = None, current_price: Optional[float] = None,
                                    decision: Optional[str] = None,
                                    volume_info: Optional[Dict] = None,
-                                   body_info: Optional[Dict] = None) -> str:
+                                   body_info: Optional[Dict] = None,
+                                   kline_time: Optional[int] = None) -> str:
         """
         Format indicator analysis message
         
@@ -348,6 +356,7 @@ class MessageFormatter:
             decision: Trading decision (optional)
             volume_info: Volume information dictionary (optional)
             body_info: Body ratio information dictionary (optional)
+            kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
             Formatted message string
@@ -368,6 +377,11 @@ class MessageFormatter:
         message = (
             f"📊 <b>{symbol} 指标分析</b>\n\n"
         )
+        
+        # Add K-line time information
+        if kline_time is not None:
+            kline_datetime = datetime.fromtimestamp(kline_time / 1000)
+            message += f"⏰ <b>5m K线时间:</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
         if current_price is not None:
             message += f"💰 <b>当前价格:</b> ${current_price:,.2f}\n\n"
@@ -394,7 +408,7 @@ class MessageFormatter:
             
             message += (
                 f"\n"
-                f"📦 <b>5m K线成交量:</b>\n"
+                f"📦 <b>5m K线成交量 (基于已关闭K线):</b>\n"
                 f"  • 第一个5m成交量: {current_volume:,.2f}\n"
                 f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
                 f"  • 近10根平均: {avg_volume_10:,.2f} (比例: {ratio_10:.2f}x)\n"

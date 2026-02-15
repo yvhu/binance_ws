@@ -1,5 +1,9 @@
 # Telegram Notifications Documentation
 
+## Overview
+
+All Telegram notifications include timestamps for reference. Trading-related notifications also display the K-line time to help track which specific K-line triggered the action.
+
 ## System Status Notifications
 
 ### Startup Notification
@@ -26,6 +30,59 @@ Example:
 ### Shutdown Notification
 Sent when the project stops
 
+## Indicator Analysis Notification
+
+Sent when analyzing entry conditions, including:
+- Trading pair
+- 5m K-line time (the specific K-line being analyzed)
+- Current price
+- 3m K-line direction
+- 5m K-line direction
+- Volume information (based on closed K-lines only)
+- Body ratio information
+- Direction consistency check
+- Trading decision
+
+Example:
+```
+📊 BTCUSDC 指标分析
+
+⏰ 5m K线时间: 2024-02-15 16:45:00
+
+💰 当前价格: $50,000.00
+
+📊 3m K线方向:
+  • 🟢 上涨
+
+📊 5m K线方向:
+  • 🟢 上涨
+
+📦 5m K线成交量 (基于已关闭K线):
+  • 第一个5m成交量: 1,000.00
+  • 近5根平均: 860.00 (比例: 1.16x)
+  • 近10根平均: 848.00 (比例: 1.18x)
+  • 阈值要求: ≥0.55x
+  • 成交量检查: ✅ 通过
+
+<b>方向一致性:</b> ✅ 一致
+
+📊 5m K线实体比例:
+  • 实体长度: 50.00
+  • 整体振幅: 150.00
+  • 实体比例: 0.3333
+  • 阈值要求: ≥0.3000
+  • 实体检查: ✅ 通过
+
+<b>交易决策:</b> 🟢 做多
+
+⏰ 时间: 2024-02-15 16:45:05
+```
+
+**Important Notes:**
+- Volume calculations are based on **closed K-lines only** to match Binance's display
+- MA5 and MA10 include the current K-line (just closed) to match Binance's update timing
+- The K-line time shown is the close time of the 5m K-line being analyzed
+
 ## Trading Notifications
 
 ### Position Opened Notification
@@ -39,28 +96,58 @@ Sent when a position is opened, including:
 
 Example (LONG):
 ```
-🟢 Position Opened
+🟢 仓位已开仓
 
-📊 Symbol: BTCUSDC
-📈 Side: LONG
-💰 Entry Price: $50,000.00
-📦 Quantity: 0.2000
-💵 Position Value: $10,000.00
-⚡ Leverage: 10x
-⏰ Time: 2024-01-01 12:05:00
+📊 交易对: BTCUSDC
+📈 方向: 做多
+💰 开仓价格: $50,000.00
+📦 数量: 0.2000
+💵 仓位价值: $10,000.00
+⚡ 杠杆: 10倍
+⏰ 5m K线时间: 2024-02-15 16:45:00
+
+💰 仓位计算详情:
+  • 账户余额: $1,000.00
+  • 最大仓位价值: $10,000.00
+  • 开仓手续费: $4.0000
+  • 安全边际: $100.0000
+  • 可用仓位价值: $9,896.00
+  • 所需保证金: $989.60
+
+📦 5m K线成交量 (基于已关闭K线):
+  • 第一个5m成交量: 1,000.00
+  • 近5根平均: 860.00 (比例: 1.16x)
+  • 近10根平均: 848.00 (比例: 1.18x)
+
+⏰ 时间: 2024-02-15 16:45:05
 ```
 
 Example (SHORT):
 ```
-🔴 Position Opened
+🔴 仓位已开仓
 
-📊 Symbol: BTCUSDC
-📈 Side: SHORT
-💰 Entry Price: $50,000.00
-📦 Quantity: 0.2000
-💵 Position Value: $10,000.00
-⚡ Leverage: 10x
-⏰ Time: 2024-01-01 12:05:00
+📊 交易对: BTCUSDC
+📈 方向: 做空
+💰 开仓价格: $50,000.00
+📦 数量: 0.2000
+💵 仓位价值: $10,000.00
+⚡ 杠杆: 10倍
+⏰ 5m K线时间: 2024-02-15 16:45:00
+
+💰 仓位计算详情:
+  • 账户余额: $1,000.00
+  • 最大仓位价值: $10,000.00
+  • 开仓手续费: $4.0000
+  • 安全边际: $100.0000
+  • 可用仓位价值: $9,896.00
+  • 所需保证金: $989.60
+
+📦 5m K线成交量 (基于已关闭K线):
+  • 第一个5m成交量: 1,000.00
+  • 近5根平均: 860.00 (比例: 1.16x)
+  • 近10根平均: 848.00 (比例: 1.18x)
+
+⏰ 时间: 2024-02-15 16:45:05
 ```
 
 ### Position Closed Notification
@@ -75,28 +162,28 @@ Sent when a position is closed, including:
 
 Example (Profit):
 ```
-✅ Position Closed
+✅ 仓位已平仓
 
-📊 Symbol: BTCUSDC
-📈 Side: LONG
-💰 Entry Price: $50,000.00
-💰 Exit Price: $50,500.00
-📦 Quantity: 0.2000
-💵 PnL: $100.00 (+1.00%)
-⏰ Time: 2024-01-01 12:15:00
+📊 交易对: BTCUSDC
+📈 方向: 做多
+💰 开仓价格: $50,000.00
+💰 平仓价格: $50,500.00
+📦 数量: 0.2000
+💵 盈亏: $100.00 (+1.00%)
+⏰ 时间: 2024-02-15 16:46:00
 ```
 
 Example (Loss):
 ```
-❌ Position Closed
+❌ 仓位已平仓
 
-📊 Symbol: BTCUSDC
-📈 Side: LONG
-💰 Entry Price: $50,000.00
-💰 Exit Price: $49,500.00
-📦 Quantity: 0.2000
-💵 PnL: -$100.00 (-1.00%)
-⏰ Time: 2024-01-01 12:15:00
+📊 交易对: BTCUSDC
+📈 方向: 做多
+💰 开仓价格: $50,000.00
+💰 平仓价格: $49,500.00
+📦 数量: 0.2000
+💵 盈亏: -$100.00 (-1.00%)
+⏰ 时间: 2024-02-15 16:46:00
 ```
 
 ### No Trade Notification
@@ -106,10 +193,10 @@ Sent when no trade is executed, including:
 
 Example:
 ```
-⏭️ No Trade - BTCUSDC
+⏭️ 未交易 - BTCUSDC
 
-📋 Reason: Directions mismatch: 3m=DOWN, 5m=UP
-⏰ Time: 2024-01-01 12:05:00
+📋 原因: Directions mismatch: 3m=DOWN, 5m=UP
+⏰ 时间: 2024-02-15 16:45:05
 ```
 
 ## Error Notifications
@@ -122,11 +209,11 @@ Sent when an error occurs, including:
 
 Example:
 ```
-⚠️ Error Alert
+⚠️ 错误提醒
 
-📍 Context: WebSocket connection
-❌ Error: Connection timeout
-⏰ Time: 2024-01-01 12:00:00
+📍 上下文: WebSocket connection
+❌ 错误: Connection timeout
+⏰ 时间: 2024-02-15 16:45:00
 ```
 
 ## Message Format
@@ -140,8 +227,20 @@ All messages are formatted with:
 ## Notification Triggers
 
 1. **Startup**: When `main.py` starts
-2. **Position Open**: When strategy opens a position
-3. **Position Close**: When 15m K-line closes
-4. **No Trade**: When entry conditions are not met
-5. **Error**: When any error occurs in the system
-6. **Shutdown**: When the bot stops gracefully
+2. **Indicator Analysis**: When analyzing entry conditions (first 5m K-line closes in 15m cycle)
+3. **Position Open**: When strategy opens a position
+4. **Position Close**: When 15m K-line closes
+5. **No Trade**: When entry conditions are not met
+6. **Error**: When any error occurs in the system
+7. **Shutdown**: When the bot stops gracefully
+
+## Volume Calculation Notes
+
+All volume-related calculations in notifications follow these rules:
+
+1. **Closed K-lines Only**: Volume MA5 and MA10 are calculated using only closed K-lines to match Binance's display
+2. **Include Current K-line**: When a K-line closes, the MA calculation includes this just-closed K-line to match Binance's update timing
+3. **Calculation Timing**: Calculations are performed immediately after the first 5m K-line closes in the 15m cycle
+4. **Verification**: The K-line time displayed in notifications allows you to verify which K-line was used for calculations
+
+This ensures that the volume ratios shown in notifications match exactly what you see on Binance's trading interface.
