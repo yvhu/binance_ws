@@ -36,6 +36,10 @@ macd_signal = 9
 # Bollinger Bands
 bb_period = 20
 bb_std = 2
+# Parabolic SAR
+sar_acceleration = 0.02  # Acceleration factor
+sar_maximum = 0.2  # Maximum acceleration
+sar_history_count = 50  # Number of historical 15m klines to use for SAR calculation
 
 # Trading Strategy Configuration
 [strategy]

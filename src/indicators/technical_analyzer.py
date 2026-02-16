@@ -42,6 +42,9 @@ class TechnicalAnalyzer:
         self.macd_signal = config.get('macd_signal', 9)
         self.bb_period = config.get('bb_period', 20)
         self.bb_std = config.get('bb_std', 2)
+        self.sar_acceleration = config.get('sar_acceleration', 0.02)
+        self.sar_maximum = config.get('sar_maximum', 0.2)
+        self.sar_history_count = config.get('sar_history_count', 50)
         
     
     def calculate_all_indicators(self, df: pd.DataFrame) -> Dict[str, pd.Series]:
@@ -234,6 +237,74 @@ class TechnicalAnalyzer:
         except Exception as e:
             logger.error(f"Error calculating Stochastic: {e}")
             return None, None
+    
+    def calculate_sar(self, df: pd.DataFrame) -> Optional[pd.Series]:
+        """
+        Calculate Parabolic SAR (Stop and Reverse)
+        
+        Args:
+            df: DataFrame with OHLC data
+            
+        Returns:
+            SAR series or None
+        """
+        try:
+            high = df['high'].values
+            low = df['low'].values
+            return talib.SAR(high, low, acceleration=self.sar_acceleration, maximum=self.sar_maximum)
+        except Exception as e:
+            logger.error(f"Error calculating SAR: {e}")
+            return None
+    
+    def get_sar_direction(self, df: pd.DataFrame) -> Optional[str]:
+        """
+        Get SAR direction based on current price vs SAR value
+        
+        Args:
+            df: DataFrame with OHLC data
+            
+        Returns:
+            'UP' if price > SAR (bullish), 'DOWN' if price < SAR (bearish), or None
+        """
+        try:
+            sar = self.calculate_sar(df)
+            if sar is None or len(sar) == 0:
+                return None
+            
+            current_price = df['close'].iloc[-1]
+            current_sar = sar[-1]
+            
+            if current_price > current_sar:
+                return 'UP'
+            elif current_price < current_sar:
+                return 'DOWN'
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error determining SAR direction: {e}")
+            return None
+    
+    def get_sar_value(self, df: pd.DataFrame) -> Optional[float]:
+        """
+        Get current SAR value
+        
+        Args:
+            df: DataFrame with OHLC data
+            
+        Returns:
+            Current SAR value or None
+        """
+        try:
+            sar = self.calculate_sar(df)
+            if sar is None or len(sar) == 0:
+                return None
+            
+            return float(sar[-1])
+                
+        except Exception as e:
+            logger.error(f"Error getting SAR value: {e}")
+            return None
     
     def get_latest_indicators(self, df: pd.DataFrame) -> Dict[str, float]:
         """

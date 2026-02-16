@@ -366,6 +366,26 @@ class FifteenMinuteStrategy:
         """
         logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
+            # Get 15m K-line data for SAR calculation
+            sar_history_count = self.technical_analyzer.sar_history_count
+            df_15m = self.data_handler.get_klines_dataframe(symbol, "15m", count=sar_history_count)
+            if df_15m.empty or len(df_15m) < 10:
+                logger.warning(f"Not enough 15m K-line data for SAR calculation for {symbol} (need at least 10, got {len(df_15m)})")
+                return
+            
+            # Get SAR direction and value from 15m K-line
+            sar_direction = self.technical_analyzer.get_sar_direction(df_15m)
+            sar_value = self.technical_analyzer.get_sar_value(df_15m)
+            
+            if sar_direction is None:
+                logger.warning(f"Could not determine SAR direction for {symbol}")
+                return
+            
+            logger.info(
+                f"SAR for {symbol}: direction={sar_direction}, value={sar_value:.2f}, "
+                f"using {len(df_15m)} 15m klines (configured: {sar_history_count})"
+            )
+            
             # Get 3m K-line direction for the first closed 3m K-line in current 15m cycle
             kline_3m = self._get_first_closed_kline_in_cycle(symbol, "3m")
             if kline_3m is None:
@@ -396,10 +416,10 @@ class FifteenMinuteStrategy:
                 current_price = self.data_handler.get_current_price(symbol)
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
-                    sar_direction=None,
+                    sar_direction=sar_direction,
                     direction_3m=direction_3m,
                     direction_5m=direction_5m,
-                    sar_value=None,
+                    sar_value=sar_value,
                     current_price=current_price,
                     decision='NO_TRADE',
                     volume_info=volume_info,
@@ -416,10 +436,10 @@ class FifteenMinuteStrategy:
                 current_price = self.data_handler.get_current_price(symbol)
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
-                    sar_direction=None,
+                    sar_direction=sar_direction,
                     direction_3m=direction_3m,
                     direction_5m=direction_5m,
-                    sar_value=None,
+                    sar_value=sar_value,
                     current_price=current_price,
                     decision='NO_TRADE',
                     volume_info=volume_info,
@@ -429,23 +449,23 @@ class FifteenMinuteStrategy:
                 return
             
             # Log all directions for debugging
-            logger.info(f"Directions for {symbol}: 3m={direction_3m}, 5m={direction_5m}")
+            logger.info(f"Directions for {symbol}: SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}")
             
             # Get current price for notification
             current_price = self.data_handler.get_current_price(symbol)
             
-            # Check if 3m and 5m directions match
-            if direction_3m == direction_5m:
-                logger.info(f"3m and 5m directions match for {symbol}: {direction_3m}")
+            # Check if 3m, 5m, and SAR directions all match
+            if direction_3m == direction_5m == sar_direction:
+                logger.info(f"All directions match for {symbol}: SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}")
                 
                 # Send indicator analysis notification with decision
                 decision = 'LONG' if direction_3m == 'UP' else 'SHORT'
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
-                    sar_direction=None,
+                    sar_direction=sar_direction,
                     direction_3m=direction_3m,
                     direction_5m=direction_5m,
-                    sar_value=None,
+                    sar_value=sar_value,
                     current_price=current_price,
                     decision=decision,
                     volume_info=volume_info,
@@ -460,17 +480,17 @@ class FifteenMinuteStrategy:
                     await self._open_short_position(symbol, volume_info, kline_5m.get('close_time'))
             else:
                 logger.info(
-                    f"Directions do not match for {symbol}: "
-                    f"3m={direction_3m}, 5m={direction_5m}"
+                    f"Directions do not all match for {symbol}: "
+                    f"SAR={sar_direction}, 3m={direction_3m}, 5m={direction_5m}"
                 )
                 
                 # Send indicator analysis notification with no trade decision
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
-                    sar_direction=None,
+                    sar_direction=sar_direction,
                     direction_3m=direction_3m,
                     direction_5m=direction_5m,
-                    sar_value=None,
+                    sar_value=sar_value,
                     current_price=current_price,
                     decision='NO_TRADE',
                     volume_info=volume_info,

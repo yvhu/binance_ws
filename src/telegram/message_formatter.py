@@ -348,10 +348,10 @@ class MessageFormatter:
         
         Args:
             symbol: Trading pair symbol
-            sar_direction: SAR direction (deprecated, always None)
+            sar_direction: SAR direction ('UP' or 'DOWN')
             direction_3m: 3m K-line direction ('UP' or 'DOWN')
             direction_5m: 5m K-line direction ('UP' or 'DOWN')
-            sar_value: SAR value (deprecated, always None)
+            sar_value: SAR value
             current_price: Current price (optional)
             decision: Trading decision (optional)
             volume_info: Volume information dictionary (optional)
@@ -387,6 +387,15 @@ class MessageFormatter:
             message += f"💰 <b>当前价格:</b> ${current_price:,.2f}\n\n"
         
         message += (
+            f"📊 <b>15m SAR方向:</b>\n"
+            f"  • {direction_emoji.get(sar_direction, sar_direction)}\n"
+        )
+        
+        if sar_value is not None:
+            message += f"  • SAR值: ${sar_value:,.2f}\n"
+        
+        message += (
+            f"\n"
             f"📊 <b>3m K线方向:</b>\n"
             f"  • {direction_emoji.get(direction_3m, direction_3m)}\n"
             f"\n"
@@ -416,10 +425,10 @@ class MessageFormatter:
                 f"  • 成交量检查: {volume_status}\n"
             )
         
-        # Check if 3m and 5m directions match
-        all_match = direction_3m == direction_5m
+        # Check if SAR, 3m and 5m directions all match
+        all_match = sar_direction == direction_3m == direction_5m
         match_status = "✅ 一致" if all_match else "❌ 不一致"
-        message += f"\n<b>方向一致性:</b> {match_status}\n"
+        message += f"\n<b>方向一致性 (SAR/3m/5m):</b> {match_status}\n"
         
         # Add body ratio information if available
         if body_info:
