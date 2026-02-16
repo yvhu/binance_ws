@@ -367,13 +367,15 @@ class FifteenMinuteStrategy:
         logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
             # Get 15m K-line data for SAR calculation
+            # Note: The last K-line in the data is the current unclosed 15m K-line
             sar_history_count = self.technical_analyzer.sar_history_count
             df_15m = self.data_handler.get_klines_dataframe(symbol, "15m", count=sar_history_count)
             if df_15m.empty or len(df_15m) < 10:
                 logger.warning(f"Not enough 15m K-line data for SAR calculation for {symbol} (need at least 10, got {len(df_15m)})")
                 return
             
-            # Get SAR direction and value from 15m K-line
+            # Get SAR direction and value from the current unclosed 15m K-line
+            # This ensures we use the most recent SAR value based on the ongoing 15m period
             sar_direction = self.technical_analyzer.get_sar_direction(df_15m)
             sar_value = self.technical_analyzer.get_sar_value(df_15m)
             
@@ -383,7 +385,8 @@ class FifteenMinuteStrategy:
             
             logger.info(
                 f"SAR for {symbol}: direction={sar_direction}, value={sar_value:.2f}, "
-                f"using {len(df_15m)} 15m klines (configured: {sar_history_count})"
+                f"using {len(df_15m)} 15m klines (configured: {sar_history_count}), "
+                f"based on current unclosed 15m K-line"
             )
             
             # Get 3m K-line direction for the first closed 3m K-line in current 15m cycle
@@ -407,6 +410,10 @@ class FifteenMinuteStrategy:
             if direction_5m is None:
                 logger.warning(f"Could not determine 5m K-line direction for {symbol}")
                 return
+            
+            # Log the 5m K-line close time for reference
+            kline_5m_close_time = datetime.fromtimestamp(kline_5m['close_time'] / 1000)
+            logger.info(f"First closed 5m K-line in current 15m cycle: {kline_5m_close_time}")
             
             # Check volume condition
             volume_valid, volume_info = self._check_volume_condition(symbol, kline_5m)

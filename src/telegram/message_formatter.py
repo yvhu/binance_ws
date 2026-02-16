@@ -241,7 +241,7 @@ class MessageFormatter:
         # Add K-line time information
         if kline_time is not None:
             kline_datetime = datetime.fromtimestamp(kline_time / 1000)
-            message += f"⏰ <b>5m K线时间:</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            message += f"⏰ <b>5m K线时间 (第一个已关闭):</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n"
         
         # Add position calculation information if available
         if position_calc_info:
@@ -381,13 +381,13 @@ class MessageFormatter:
         # Add K-line time information
         if kline_time is not None:
             kline_datetime = datetime.fromtimestamp(kline_time / 1000)
-            message += f"⏰ <b>5m K线时间:</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            message += f"⏰ <b>5m K线时间 (第一个已关闭):</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
         if current_price is not None:
             message += f"💰 <b>当前价格:</b> ${current_price:,.2f}\n\n"
         
         message += (
-            f"📊 <b>15m SAR方向:</b>\n"
+            f"📊 <b>15m SAR方向 (当前未关闭K线):</b>\n"
             f"  • {direction_emoji.get(sar_direction, sar_direction)}\n"
         )
         
