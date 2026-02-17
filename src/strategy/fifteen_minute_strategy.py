@@ -332,8 +332,8 @@ class FiveMinuteStrategy:
                 f"body={body:.2f}, "
                 f"range={range_val:.2f}, "
                 f"body_ratio={body_ratio:.4f}, "
-                f"upper_shadow={upper_shadow:.2f} ({upper_shadow_ratio:.2%}), "
-                f"lower_shadow={lower_shadow:.2f} ({lower_shadow_ratio:.2%}), "
+                f"upper_shadow={upper_shadow:.2f} ({upper_shadow_ratio*100:.2f}%), "
+                f"lower_shadow={lower_shadow:.2f} ({lower_shadow_ratio*100:.2f}%), "
                 f"threshold={self.body_ratio_threshold}, "
                 f"body_valid={body_valid}, "
                 f"shadow_valid={shadow_valid}, "
@@ -1036,8 +1036,8 @@ class FiveMinuteStrategy:
                         f"持仓方向: {position_side}\n"
                         f"上一根K线方向: {previous_direction}\n"
                         f"当前K线方向: {current_direction}\n"
-                        f"吞没比例: {engulfing_ratio:.2%}\n"
-                        f"阈值: {self.engulfing_body_ratio_threshold:.0%}",
+                        f"吞没比例: {engulfing_ratio*100:.2f}%\n"
+                        f"阈值: {self.engulfing_body_ratio_threshold*100:.0f}%",
                         "Engulfing Stop Loss"
                     )
                     
