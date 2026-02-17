@@ -563,9 +563,13 @@ class MessageFormatter:
         Returns:
             Escaped text
         """
-        special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!','%']
+        special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', '%']
         
         for char in special_chars:
-            text = text.replace(char, f'\\{char}')
+            # For percent sign, replace % with \%
+            if char == '%':
+                text = text.replace(char, '\\%')
+            else:
+                text = text.replace(char, f'\\{char}')
         
         return text
