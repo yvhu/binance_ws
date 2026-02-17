@@ -6,12 +6,39 @@ Formats messages for Telegram notifications
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
+import html
 
 logger = logging.getLogger(__name__)
 
 
 class MessageFormatter:
     """Formatter for Telegram messages"""
+    
+    @staticmethod
+    def _escape_html(text: str) -> str:
+        """
+        Escape HTML special characters
+        
+        Args:
+            text: Text to escape
+            
+        Returns:
+            Escaped text safe for HTML parsing
+        """
+        return html.escape(str(text))
+    
+    @staticmethod
+    def _format_percentage(value: float) -> str:
+        """
+        Format percentage value safely for HTML
+        
+        Args:
+            value: Percentage value
+            
+        Returns:
+            Formatted percentage string
+        """
+        return f"{value:.1f}%"
     
     @staticmethod
     def format_ticker_alert(ticker_data: Dict) -> str:
@@ -24,7 +51,7 @@ class MessageFormatter:
         Returns:
             Formatted message string
         """
-        symbol = ticker_data.get('symbol', 'UNKNOWN')
+        symbol = MessageFormatter._escape_html(ticker_data.get('symbol', 'UNKNOWN'))
         price = ticker_data.get('current_price', 0)
         change = ticker_data.get('price_change', 0)
         change_percent = ticker_data.get('price_change_percent', 0)
@@ -62,19 +89,21 @@ class MessageFormatter:
             Formatted message string
         """
         emoji = "🟢" if signal_type == "BUY" else "🔴"
+        symbol_escaped = MessageFormatter._escape_html(symbol)
         
         message = (
-            f"{emoji} <b>{symbol} {signal_type} 信号</b>\n\n"
+            f"{emoji} <b>{symbol_escaped} {signal_type} 信号</b>\n\n"
             f"💰 价格: ${price:,.2f}\n\n"
             f"📊 <b>指标:</b>\n"
         )
         
         # Add indicator values
         for key, value in indicators.items():
+            key_escaped = MessageFormatter._escape_html(key)
             if isinstance(value, float):
-                message += f"  • {key}: {value:.4f}\n"
+                message += f"  • {key_escaped}: {value:.4f}\n"
             else:
-                message += f"  • {key}: {value}\n"
+                message += f"  • {key_escaped}: {MessageFormatter._escape_html(str(value))}\n"
         
         message += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
@@ -91,8 +120,8 @@ class MessageFormatter:
         Returns:
             Formatted message string
         """
-        symbol = kline_data.get('symbol', 'UNKNOWN')
-        interval = kline_data.get('interval', '5m')  # Default to 5m for our strategy
+        symbol = MessageFormatter._escape_html(kline_data.get('symbol', 'UNKNOWN'))
+        interval = kline_data.get('interval', '5m')
         open_price = kline_data.get('open', 0)
         high = kline_data.get('high', 0)
         low = kline_data.get('low', 0)
@@ -119,7 +148,7 @@ class MessageFormatter:
             f"  • 收盘: ${close:,.2f}\n"
             f"  • 成交量: {volume:,.2f}\n"
             f"  • 振幅: ${range_val:.2f}\n"
-            f"  • 实体比例: {body_ratio:.1f}%\n"
+            f"  • 实体比例: {MessageFormatter._format_percentage(body_ratio)}\n"
             f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         
@@ -140,9 +169,9 @@ class MessageFormatter:
         message = f"⚠️ <b>错误提醒</b>\n\n"
         
         if context:
-            message += f"📍 上下文: {context}\n"
+            message += f"📍 上下文: {MessageFormatter._escape_html(context)}\n"
         
-        message += f"❌ 错误: {error}\n"
+        message += f"❌ 错误: {MessageFormatter._escape_html(error)}\n"
         message += f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
@@ -174,7 +203,9 @@ class MessageFormatter:
         
         if details:
             for key, value in details.items():
-                message += f"  • {key}: {value}\n"
+                key_escaped = MessageFormatter._escape_html(key)
+                value_escaped = MessageFormatter._escape_html(str(value))
+                message += f"  • {key_escaped}: {value_escaped}\n"
         
         message += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
@@ -202,8 +233,9 @@ class MessageFormatter:
                 volume = symbol_data.get('volume', 0)
                 
                 emoji = "📈" if change >= 0 else "📉"
+                symbol_escaped = MessageFormatter._escape_html(symbol)
                 message += (
-                    f"{emoji} <b>{symbol}</b>\n"
+                    f"{emoji} <b>{symbol_escaped}</b>\n"
                     f"  价格: ${price:,.2f}\n"
                     f"  24小时变化: {change:+.2f}%\n"
                     f"  成交量: {volume:,.2f}\n\n"
@@ -241,10 +273,11 @@ class MessageFormatter:
         emoji = "🟢" if side == "LONG" else "🔴"
         side_cn = "做多" if side == "LONG" else "做空"
         position_value = price * quantity
+        symbol_escaped = MessageFormatter._escape_html(symbol)
         
         message = (
             f"{emoji} <b>仓位已开仓</b>\n\n"
-            f"📊 交易对: {symbol}\n"
+            f"📊 交易对: {symbol_escaped}\n"
             f"📈 方向: {side_cn}\n"
             f"💰 开仓价格: ${price:,.2f}\n"
             f"📦 数量: {quantity:.4f}\n"
@@ -256,16 +289,12 @@ class MessageFormatter:
         if stop_loss_price is not None:
             stop_loss_distance = abs(stop_loss_price - price)
             stop_loss_percent = (stop_loss_distance / price) * 100
-            message += f"🛡️ 止损价格: ${stop_loss_price:,.2f} (距离: {stop_loss_distance:.2f}, {stop_loss_percent:.2f}%)\n"
+            message += f"🛡️ 止损价格: ${stop_loss_price:,.2f} (距离: {stop_loss_distance:.2f}, {MessageFormatter._format_percentage(stop_loss_percent)})\n"
         
         # Add K-line time information
         if kline_time is not None:
-            # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
-            # Calculate the start time by rounding down to the nearest 5-minute interval
             kline_end = datetime.fromtimestamp(kline_time / 1000)
-            # Round down to nearest 5 minutes
             kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
-            # End time is start time + 5 minutes
             kline_end_rounded = kline_start + timedelta(minutes=5)
             message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
         
@@ -340,16 +369,17 @@ class MessageFormatter:
         emoji = "✅" if pnl >= 0 else "❌"
         side_cn = "做多" if side == "LONG" else "做空"
         pnl_percent = (pnl / (entry_price * quantity)) * 100
+        symbol_escaped = MessageFormatter._escape_html(symbol)
         
         message = (
             f"{emoji} <b>仓位已平仓</b>\n\n"
-            f"📊 交易对: {symbol}\n"
+            f"📊 交易对: {symbol_escaped}\n"
             f"📈 方向: {side_cn}\n"
             f"💰 开仓价格: ${entry_price:,.2f}\n"
             f"💰 平仓价格: ${exit_price:,.2f}\n"
             f"📦 数量: {quantity:.4f}\n"
             f"💵 盈亏: ${pnl:+,.2f} ({pnl_percent:+.2f}%)\n"
-            f"📋 平仓原因: {close_reason}\n"
+            f"📋 平仓原因: {MessageFormatter._escape_html(close_reason)}\n"
             f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         
@@ -368,19 +398,18 @@ class MessageFormatter:
         Returns:
             Formatted message string
         """
+        symbol_escaped = MessageFormatter._escape_html(symbol)
+        reason_escaped = MessageFormatter._escape_html(reason)
+        
         message = (
-            f"⏭️ <b>未交易 - {symbol}</b>\n\n"
-            f"📋 原因: {reason}\n"
+            f"⏭️ <b>未交易 - {symbol_escaped}</b>\n\n"
+            f"📋 原因: {reason_escaped}\n"
         )
         
         # Add K-line time information
         if kline_time is not None:
-            # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
-            # Calculate the start time by rounding down to the nearest 5-minute interval
             kline_end = datetime.fromtimestamp(kline_time / 1000)
-            # Round down to nearest 5 minutes
             kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
-            # End time is start time + 5 minutes
             kline_end_rounded = kline_start + timedelta(minutes=5)
             message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
         
@@ -430,18 +459,15 @@ class MessageFormatter:
             'NO_TRADE': '⏭️ 不交易'
         }
         
+        symbol_escaped = MessageFormatter._escape_html(symbol)
         message = (
-            f"📊 <b>{symbol} 指标分析</b>\n\n"
+            f"📊 <b>{symbol_escaped} 指标分析</b>\n\n"
         )
         
         # Add K-line time information
         if kline_time is not None:
-            # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
-            # Calculate the start time by rounding down to the nearest 5-minute interval
             kline_end = datetime.fromtimestamp(kline_time / 1000)
-            # Round down to nearest 5 minutes
             kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
-            # End time is start time + 5 minutes
             kline_end_rounded = kline_start + timedelta(minutes=5)
             message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n\n"
         
@@ -566,11 +592,6 @@ class MessageFormatter:
         special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', '%']
         
         for char in special_chars:
-            # For percent sign, replace % with \%
-            if char == '%':
-                # Replace all % with \%
-                text = text.replace('%', '\\%')
-            else:
-                text = text.replace(char, f'\\{char}')
+            text = text.replace(char, f'\\{char}')
         
         return text
