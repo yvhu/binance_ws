@@ -256,7 +256,7 @@ class MessageFormatter:
         if stop_loss_price is not None:
             stop_loss_distance = abs(stop_loss_price - price)
             stop_loss_percent = (stop_loss_distance / price) * 100
-            message += f"🛡️ 止损价格: ${stop_loss_price:,.2f} (距离: {stop_loss_distance:.2f}, {stop_loss_percent:.2f}&#37;)\n"
+            message += f"🛡️ 止损价格: ${stop_loss_price:,.2f} (距离: {stop_loss_distance:.2f}, {stop_loss_percent:.2f}%)\n"
         
         # Add K-line time information
         if kline_time is not None:
@@ -516,9 +516,9 @@ class MessageFormatter:
                 f"  • 实体长度: {body:.2f}\n"
                 f"  • 整体振幅: {range_val:.2f}\n"
                 f"  • 实体比例: {body_ratio:.4f}\n"
-                f"  • 上影线: {upper_shadow:.2f} ({upper_shadow_ratio*100:.1f}&#37;)\n"
-                f"  • 下影线: {lower_shadow:.2f} ({lower_shadow_ratio*100:.1f}&#37;)\n"
-                f"  • 阈值要求: 实体≥{threshold:.4f}, 单边影线<{shadow_ratio_threshold*100:.0f}&#37;\n"
+                f"  • 上影线: {upper_shadow:.2f} ({upper_shadow_ratio*100:.1f}%)\n"
+                f"  • 下影线: {lower_shadow:.2f} ({lower_shadow_ratio*100:.1f}%)\n"
+                f"  • 阈值要求: 实体≥{threshold:.4f}, 单边影线<{shadow_ratio_threshold*100:.0f}%\n"
                 f"  • 实体检查: {body_status}\n"
             )
         
