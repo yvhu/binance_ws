@@ -5,7 +5,7 @@ Formats messages for Telegram notifications
 
 import logging
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -260,8 +260,11 @@ class MessageFormatter:
         
         # Add K-line time information
         if kline_time is not None:
-            kline_datetime = datetime.fromtimestamp(kline_time / 1000)
-            message += f"⏰ <b>5m K线时间:</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
+            # Calculate the start time by subtracting 5 minutes
+            kline_end = datetime.fromtimestamp(kline_time / 1000)
+            kline_start = kline_end - timedelta(minutes=5)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M')}-{kline_end.strftime('%H:%M')}\n"
         
         # Add position calculation information if available
         if position_calc_info:
@@ -369,8 +372,11 @@ class MessageFormatter:
         
         # Add K-line time information
         if kline_time is not None:
-            kline_datetime = datetime.fromtimestamp(kline_time / 1000)
-            message += f"⏰ <b>5m K线时间:</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
+            # Calculate the start time by subtracting 5 minutes
+            kline_end = datetime.fromtimestamp(kline_time / 1000)
+            kline_start = kline_end - timedelta(minutes=5)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M')}-{kline_end.strftime('%H:%M')}\n"
         
         message += f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
@@ -424,8 +430,11 @@ class MessageFormatter:
         
         # Add K-line time information
         if kline_time is not None:
-            kline_datetime = datetime.fromtimestamp(kline_time / 1000)
-            message += f"⏰ <b>5m K线时间:</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
+            # Calculate the start time by subtracting 5 minutes
+            kline_end = datetime.fromtimestamp(kline_time / 1000)
+            kline_start = kline_end - timedelta(minutes=5)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M')}-{kline_end.strftime('%H:%M')}\n\n"
         
         if current_price is not None:
             message += f"💰 <b>当前价格:</b> ${current_price:,.2f}\n\n"
