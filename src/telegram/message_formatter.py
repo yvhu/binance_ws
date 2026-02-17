@@ -206,6 +206,8 @@ class MessageFormatter:
     @staticmethod
     def format_trade_notification(symbol: str, side: str, price: float, quantity: float, leverage: int,
                                    volume_info: Optional[Dict] = None,
+                                   range_info: Optional[Dict] = None,
+                                   stop_loss_price: Optional[float] = None,
                                    position_calc_info: Optional[Dict] = None,
                                    kline_time: Optional[int] = None) -> str:
         """
@@ -218,6 +220,8 @@ class MessageFormatter:
             quantity: Position quantity
             leverage: Leverage multiplier
             volume_info: Volume information dictionary (optional)
+            range_info: Range information dictionary (optional)
+            stop_loss_price: Stop loss price (optional)
             position_calc_info: Position calculation information (optional)
             kline_time: K-line timestamp in milliseconds (optional)
             
@@ -237,6 +241,12 @@ class MessageFormatter:
             f"💵 仓位价值: ${position_value:,.2f}\n"
             f"⚡ 杠杆: {leverage}倍\n"
         )
+        
+        # Add stop loss price if available
+        if stop_loss_price is not None:
+            stop_loss_distance = abs(stop_loss_price - price)
+            stop_loss_percent = (stop_loss_distance / price) * 100
+            message += f"🛡️ 止损价格: ${stop_loss_price:,.2f} (距离: {stop_loss_distance:.2f}, {stop_loss_percent:.2f}%)\n"
         
         # Add K-line time information
         if kline_time is not None:
@@ -267,16 +277,26 @@ class MessageFormatter:
         if volume_info:
             current_volume = volume_info.get('current_volume', 0)
             avg_volume_5 = volume_info.get('avg_volume_5', 0)
-            avg_volume_10 = volume_info.get('avg_volume_10', 0)
             ratio_5 = volume_info.get('ratio_5', 0)
-            ratio_10 = volume_info.get('ratio_10', 0)
             
             message += (
                 f"\n"
                 f"📦 <b>5m K线成交量 (基于已关闭K线):</b>\n"
                 f"  • 第一个5m成交量: {current_volume:,.2f}\n"
                 f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
-                f"  • 近10根平均: {avg_volume_10:,.2f} (比例: {ratio_10:.2f}x)\n"
+            )
+        
+        # Add range information if available
+        if range_info:
+            current_range = range_info.get('current_range', 0)
+            avg_range_5 = range_info.get('avg_range_5', 0)
+            ratio_5 = range_info.get('ratio_5', 0)
+            
+            message += (
+                f"\n"
+                f"📊 <b>5m K线振幅 (基于已关闭K线):</b>\n"
+                f"  • 第一个5m振幅: {current_range:.2f}\n"
+                f"  • 近5根平均: {avg_range_5:.2f} (比例: {ratio_5:.2f}x)\n"
             )
         
         message += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -341,6 +361,7 @@ class MessageFormatter:
                                    sar_value: Optional[float] = None, current_price: Optional[float] = None,
                                    decision: Optional[str] = None,
                                    volume_info: Optional[Dict] = None,
+                                   range_info: Optional[Dict] = None,
                                    body_info: Optional[Dict] = None,
                                    kline_time: Optional[int] = None) -> str:
         """
@@ -355,6 +376,7 @@ class MessageFormatter:
             current_price: Current price (optional)
             decision: Trading decision (optional)
             volume_info: Volume information dictionary (optional)
+            range_info: Range information dictionary (optional)
             body_info: Body ratio information dictionary (optional)
             kline_time: K-line timestamp in milliseconds (optional)
             
@@ -395,12 +417,10 @@ class MessageFormatter:
         if volume_info:
             current_volume = volume_info.get('current_volume', 0)
             avg_volume_5 = volume_info.get('avg_volume_5', 0)
-            avg_volume_10 = volume_info.get('avg_volume_10', 0)
             ratio_5 = volume_info.get('ratio_5', 0)
-            ratio_10 = volume_info.get('ratio_10', 0)
             threshold = volume_info.get('threshold', 0)
             
-            volume_valid = ratio_10 >= threshold
+            volume_valid = ratio_5 >= threshold
             volume_status = "✅ 通过" if volume_valid else "❌ 未通过"
             
             message += (
@@ -408,9 +428,27 @@ class MessageFormatter:
                 f"📦 <b>5m K线成交量 (基于已关闭K线):</b>\n"
                 f"  • 第一个5m成交量: {current_volume:,.2f}\n"
                 f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
-                f"  • 近10根平均: {avg_volume_10:,.2f} (比例: {ratio_10:.2f}x)\n"
                 f"  • 阈值要求: ≥{threshold:.2f}x\n"
                 f"  • 成交量检查: {volume_status}\n"
+            )
+        
+        # Add range information if available
+        if range_info:
+            current_range = range_info.get('current_range', 0)
+            avg_range_5 = range_info.get('avg_range_5', 0)
+            ratio_5 = range_info.get('ratio_5', 0)
+            threshold = range_info.get('threshold', 0)
+            
+            range_valid = ratio_5 >= threshold
+            range_status = "✅ 通过" if range_valid else "❌ 未通过"
+            
+            message += (
+                f"\n"
+                f"📊 <b>5m K线振幅 (基于已关闭K线):</b>\n"
+                f"  • 第一个5m振幅: {current_range:.2f}\n"
+                f"  • 近5根平均: {avg_range_5:.2f} (比例: {ratio_5:.2f}x)\n"
+                f"  • 阈值要求: ≥{threshold:.2f}x\n"
+                f"  • 振幅检查: {range_status}\n"
             )
         
         # Direction is determined by 5m K-line
@@ -421,10 +459,16 @@ class MessageFormatter:
             body = body_info.get('body', 0)
             range_val = body_info.get('range', 0)
             body_ratio = body_info.get('body_ratio', 0)
+            upper_shadow = body_info.get('upper_shadow', 0)
+            lower_shadow = body_info.get('lower_shadow', 0)
+            upper_shadow_ratio = body_info.get('upper_shadow_ratio', 0)
+            lower_shadow_ratio = body_info.get('lower_shadow_ratio', 0)
             threshold = body_info.get('threshold', 0)
+            shadow_ratio_threshold = body_info.get('shadow_ratio_threshold', 0.5)
             
             body_valid = body_ratio >= threshold
-            body_status = "✅ 通过" if body_valid else "❌ 未通过"
+            shadow_valid = upper_shadow_ratio < shadow_ratio_threshold and lower_shadow_ratio < shadow_ratio_threshold
+            body_status = "✅ 通过" if (body_valid and shadow_valid) else "❌ 未通过"
             
             message += (
                 f"\n"
@@ -432,7 +476,9 @@ class MessageFormatter:
                 f"  • 实体长度: {body:.2f}\n"
                 f"  • 整体振幅: {range_val:.2f}\n"
                 f"  • 实体比例: {body_ratio:.4f}\n"
-                f"  • 阈值要求: ≥{threshold:.4f}\n"
+                f"  • 上影线: {upper_shadow:.2f} ({upper_shadow_ratio:.1%})\n"
+                f"  • 下影线: {lower_shadow:.2f} ({lower_shadow_ratio:.1%})\n"
+                f"  • 阈值要求: 实体≥{threshold:.4f}, 单边影线<{shadow_ratio_threshold:.0%}\n"
                 f"  • 实体检查: {body_status}\n"
             )
         

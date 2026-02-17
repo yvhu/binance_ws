@@ -276,6 +276,8 @@ class TelegramClient:
     
     async def send_trade_notification(self, symbol: str, side: str, price: float, quantity: float, leverage: int,
                                        volume_info: Optional[Dict] = None,
+                                       range_info: Optional[Dict] = None,
+                                       stop_loss_price: Optional[float] = None,
                                        position_calc_info: Optional[Dict] = None,
                                        kline_time: Optional[int] = None) -> bool:
         """
@@ -288,6 +290,8 @@ class TelegramClient:
             quantity: Position quantity
             leverage: Leverage multiplier
             volume_info: Volume information dictionary (optional)
+            range_info: Range information dictionary (optional)
+            stop_loss_price: Stop loss price (optional)
             position_calc_info: Position calculation information (optional)
             kline_time: K-line timestamp in milliseconds (optional)
             
@@ -295,7 +299,7 @@ class TelegramClient:
             True if message sent successfully
         """
         message = self.formatter.format_trade_notification(
-            symbol, side, price, quantity, leverage, volume_info, position_calc_info, kline_time
+            symbol, side, price, quantity, leverage, volume_info, range_info, stop_loss_price, position_calc_info, kline_time
         )
         return await self.send_message(message, parse_mode='HTML')
     
@@ -336,6 +340,7 @@ class TelegramClient:
                                        current_price: Optional[float] = None,
                                        decision: Optional[str] = None,
                                        volume_info: Optional[Dict] = None,
+                                       range_info: Optional[Dict] = None,
                                        body_info: Optional[Dict] = None,
                                        kline_time: Optional[int] = None) -> bool:
         """
@@ -350,6 +355,7 @@ class TelegramClient:
             current_price: Current price (optional)
             decision: Trading decision (optional)
             volume_info: Volume information dictionary (optional)
+            range_info: Range information dictionary (optional)
             body_info: Body ratio information dictionary (optional)
             kline_time: K-line timestamp in milliseconds (optional)
             
@@ -358,7 +364,7 @@ class TelegramClient:
         """
         message = self.formatter.format_indicator_analysis(
             symbol, sar_direction, direction_3m, direction_5m,
-            sar_value, current_price, decision, volume_info, body_info, kline_time
+            sar_value, current_price, decision, volume_info, range_info, body_info, kline_time
         )
         return await self.send_message(message, parse_mode='HTML')
     

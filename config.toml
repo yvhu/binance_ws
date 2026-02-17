@@ -47,10 +47,18 @@ main_interval = "15m"  # Main trading interval
 check_interval = "5m"  # Check interval for opening position
 
 # Volume check parameters
-volume_ratio_threshold = 0.70  # Minimum volume ratio (current volume / average volume of last 10 klines)
+volume_ratio_threshold = 0.70  # Minimum volume ratio (current volume / average volume of last 5 klines)
 
 # K-line body ratio check parameters
 body_ratio_threshold = 0.6  # Minimum body ratio (body / range), filters klines with too much resistance
+shadow_ratio_threshold = 0.5  # Maximum shadow ratio (shadow / range), prevents single-sided shadows from being too long
+
+# K-line range check parameters
+range_ratio_threshold = 0.7  # Minimum range ratio (current range / average range of last 5 klines), ensures sufficient volatility
+
+# Stop loss parameters
+stop_loss_range_multiplier = 0.6  # Stop loss distance = 5m K-line range * this multiplier
+engulfing_body_ratio_threshold = 0.7  # Minimum engulfing body ratio to trigger stop loss
 
 # Trading Configuration
 [trading]

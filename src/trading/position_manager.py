@@ -54,7 +54,7 @@ class PositionManager:
         """
         return self.positions.get(symbol)
     
-    def open_position(self, symbol: str, side: str, entry_price: float, quantity: float) -> Dict:
+    def open_position(self, symbol: str, side: str, entry_price: float, quantity: float, entry_kline: Optional[Dict] = None) -> Dict:
         """
         Open a new position
         
@@ -63,6 +63,7 @@ class PositionManager:
             side: 'LONG' or 'SHORT'
             entry_price: Entry price
             quantity: Position quantity
+            entry_kline: Entry K-line data (optional)
             
         Returns:
             Position dictionary
@@ -73,6 +74,7 @@ class PositionManager:
             'entry_price': entry_price,
             'quantity': quantity,
             'entry_time': datetime.now().timestamp(),
+            'entry_kline': entry_kline,
             'is_open': True
         }
         
