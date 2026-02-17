@@ -264,7 +264,10 @@ class MessageFormatter:
             # Calculate the start time by subtracting 5 minutes
             kline_end = datetime.fromtimestamp(kline_time / 1000)
             kline_start = kline_end - timedelta(minutes=5)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M')}-{kline_end.strftime('%H:%M')}\n"
+            # Round to nearest minute for cleaner display
+            kline_start_rounded = kline_start.replace(second=0, microsecond=0)
+            kline_end_rounded = kline_end.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start_rounded.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
         
         # Add position calculation information if available
         if position_calc_info:
@@ -376,7 +379,10 @@ class MessageFormatter:
             # Calculate the start time by subtracting 5 minutes
             kline_end = datetime.fromtimestamp(kline_time / 1000)
             kline_start = kline_end - timedelta(minutes=5)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M')}-{kline_end.strftime('%H:%M')}\n"
+            # Round to nearest minute for cleaner display
+            kline_start_rounded = kline_start.replace(second=0, microsecond=0)
+            kline_end_rounded = kline_end.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start_rounded.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
         
         message += f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
@@ -434,7 +440,10 @@ class MessageFormatter:
             # Calculate the start time by subtracting 5 minutes
             kline_end = datetime.fromtimestamp(kline_time / 1000)
             kline_start = kline_end - timedelta(minutes=5)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M')}-{kline_end.strftime('%H:%M')}\n\n"
+            # Round to nearest minute for cleaner display
+            kline_start_rounded = kline_start.replace(second=0, microsecond=0)
+            kline_end_rounded = kline_end.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start_rounded.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n\n"
         
         if current_price is not None:
             message += f"💰 <b>当前价格:</b> ${current_price:,.2f}\n\n"
