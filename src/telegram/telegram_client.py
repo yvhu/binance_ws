@@ -291,7 +291,8 @@ class TelegramClient:
         )
         return await self.send_message(message, parse_mode='HTML')
     
-    async def send_close_notification(self, symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float) -> bool:
+    async def send_close_notification(self, symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float,
+                                       close_reason: str = "止损触发") -> bool:
         """
         Send position close notification to Telegram
         
@@ -302,28 +303,30 @@ class TelegramClient:
             exit_price: Exit price
             quantity: Position quantity
             pnl: Profit/Loss
+            close_reason: Reason for closing position (default: "止损触发")
             
         Returns:
             True if message sent successfully
         """
-        message = self.formatter.format_close_notification(symbol, side, entry_price, exit_price, quantity, pnl)
+        message = self.formatter.format_close_notification(symbol, side, entry_price, exit_price, quantity, pnl, close_reason)
         return await self.send_message(message, parse_mode='HTML')
     
-    async def send_no_trade_notification(self, symbol: str, reason: str) -> bool:
+    async def send_no_trade_notification(self, symbol: str, reason: str, kline_time: Optional[int] = None) -> bool:
         """
         Send no trade notification to Telegram
         
         Args:
             symbol: Trading pair symbol
             reason: Reason for not trading
+            kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
             True if message sent successfully
         """
-        message = self.formatter.format_no_trade_notification(symbol, reason)
+        message = self.formatter.format_no_trade_notification(symbol, reason, kline_time)
         return await self.send_message(message, parse_mode='HTML')
     
-    async def send_indicator_analysis(self, symbol: str, sar_direction: Optional[str], direction_3m: str,
+    async def send_indicator_analysis(self, symbol: str, sar_direction: Optional[str], direction_3m: Optional[str],
                                        direction_5m: str, sar_value: Optional[float] = None,
                                        current_price: Optional[float] = None,
                                        decision: Optional[str] = None,
@@ -338,7 +341,7 @@ class TelegramClient:
         Args:
             symbol: Trading pair symbol
             sar_direction: SAR direction (deprecated, always None)
-            direction_3m: 3m K-line direction ('UP' or 'DOWN')
+            direction_3m: 3m K-line direction (deprecated, always None)
             direction_5m: 5m K-line direction ('UP' or 'DOWN')
             sar_value: SAR value (deprecated, always None)
             current_price: Current price (optional)

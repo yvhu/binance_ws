@@ -50,7 +50,7 @@ class MessageFormatter:
     @staticmethod
     def format_signal_alert(symbol: str, signal_type: str, indicators: Dict, price: float) -> str:
         """
-        Format trading signal alert
+        Format trading signal alert (deprecated - use format_indicator_analysis instead)
         
         Args:
             symbol: Trading pair symbol
@@ -92,7 +92,7 @@ class MessageFormatter:
             Formatted message string
         """
         symbol = kline_data.get('symbol', 'UNKNOWN')
-        interval = kline_data.get('interval', '1m')
+        interval = kline_data.get('interval', '5m')  # Default to 5m for our strategy
         open_price = kline_data.get('open', 0)
         high = kline_data.get('high', 0)
         low = kline_data.get('low', 0)
@@ -102,14 +102,24 @@ class MessageFormatter:
         
         status = "✅ 已收盘" if is_closed else "⏳ 进行中"
         
+        # Calculate body and range
+        body = abs(close - open_price)
+        range_val = high - low
+        body_ratio = (body / range_val * 100) if range_val > 0 else 0
+        
+        # Determine direction
+        direction = "🟢 阳线" if close > open else "🔴 阴线"
+        
         message = (
-            f"🕯️ <b>{symbol} {interval} K线</b> {status}\n\n"
+            f"🕯️ <b>{symbol} {interval} K线</b> {status} {direction}\n\n"
             f"📊 OHLCV:\n"
             f"  • 开盘: ${open_price:,.2f}\n"
             f"  • 最高: ${high:,.2f}\n"
             f"  • 最低: ${low:,.2f}\n"
             f"  • 收盘: ${close:,.2f}\n"
             f"  • 成交量: {volume:,.2f}\n"
+            f"  • 振幅: ${range_val:.2f}\n"
+            f"  • 实体比例: {body_ratio:.1f}%\n"
             f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         
@@ -282,7 +292,7 @@ class MessageFormatter:
             message += (
                 f"\n"
                 f"📦 <b>5m K线成交量 (基于已关闭K线):</b>\n"
-                f"  • 第一个5m成交量: {current_volume:,.2f}\n"
+                f"  • 当前5m成交量: {current_volume:,.2f}\n"
                 f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
             )
         
@@ -295,7 +305,7 @@ class MessageFormatter:
             message += (
                 f"\n"
                 f"📊 <b>5m K线振幅 (基于已关闭K线):</b>\n"
-                f"  • 第一个5m振幅: {current_range:.2f}\n"
+                f"  • 当前5m振幅: {current_range:.2f}\n"
                 f"  • 近5根平均: {avg_range_5:.2f} (比例: {ratio_5:.2f}x)\n"
             )
         
@@ -304,7 +314,8 @@ class MessageFormatter:
         return message
     
     @staticmethod
-    def format_close_notification(symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float) -> str:
+    def format_close_notification(symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float,
+                                   close_reason: str = "止损触发") -> str:
         """
         Format position close notification message
         
@@ -315,6 +326,7 @@ class MessageFormatter:
             exit_price: Exit price
             quantity: Position quantity
             pnl: Profit/Loss
+            close_reason: Reason for closing position (default: "止损触发")
             
         Returns:
             Formatted message string
@@ -331,19 +343,21 @@ class MessageFormatter:
             f"💰 平仓价格: ${exit_price:,.2f}\n"
             f"📦 数量: {quantity:.4f}\n"
             f"💵 盈亏: ${pnl:+,.2f} ({pnl_percent:+.2f}%)\n"
+            f"📋 平仓原因: {close_reason}\n"
             f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         
         return message
     
     @staticmethod
-    def format_no_trade_notification(symbol: str, reason: str) -> str:
+    def format_no_trade_notification(symbol: str, reason: str, kline_time: Optional[int] = None) -> str:
         """
         Format no trade notification message
         
         Args:
             symbol: Trading pair symbol
             reason: Reason for not trading
+            kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
             Formatted message string
@@ -351,13 +365,19 @@ class MessageFormatter:
         message = (
             f"⏭️ <b>未交易 - {symbol}</b>\n\n"
             f"📋 原因: {reason}\n"
-            f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
+        
+        # Add K-line time information
+        if kline_time is not None:
+            kline_datetime = datetime.fromtimestamp(kline_time / 1000)
+            message += f"⏰ <b>5m K线时间:</b> {kline_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        
+        message += f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
     
     @staticmethod
-    def format_indicator_analysis(symbol: str, sar_direction: Optional[str], direction_3m: str, direction_5m: str,
+    def format_indicator_analysis(symbol: str, sar_direction: Optional[str], direction_3m: Optional[str], direction_5m: str,
                                    sar_value: Optional[float] = None, current_price: Optional[float] = None,
                                    decision: Optional[str] = None,
                                    volume_info: Optional[Dict] = None,
@@ -371,7 +391,7 @@ class MessageFormatter:
         Args:
             symbol: Trading pair symbol
             sar_direction: SAR direction (deprecated, always None)
-            direction_3m: 3m K-line direction ('UP' or 'DOWN')
+            direction_3m: 3m K-line direction (deprecated, always None)
             direction_5m: 5m K-line direction ('UP' or 'DOWN')
             sar_value: SAR value (deprecated, always None)
             current_price: Current price (optional)
@@ -428,7 +448,7 @@ class MessageFormatter:
             message += (
                 f"\n"
                 f"📦 <b>5m K线成交量 (基于已关闭K线):</b>\n"
-                f"  • 第一个5m成交量: {current_volume:,.2f}\n"
+                f"  • 当前5m成交量: {current_volume:,.2f}\n"
                 f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
                 f"  • 阈值要求: ≥{threshold:.2f}x\n"
                 f"  • 成交量检查: {volume_status}\n"
@@ -447,13 +467,13 @@ class MessageFormatter:
             message += (
                 f"\n"
                 f"📊 <b>5m K线振幅 (基于已关闭K线):</b>\n"
-                f"  • 第一个5m振幅: {current_range:.2f}\n"
+                f"  • 当前5m振幅: {current_range:.2f}\n"
                 f"  • 近5根平均: {avg_range_5:.2f} (比例: {ratio_5:.2f}x)\n"
                 f"  • 阈值要求: ≥{threshold:.2f}x\n"
                 f"  • 振幅检查: {range_status}\n"
             )
         
-        # Direction is determined by 5m K-line
+        # Direction is determined by 5m K-line only
         message += f"\n<b>交易方向:</b> {direction_emoji.get(direction_5m, direction_5m)}\n"
         
         # Add body ratio information if available
