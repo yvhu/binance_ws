@@ -51,8 +51,6 @@ class FifteenMinuteStrategy:
         # Strategy configuration
         self.main_interval = config.get_config("strategy", "main_interval", default="15m")
         self.check_interval = config.get_config("strategy", "check_interval", default="5m")
-        self.confirm_interval_1 = config.get_config("strategy", "confirm_interval_1", default="3m")
-        self.confirm_interval_2 = config.get_config("strategy", "confirm_interval_2", default="5m")
         self.volume_ratio_threshold = config.get_config("strategy", "volume_ratio_threshold", default=0.55)
         self.body_ratio_threshold = config.get_config("strategy", "body_ratio_threshold", default=0.3)
         
@@ -366,17 +364,6 @@ class FifteenMinuteStrategy:
         """
         logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
-            # Get 3m K-line direction for the first closed 3m K-line in current 15m cycle
-            kline_3m = self._get_first_closed_kline_in_cycle(symbol, "3m")
-            if kline_3m is None:
-                logger.warning(f"No closed 3m K-line in current 15m cycle for {symbol}")
-                return
-            
-            direction_3m = self.technical_analyzer.get_kline_direction(kline_3m)
-            if direction_3m is None:
-                logger.warning(f"Could not determine 3m K-line direction for {symbol}")
-                return
-            
             # Get 5m K-line direction for the first closed 5m K-line in current 15m cycle
             kline_5m = self._get_first_closed_kline_in_cycle(symbol, "5m")
             if kline_5m is None:
@@ -397,7 +384,7 @@ class FifteenMinuteStrategy:
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
                     sar_direction=None,
-                    direction_3m=direction_3m,
+                    direction_3m=None,
                     direction_5m=direction_5m,
                     sar_value=None,
                     current_price=current_price,
@@ -417,7 +404,7 @@ class FifteenMinuteStrategy:
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
                     sar_direction=None,
-                    direction_3m=direction_3m,
+                    direction_3m=None,
                     direction_5m=direction_5m,
                     sar_value=None,
                     current_price=current_price,
@@ -428,55 +415,32 @@ class FifteenMinuteStrategy:
                 )
                 return
             
-            # Log all directions for debugging
-            logger.info(f"Directions for {symbol}: 3m={direction_3m}, 5m={direction_5m}")
+            # Log direction for debugging
+            logger.info(f"5m K-line direction for {symbol}: {direction_5m}")
             
             # Get current price for notification
             current_price = self.data_handler.get_current_price(symbol)
             
-            # Check if 3m and 5m directions match
-            if direction_3m == direction_5m:
-                logger.info(f"3m and 5m directions match for {symbol}: {direction_3m}")
-                
-                # Send indicator analysis notification with decision
-                decision = 'LONG' if direction_3m == 'UP' else 'SHORT'
-                await self.telegram_client.send_indicator_analysis(
-                    symbol=symbol,
-                    sar_direction=None,
-                    direction_3m=direction_3m,
-                    direction_5m=direction_5m,
-                    sar_value=None,
-                    current_price=current_price,
-                    decision=decision,
-                    volume_info=volume_info,
-                    body_info=body_info,
-                    kline_time=kline_5m.get('close_time')
-                )
-                
-                # Open position with volume info
-                if direction_3m == 'UP':
-                    await self._open_long_position(symbol, volume_info, kline_5m.get('close_time'))
-                else:  # DOWN
-                    await self._open_short_position(symbol, volume_info, kline_5m.get('close_time'))
-            else:
-                logger.info(
-                    f"Directions do not match for {symbol}: "
-                    f"3m={direction_3m}, 5m={direction_5m}"
-                )
-                
-                # Send indicator analysis notification with no trade decision
-                await self.telegram_client.send_indicator_analysis(
-                    symbol=symbol,
-                    sar_direction=None,
-                    direction_3m=direction_3m,
-                    direction_5m=direction_5m,
-                    sar_value=None,
-                    current_price=current_price,
-                    decision='NO_TRADE',
-                    volume_info=volume_info,
-                    body_info=body_info,
-                    kline_time=kline_5m.get('close_time')
-                )
+            # Send indicator analysis notification with decision
+            decision = 'LONG' if direction_5m == 'UP' else 'SHORT'
+            await self.telegram_client.send_indicator_analysis(
+                symbol=symbol,
+                sar_direction=None,
+                direction_3m=None,
+                direction_5m=direction_5m,
+                sar_value=None,
+                current_price=current_price,
+                decision=decision,
+                volume_info=volume_info,
+                body_info=body_info,
+                kline_time=kline_5m.get('close_time')
+            )
+            
+            # Open position with volume info
+            if direction_5m == 'UP':
+                await self._open_long_position(symbol, volume_info, kline_5m.get('close_time'))
+            else:  # DOWN
+                await self._open_short_position(symbol, volume_info, kline_5m.get('close_time'))
             
             # Add explicit log to confirm completion of check
             logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")

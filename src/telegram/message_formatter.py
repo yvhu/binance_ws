@@ -387,9 +387,6 @@ class MessageFormatter:
             message += f"💰 <b>当前价格:</b> ${current_price:,.2f}\n\n"
         
         message += (
-            f"📊 <b>3m K线方向:</b>\n"
-            f"  • {direction_emoji.get(direction_3m, direction_3m)}\n"
-            f"\n"
             f"📊 <b>5m K线方向:</b>\n"
             f"  • {direction_emoji.get(direction_5m, direction_5m)}\n"
         )
@@ -416,10 +413,8 @@ class MessageFormatter:
                 f"  • 成交量检查: {volume_status}\n"
             )
         
-        # Check if 3m and 5m directions match
-        all_match = direction_3m == direction_5m
-        match_status = "✅ 一致" if all_match else "❌ 不一致"
-        message += f"\n<b>方向一致性:</b> {match_status}\n"
+        # Direction is determined by 5m K-line
+        message += f"\n<b>交易方向:</b> {direction_emoji.get(direction_5m, direction_5m)}\n"
         
         # Add body ratio information if available
         if body_info:
