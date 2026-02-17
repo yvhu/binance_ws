@@ -106,6 +106,10 @@ class TelegramClient:
         if not self._check_rate_limit():
             return False
         
+        # If parse_mode is MarkdownV2, escape message accordingly
+        if parse_mode == 'MarkdownV2':
+            message = self.formatter.escape_markdown(message)
+        
         try:
             await self.bot.send_message(
                 chat_id=self.chat_id,
@@ -289,7 +293,8 @@ class TelegramClient:
         message = self.formatter.format_trade_notification(
             symbol, side, price, quantity, leverage, volume_info, range_info, stop_loss_price, position_calc_info, kline_time
         )
-        return await self.send_message(message, parse_mode='HTML')
+        # Use MarkdownV2 parse mode and escape message
+        return await self.send_message(message, parse_mode='MarkdownV2')
     
     async def send_close_notification(self, symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float,
                                        close_reason: str = "止损触发") -> bool:
