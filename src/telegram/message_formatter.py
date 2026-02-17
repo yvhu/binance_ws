@@ -568,7 +568,8 @@ class MessageFormatter:
         for char in special_chars:
             # For percent sign, replace % with \%
             if char == '%':
-                text = text.replace(char, '\\%')
+                # Replace all % with \%
+                text = text.replace('%', '\\%')
             else:
                 text = text.replace(char, f'\\{char}')
         
