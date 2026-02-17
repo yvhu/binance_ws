@@ -2,6 +2,6 @@
 Trading Strategy Module
 """
 
-from .fifteen_minute_strategy import FifteenMinuteStrategy
+from .fifteen_minute_strategy import FiveMinuteStrategy
 
-__all__ = ['FifteenMinuteStrategy']
+__all__ = ['FiveMinuteStrategy']

@@ -363,6 +363,7 @@ class MessageFormatter:
                                    volume_info: Optional[Dict] = None,
                                    range_info: Optional[Dict] = None,
                                    body_info: Optional[Dict] = None,
+                                   trend_info: Optional[Dict] = None,
                                    kline_time: Optional[int] = None) -> str:
         """
         Format indicator analysis message
@@ -378,6 +379,7 @@ class MessageFormatter:
             volume_info: Volume information dictionary (optional)
             range_info: Range information dictionary (optional)
             body_info: Body ratio information dictionary (optional)
+            trend_info: Trend filter information dictionary (optional)
             kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
@@ -480,6 +482,29 @@ class MessageFormatter:
                 f"  • 下影线: {lower_shadow:.2f} ({lower_shadow_ratio:.1%})\n"
                 f"  • 阈值要求: 实体≥{threshold:.4f}, 单边影线<{shadow_ratio_threshold:.0%}\n"
                 f"  • 实体检查: {body_status}\n"
+            )
+        
+        # Add trend filter information if available
+        if trend_info:
+            current_price_trend = trend_info.get('current_price', 0)
+            ma_value = trend_info.get('ma_value', 0)
+            ma_direction = trend_info.get('ma_direction', 'UNKNOWN')
+            price_vs_ma = trend_info.get('price_vs_ma', 'UNKNOWN')
+            trend_aligned = trend_info.get('trend_aligned', False)
+            ma_period = trend_info.get('ma_period', 20)
+            
+            ma_direction_emoji = '📈 上升' if ma_direction == 'UP' else '📉 下降'
+            price_vs_ma_emoji = '🔼 上方' if price_vs_ma == 'ABOVE' else '🔽 下方'
+            trend_status = "✅ 通过" if trend_aligned else "❌ 未通过"
+            
+            message += (
+                f"\n"
+                f"📊 <b>趋势过滤 (MA{ma_period}):</b>\n"
+                f"  • 当前价格: ${current_price_trend:,.2f}\n"
+                f"  • MA{ma_period}值: ${ma_value:,.2f}\n"
+                f"  • MA方向: {ma_direction_emoji}\n"
+                f"  • 价格位置: {price_vs_ma_emoji}\n"
+                f"  • 趋势一致性: {trend_status}\n"
             )
         
         if decision:

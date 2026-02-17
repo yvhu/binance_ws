@@ -11,14 +11,6 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-import logging
-from typing import Dict, List, Optional, Tuple
-import pandas as pd
-import numpy as np
-import talib
-
-logger = logging.getLogger(__name__)
-
 
 class TechnicalAnalyzer:
     """Technical analyzer for calculating trading indicators"""
@@ -463,3 +455,79 @@ class TechnicalAnalyzer:
         except Exception as e:
             logger.error(f"Error determining K-line direction: {e}")
             return None
+    
+    def check_trend_filter(self, df: pd.DataFrame, kline_direction: str, ma_period: int = 20) -> Tuple[bool, Dict]:
+        """
+        Check if the kline direction aligns with the trend based on MA
+        
+        Args:
+            df: DataFrame with OHLCV data
+            kline_direction: 'UP' or 'DOWN'
+            ma_period: MA period for trend filter (default: 20)
+            
+        Returns:
+            Tuple of (is_valid, trend_info) where trend_info contains:
+            - current_price: Current close price
+            - ma_value: MA value
+            - ma_direction: 'UP' or 'DOWN' based on MA slope
+            - price_vs_ma: 'ABOVE' or 'BELOW'
+            - trend_aligned: True if kline direction aligns with trend
+        """
+        try:
+            if df.empty or len(df) < ma_period + 1:
+                return False, {'error': 'Not enough data for trend filter'}
+            
+            # Calculate MA
+            ma = self.calculate_ma(df['close'], ma_period)
+            if ma is None or len(ma) < 2:
+                return False, {'error': 'Failed to calculate MA'}
+            
+            # Get current price and MA values
+            current_price = df['close'].iloc[-1]
+            current_ma = ma[-1]
+            previous_ma = ma[-2]
+            
+            # Determine MA direction (slope)
+            ma_direction = 'UP' if current_ma > previous_ma else 'DOWN'
+            
+            # Determine price position relative to MA
+            price_vs_ma = 'ABOVE' if current_price > current_ma else 'BELOW'
+            
+            # Check if kline direction aligns with trend
+            # For LONG: kline should be UP, price should be ABOVE MA, MA should be trending UP
+            # For SHORT: kline should be DOWN, price should be BELOW MA, MA should be trending DOWN
+            trend_aligned = False
+            
+            if kline_direction == 'UP':
+                # Long position: need price above MA and MA trending up
+                trend_aligned = (price_vs_ma == 'ABOVE' and ma_direction == 'UP')
+            elif kline_direction == 'DOWN':
+                # Short position: need price below MA and MA trending down
+                trend_aligned = (price_vs_ma == 'BELOW' and ma_direction == 'DOWN')
+            
+            trend_info = {
+                'current_price': current_price,
+                'ma_value': current_ma,
+                'ma_direction': ma_direction,
+                'price_vs_ma': price_vs_ma,
+                'trend_aligned': trend_aligned,
+                'ma_period': ma_period
+            }
+            
+            logger.info(
+                f"Trend filter check: "
+                f"direction={kline_direction}, "
+                f"price={current_price:.2f}, "
+                f"MA{ma_period}={current_ma:.2f}, "
+                f"MA_direction={ma_direction}, "
+                f"price_vs_MA={price_vs_ma}, "
+                f"trend_aligned={trend_aligned}"
+            )
+            
+            return trend_aligned, trend_info
+            
+        except Exception as e:
+            logger.error(f"Error checking trend filter: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, {'error': str(e)}

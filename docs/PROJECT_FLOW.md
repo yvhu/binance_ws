@@ -1,5 +1,7 @@
 # Project Execution Flow
 
+> **注意**：本文档描述的是项目执行流程。策略已从15分钟K线策略更新为5分钟K线策略。请查看 [Strategy Flow](STRATEGY_FLOW.md) 获取最新的策略详情。
+
 ## 1. Project Startup Flow
 
 ### 1.1 Initialization Phase
@@ -19,7 +21,7 @@ Initialize components:
     - TechnicalAnalyzer (Technical analyzer)
     - PositionManager (Position manager)
     - TradingExecutor (Trading executor)
-    - FifteenMinuteStrategy (15-minute strategy)
+    - FiveMinuteStrategy (5-minute strategy)
 ```
 
 ### 1.2 Startup Phase
@@ -48,11 +50,9 @@ BinanceWSClient.start()
 Connect to Binance Futures WebSocket
     ↓
 Subscribe to data streams:
-    - kline_3m (3-minute K-line)
-    - kline_5m (5-minute K-line)
-    - kline_15m (15-minute K-line)
-    - markPrice (Mark price)
-    - forceOrder (Force order)
+- kline_5m (5-minute K-line)
+- markPrice (Mark price)
+- forceOrder (Force order)
 ```
 
 ### 2.2 Data Reception and Processing
@@ -81,51 +81,43 @@ Store K-line data in memory
 Check if K-line is closed (is_closed)
 ```
 
-### 3.2 15-minute K-line Processing
-```
-15m K-line closes
-    ↓
-FifteenMinuteStrategy.on_15m_kline_close()
-    ↓
-TradingExecutor.close_all_positions()
-    ↓
-Close all positions
-    ↓
-PositionManager.reset_cycle()
-    ↓
-Reset cycle state
-```
-
-### 3.3 5-minute K-line Processing
+### 3.2 5-minute K-line Processing
 ```
 5m K-line closes
     ↓
-FifteenMinuteStrategy.on_5m_kline_close()
+FiveMinuteStrategy.on_5m_kline_close()
     ↓
-Check if it's the first 5m K-line in 15m cycle
+Check if position exists
     ↓
-If first 5m:
+If position exists:
     ↓
-Check if position can be opened (can_open_position)
+    Check engulfing stop loss
     ↓
-Execute opening position check logic
+If no position exists:
+    ↓
+    Check opening conditions
+    ↓
+    Execute opening position logic
 ```
+
 
 ## 4. Opening Position Decision Flow
 
 ### 4.1 Opening Condition Check
 ```
-_check_and_open_position(symbol)
-    ↓
-Get 3m K-line direction
+_check_and_open_position(symbol, kline_5m)
     ↓
 Get 5m K-line direction
     ↓
 Check volume condition (ratio >= threshold)
     ↓
+Check range condition (ratio >= threshold)
+    ↓
 Check body ratio condition (body/range >= threshold)
     ↓
-Check if both directions match
+Check shadow ratio condition (shadow/range < threshold)
+    ↓
+Determine opening direction
 ```
 
 ### 4.2 Direction Judgment Logic
@@ -239,9 +231,19 @@ Send opening notification to Telegram
 
 ## 6. Closing Position Execution Flow
 
-### 6.1 15-minute K-line Close Position
+### 6.1 Stop Loss Trigger
 ```
-15m K-line closes
+Fixed stop loss triggered
+    ↓
+STOP_MARKET order executes
+    ↓
+Position closed automatically
+    ↓
+Send closing notification to Telegram
+
+OR
+
+Engulfing stop loss triggered
     ↓
 TradingExecutor.close_all_positions()
     ↓
@@ -342,41 +344,46 @@ Log shutdown complete
 
 ## 10. Complete Trading Cycle Example
 
-### Time: 12:00:00
-```
-15m K-line starts
-    ↓
-PositionManager.set_15m_cycle_start()
-    ↓
-Record cycle start time
-```
-
 ### Time: 12:05:00
 ```
-First 5m K-line closes
+5m K-line closes
     ↓
 Check opening conditions:
-    - 3m K-line direction: UP
     - 5m K-line direction: UP
     - Volume ratio >= 0.70
+    - Range ratio >= 0.7
     - Body ratio >= 0.6
+    - Shadow ratio < 0.5
     ↓
 All match → Open LONG position
+    ↓
+Set stop loss order
     ↓
 Send opening notification
 ```
 
+### Time: 12:10:00
+```
+Next 5m K-line closes
+    ↓
+Check engulfing stop loss
+    ↓
+If engulfing pattern detected:
+    ↓
+    Close position immediately
+    ↓
+    Send closing notification
+```
+
 ### Time: 12:15:00
 ```
-15m K-line closes
+Another 5m K-line closes
     ↓
-Close LONG position
+If stop loss price hit:
     ↓
-Calculate PnL
+    Position closed automatically
     ↓
-Send closing notification
-    ↓
-Reset cycle
+    Send closing notification
 ```
 
 ## Component Interaction Diagram
@@ -405,7 +412,7 @@ Reset cycle
          │
          ▼
 ┌─────────────────┐
-│FifteenMinute    │
+│  FiveMinute     │
 │   Strategy      │
 └────────┬────────┘
          │
@@ -424,6 +431,6 @@ Reset cycle
 2. **Decision Flow**: Strategy checks conditions → TradingExecutor executes orders
 3. **Notification Flow**: All events → TelegramClient → Telegram
 4. **Error Handling**: All errors logged and sent to Telegram
-5. **Cycle Management**: 15m cycle tracked by PositionManager
-6. **Position Management**: Full position (100%) with 10x leverage
-7. **Risk Control**: Auto-close at 15m K-line close
+5. **Position Management**: Full position (100%) with configurable leverage
+6. **Risk Control**: Fixed stop loss + Engulfing stop loss
+7. **Strategy**: 5-minute K-line based trading strategy

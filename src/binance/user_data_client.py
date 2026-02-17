@@ -454,32 +454,48 @@ class UserDataClient:
             self.is_connected = False
     
     async def start(self) -> None:
-        """Start user data stream connection and listening"""
+        """Start user data stream connection and listening with continuous reconnection"""
         logger.info("Starting UserDataClient...")
+        attempt = 0
+        max_delay = 60  # Maximum delay between reconnection attempts
+        
         while True:
             try:
-                logger.info("Attempting to connect to user data stream...")
+                logger.info(f"Attempting to connect to user data stream (attempt {attempt + 1})...")
                 await self.connect()
                 logger.info("Starting to listen for user data messages...")
                 await self.listen()
                 logger.warning("User data listen loop ended unexpectedly")
+                
+                # Reset attempt counter on successful connection
+                attempt = 0
+                
             except Exception as e:
                 import traceback
-                logger.error(f"UserDataClient.start() error: {e}")
+                attempt += 1
+                logger.error(f"UserDataClient.start() error (attempt {attempt}): {e}")
                 logger.error(traceback.format_exc())
+                
                 # Trigger error callback
                 if self.callbacks['error']:
                     try:
-                        error_dict = {'type': 'start_error', 'error': str(e)}
+                        error_dict = {'type': 'start_error', 'error': str(e), 'attempt': attempt}
                         if asyncio.iscoroutinefunction(self.callbacks['error']):
                             await self.callbacks['error'](error_dict)
                         else:
                             self.callbacks['error'](error_dict)
                     except Exception as cb_err:
                         logger.error(f"Error callback raised exception: {cb_err}")
-                logger.info("Reconnecting to user data stream in 5 seconds...")
-                await asyncio.sleep(5)
-        logger.error("UserDataClient.start() exited unexpectedly")
+                
+                # Calculate delay with exponential backoff (max 60 seconds)
+                delay = min(5 * (2 ** min(attempt - 1, 4)), max_delay)
+                logger.info(f"Reconnecting to user data stream in {delay} seconds... (attempt {attempt})")
+                await asyncio.sleep(delay)
+                
+                # Reset attempt counter after long delay to allow fresh start
+                if attempt >= 10:
+                    logger.warning(f"Reached 10 failed attempts, continuing to retry...")
+                    attempt = 0
     
     def get_account_balance(self) -> Optional[float]:
         """

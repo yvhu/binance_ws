@@ -11,24 +11,21 @@ logger = logging.getLogger(__name__)
 
 
 class PositionManager:
-    """Manager for trading positions"""
+    """Manager for trading positions with state persistence"""
     
-    def __init__(self):
-        """Initialize position manager"""
-        self.positions: Dict[str, Dict] = {}  # symbol -> position info
-        self.current_15m_start_time: Optional[int] = None
-        self.has_opened_position_this_cycle: bool = False
-    
-    def set_15m_cycle_start(self, start_time: int) -> None:
+    def __init__(self, trading_executor=None, config=None, data_handler=None):
         """
-        Set the start time of current 15m cycle
+        Initialize position manager
         
         Args:
-            start_time: Start time of 15m K-line
+            trading_executor: Trading executor instance for syncing positions from exchange
+            config: Configuration manager instance for strategy parameters
+            data_handler: Data handler instance for getting current price and K-line data
         """
-        self.current_15m_start_time = start_time
-        self.has_opened_position_this_cycle = False
-        logger.info(f"New 15m cycle started at {datetime.fromtimestamp(start_time/1000)}")
+        self.positions: Dict[str, Dict] = {}  # symbol -> position info
+        self.trading_executor = trading_executor
+        self.config = config
+        self.data_handler = data_handler
     
     def has_position(self, symbol: str) -> bool:
         """
@@ -79,7 +76,6 @@ class PositionManager:
         }
         
         self.positions[symbol] = position
-        self.has_opened_position_this_cycle = True
         
         logger.info(f"Opened {side} position for {symbol} at {entry_price}, quantity: {quantity}")
         
@@ -140,16 +136,167 @@ class PositionManager:
         
         return closed_positions
     
-    def can_open_position(self) -> bool:
+    async def sync_from_exchange(self, symbols: List[str]) -> None:
         """
-        Check if a new position can be opened in current cycle
+        Sync positions from Binance exchange to ensure state persistence
+        This should be called on startup to avoid "logic empty but real has position" risk
         
-        Returns:
-            True if position can be opened
+        Args:
+            symbols: List of trading pair symbols to sync
         """
-        return not self.has_opened_position_this_cycle
+        if not self.trading_executor:
+            logger.warning("Trading executor not provided, cannot sync positions from exchange")
+            return
+        
+        logger.info(f"Syncing positions from exchange for {len(symbols)} symbol(s)...")
+        
+        import asyncio
+        from binance.enums import SIDE_SELL, SIDE_BUY, ORDER_TYPE_STOP_MARKET
+        
+        for symbol in symbols:
+            try:
+                # Get position from Binance API
+                position = await asyncio.to_thread(self.trading_executor.get_position, symbol)
+                
+                if position:
+                    position_amt = float(position.get('positionAmt', 0))
+                    
+                    if position_amt != 0:
+                        # Determine position side
+                        side = 'LONG' if position_amt > 0 else 'SHORT'
+                        entry_price = float(position.get('entryPrice', 0))
+                        quantity = abs(position_amt)
+                        
+                        # Reconstruct position info
+                        position_info = {
+                            'symbol': symbol,
+                            'side': side,
+                            'entry_price': entry_price,
+                            'quantity': quantity,
+                            'entry_time': datetime.now().timestamp(),  # Use current time as we don't have original
+                            'entry_kline': None,  # We don't have the original entry kline
+                            'is_open': True,
+                            'synced_from_exchange': True  # Mark as synced from exchange
+                        }
+                        
+                        self.positions[symbol] = position_info
+                        
+                        logger.warning(
+                            f"⚠️ Position synced from exchange: {symbol} {side} "
+                            f"qty={quantity} entry_price={entry_price:.2f}"
+                        )
+                        
+                        # Check if stop loss order exists
+                        has_stop_loss = await asyncio.to_thread(
+                            self.trading_executor.has_stop_loss_order,
+                            symbol
+                        )
+                        
+                        if not has_stop_loss:
+                            logger.warning(f"⚠️ No stop loss order found for {symbol}, creating one...")
+                            
+                            # Calculate stop loss price based on current price and strategy config
+                            if self.config and self.data_handler:
+                                try:
+                                    # Get strategy configuration
+                                    stop_loss_range_multiplier = self.config.get_config(
+                                        "strategy",
+                                        "stop_loss_range_multiplier",
+                                        default=0.8
+                                    )
+                                    stop_loss_min_distance_percent = self.config.get_config(
+                                        "strategy",
+                                        "stop_loss_min_distance_percent",
+                                        default=0.003
+                                    )
+                                    
+                                    # Get current price
+                                    current_price = self.data_handler.get_current_price(symbol)
+                                    if current_price is None:
+                                        logger.error(f"Could not get current price for {symbol}")
+                                        continue
+                                    
+                                    # Get latest 5m K-line to calculate range
+                                    klines = self.data_handler.get_klines(symbol, "5m")
+                                    if not klines:
+                                        logger.warning(f"No K-line data for {symbol}, using minimum stop loss distance")
+                                        # Use minimum stop loss distance as fallback
+                                        stop_loss_distance = current_price * stop_loss_min_distance_percent
+                                    else:
+                                        # Get the latest closed K-line
+                                        closed_klines = [k for k in klines if k.get('is_closed', False)]
+                                        if closed_klines:
+                                            latest_kline = closed_klines[-1]
+                                            current_range = latest_kline['high'] - latest_kline['low']
+                                            if current_range > 0:
+                                                stop_loss_distance = current_range * stop_loss_range_multiplier
+                                            else:
+                                                stop_loss_distance = current_price * stop_loss_min_distance_percent
+                                        else:
+                                            stop_loss_distance = current_price * stop_loss_min_distance_percent
+                                    
+                                    # Calculate stop loss price
+                                    if side == 'LONG':
+                                        stop_loss_price = current_price - stop_loss_distance
+                                    else:  # SHORT
+                                        stop_loss_price = current_price + stop_loss_distance
+                                    
+                                    logger.info(
+                                        f"Creating stop loss order for {symbol}: "
+                                        f"side={side}, current_price={current_price:.2f}, "
+                                        f"stop_loss_price={stop_loss_price:.2f}"
+                                    )
+                                    
+                                    # Create stop loss order
+                                    if side == 'LONG':
+                                        order = await asyncio.to_thread(
+                                            self.trading_executor.client.futures_create_order,
+                                            symbol=symbol,
+                                            side=SIDE_SELL,
+                                            type=ORDER_TYPE_STOP_MARKET,
+                                            stopPrice=stop_loss_price,
+                                            quantity=quantity,
+                                            reduceOnly=True
+                                        )
+                                    else:  # SHORT
+                                        order = await asyncio.to_thread(
+                                            self.trading_executor.client.futures_create_order,
+                                            symbol=symbol,
+                                            side=SIDE_BUY,
+                                            type=ORDER_TYPE_STOP_MARKET,
+                                            stopPrice=stop_loss_price,
+                                            quantity=quantity,
+                                            reduceOnly=True
+                                        )
+                                    
+                                    logger.info(f"✓ Stop loss order created for {symbol}: {order}")
+                                    
+                                except Exception as e:
+                                    logger.error(f"Failed to create stop loss order for {symbol}: {e}")
+                                    import traceback
+                                    logger.error(traceback.format_exc())
+                            else:
+                                logger.warning(
+                                    f"Cannot create stop loss order for {symbol}: "
+                                    f"config or data_handler not provided"
+                                )
+                        else:
+                            logger.info(f"✓ Stop loss order already exists for {symbol}")
+                    else:
+                        # No position on exchange, ensure local state is also empty
+                        if symbol in self.positions:
+                            logger.info(f"Removing local position for {symbol} (no position on exchange)")
+                            del self.positions[symbol]
+                else:
+                    # No position on exchange, ensure local state is also empty
+                    if symbol in self.positions:
+                        logger.info(f"Removing local position for {symbol} (no position on exchange)")
+                        del self.positions[symbol]
+                        
+            except Exception as e:
+                logger.error(f"Error syncing position for {symbol}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        logger.info(f"Position sync completed. Current positions: {list(self.positions.keys())}")
     
-    def reset_cycle(self) -> None:
-        """Reset cycle state"""
-        self.has_opened_position_this_cycle = False
-        logger.info("Cycle reset, ready for new position")

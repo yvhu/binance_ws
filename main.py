@@ -16,7 +16,7 @@ from src.telegram.telegram_client import TelegramClient
 from src.indicators.technical_analyzer import TechnicalAnalyzer
 from src.trading.position_manager import PositionManager
 from src.trading.trading_executor import TradingExecutor
-from src.strategy.fifteen_minute_strategy import FifteenMinuteStrategy
+from src.strategy.fifteen_minute_strategy import FiveMinuteStrategy
 from src.utils.logger import setup_logger
 
 
@@ -56,9 +56,6 @@ class BinanceTelegramBot:
         self.technical_analyzer = TechnicalAnalyzer(self.config.indicators_config)
         
         # Initialize trading components
-        self.logger.info("Initializing position manager...")
-        self.position_manager = PositionManager()
-        
         self.logger.info("Initializing trading executor (this may take a moment)...")
         try:
             self.trading_executor = TradingExecutor(self.config)
@@ -67,12 +64,19 @@ class BinanceTelegramBot:
             self.logger.error(f"✗ Failed to initialize trading executor: {e}")
             raise
         
+        self.logger.info("Initializing position manager...")
+        self.position_manager = PositionManager(
+            trading_executor=self.trading_executor,
+            config=self.config,
+            data_handler=self.data_handler
+        )
+        
         self.logger.info("Initializing user data stream client...")
         self.user_data_client = UserDataClient(self.config, self.trading_executor)
         self.logger.info("✓ User data stream client initialized")
         
-        self.logger.info("Initializing 15-minute strategy...")
-        self.strategy = FifteenMinuteStrategy(
+        self.logger.info("Initializing 5-minute strategy...")
+        self.strategy = FiveMinuteStrategy(
             self.config,
             self.technical_analyzer,
             self.position_manager,
@@ -112,6 +116,11 @@ class BinanceTelegramBot:
             self.logger.info("Setting trading executor for data handler...")
             # Set trading executor for data handler to fetch historical data
             self.data_handler.set_trading_executor(self.trading_executor)
+            
+            self.logger.info("⚠️ Syncing positions from exchange to ensure state persistence...")
+            # Sync positions from Binance exchange to avoid "logic empty but real has position" risk
+            await self.position_manager.sync_from_exchange(self.config.binance_symbols)
+            self.logger.info("✓ Position sync completed")
             
             self.logger.info("Loading historical kline data...")
             # Load historical klines for all configured symbols and intervals
@@ -168,7 +177,7 @@ class BinanceTelegramBot:
         """Load historical kline data for all configured symbols and intervals"""
         try:
             symbols = self.config.binance_symbols
-            intervals = ['15m', '5m']  # Load data for all intervals used in strategy
+            intervals = ['5m']  # Load data for all intervals used in strategy
             
             for symbol in symbols:
                 for interval in intervals:
@@ -234,24 +243,6 @@ class BinanceTelegramBot:
             # Store data
             self.data_handler.process_kline(kline_info)
             
-            # Log data storage status for 15m klines
-            if interval == '15m':
-                key = f"{symbol}_{interval}"
-                klines_count = len(self.data_handler.kline_data.get(key, []))
-                self.logger.info(f"[KLINE] 15m kline stored for {symbol}, total count: {klines_count}, closed={is_closed}")
-            
-            # Track last seen 15m kline open time to detect new klines
-            if not hasattr(self, '_last_15m_open_time'):
-                self._last_15m_open_time = {}
-            
-            # Handle 15m K-line start event (new kline detected)
-            if interval == '15m':
-                last_open_time = self._last_15m_open_time.get(symbol, 0)
-                if open_time != last_open_time and not is_closed:
-                    # New 15m kline started
-                    self._last_15m_open_time[symbol] = open_time
-                    self.logger.info(f"[KLINE] Calling on_15m_kline_start for {symbol}")
-                    self.strategy.on_15m_kline_start(kline_info)
             
             # Only process closed klines for trading logic
             if not is_closed:
@@ -260,11 +251,7 @@ class BinanceTelegramBot:
             self.logger.debug(f"Processing closed kline for {symbol} {interval}")
             
             # Route to strategy based on interval
-            if interval == '15m':
-                # Handle 15m K-line close event
-                self.logger.info(f"[KLINE] Calling on_15m_kline_close for {symbol}")
-                await self.strategy.on_15m_kline_close(kline_info)
-            elif interval == '5m':
+            if interval == '5m':
                 # Handle 5m K-line close event (trigger for opening position)
                 self.logger.info(f"[KLINE] Calling on_5m_kline_close for {symbol}")
                 await self.strategy.on_5m_kline_close(kline_info)
@@ -477,7 +464,7 @@ class BinanceTelegramBot:
         details = {
             "交易对": ", ".join(symbols),
             "杠杆": f"{self.config.leverage}倍",
-            "策略": "15分钟K线策略",
+            "策略": "5分钟K线策略",
             "仓位大小": "100% (全仓)",
             "可用资金": balance_str,
             "数据流": ", ".join(self.config.binance_streams)

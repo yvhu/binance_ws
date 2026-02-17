@@ -20,9 +20,9 @@ Example:
 
   Trading Pairs: BTCUSDC
   Leverage: 10x
-  Strategy: 15m K-line Strategy
+  Strategy: 5m K-line Strategy
   Position Size: 100% (Full Position)
-  Streams: kline_3m, kline_5m, kline_15m
+  Streams: kline_5m
 
 ⏰ Time: 2024-01-01 12:00:00
 ```
@@ -36,11 +36,12 @@ Sent when analyzing entry conditions, including:
 - Trading pair
 - 5m K-line time (the specific K-line being analyzed)
 - Current price
-- 3m K-line direction
 - 5m K-line direction
 - Volume information (based on closed K-lines only)
+- K-line range information
 - Body ratio information
-- Direction consistency check
+- Shadow ratio information
+- Trend filter information (MA20)
 - Trading decision
 
 Example:
@@ -51,11 +52,34 @@ Example:
 
 💰 当前价格: $50,000.00
 
-📊 3m K线方向:
-  • 🟢 上涨
-
 📊 5m K线方向:
   • 🟢 上涨
+
+📊 5m K线振幅:
+  • 当前振幅: 150.00
+  • 近5根平均: 120.00 (比例: 1.25x)
+  • 阈值要求: ≥0.5x
+  • 振幅检查: ✅ 通过
+
+📊 5m K线实体比例:
+  • 实体长度: 50.00
+  • 整体振幅: 150.00
+  • 实体比例: 0.3333
+  • 阈值要求: ≥0.7
+  • 实体检查: ❌ 未通过
+
+📊 5m K线影线比例:
+  • 上影线比例: 0.25
+  • 下影线比例: 0.15
+  • 阈值要求: <0.4
+  • 影线检查: ✅ 通过
+
+📊 趋势过滤 (MA20):
+  • 当前价格: $50,000.00
+  • MA20: $49,500.00
+  • MA20方向: 上升
+  • 价格位置: MA20上方
+  • 趋势检查: ✅ 通过
 
 📦 5m K线成交量 (基于已关闭K线):
   • 第一个5m成交量: 1,000.00
@@ -63,15 +87,6 @@ Example:
   • 近10根平均: 848.00 (比例: 1.18x)
   • 阈值要求: ≥0.55x
   • 成交量检查: ✅ 通过
-
-<b>方向一致性:</b> ✅ 一致
-
-📊 5m K线实体比例:
-  • 实体长度: 50.00
-  • 整体振幅: 150.00
-  • 实体比例: 0.3333
-  • 阈值要求: ≥0.3000
-  • 实体检查: ✅ 通过
 
 <b>交易决策:</b> 🟢 做多
 
@@ -227,9 +242,9 @@ All messages are formatted with:
 ## Notification Triggers
 
 1. **Startup**: When `main.py` starts
-2. **Indicator Analysis**: When analyzing entry conditions (first 5m K-line closes in 15m cycle)
+2. **Indicator Analysis**: When analyzing entry conditions (5m K-line closes)
 3. **Position Open**: When strategy opens a position
-4. **Position Close**: When 15m K-line closes
+4. **Position Close**: When stop loss is triggered or position is closed
 5. **No Trade**: When entry conditions are not met
 6. **Error**: When any error occurs in the system
 7. **Shutdown**: When the bot stops gracefully
@@ -240,7 +255,7 @@ All volume-related calculations in notifications follow these rules:
 
 1. **Closed K-lines Only**: Volume MA5 and MA10 are calculated using only closed K-lines to match Binance's display
 2. **Include Current K-line**: When a K-line closes, the MA calculation includes this just-closed K-line to match Binance's update timing
-3. **Calculation Timing**: Calculations are performed immediately after the first 5m K-line closes in the 15m cycle
+3. **Calculation Timing**: Calculations are performed immediately after the 5m K-line closes
 4. **Verification**: The K-line time displayed in notifications allows you to verify which K-line was used for calculations
 
 This ensures that the volume ratios shown in notifications match exactly what you see on Binance's trading interface.

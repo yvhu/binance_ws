@@ -47,6 +47,9 @@ class BinanceWSClient:
         
         # Data storage
         self.latest_data: Dict[str, Dict] = {}
+        
+        # Track active callback tasks to prevent garbage collection
+        self.active_tasks: List[asyncio.Task] = []
     
     def on_message(self, message_type: str, callback: Callable) -> None:
         """
@@ -224,7 +227,10 @@ class BinanceWSClient:
             try:
                 # logger.debug(f"[WS] Calling ticker callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(ticker_info))
+                    task = asyncio.create_task(callback(ticker_info))
+                    self.active_tasks.append(task)
+                    # Clean up completed tasks
+                    self.active_tasks = [t for t in self.active_tasks if not t.done()]
                 else:
                     callback(ticker_info)
                 # logger.debug(f"[WS] Ticker callback {idx+1}/{callback_count} completed")
@@ -278,7 +284,10 @@ class BinanceWSClient:
             try:
                 # logger.debug(f"[WS] Calling kline callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(kline_info))
+                    task = asyncio.create_task(callback(kline_info))
+                    self.active_tasks.append(task)
+                    # Clean up completed tasks
+                    self.active_tasks = [t for t in self.active_tasks if not t.done()]
                 else:
                     callback(kline_info)
                 # logger.debug(f"[WS] Kline callback {idx+1}/{callback_count} completed")
@@ -296,17 +305,6 @@ class BinanceWSClient:
                 # Check if callback is coroutine function and named on_5m_kline_close or similar
                 if hasattr(callback, '__name__') and callback.__name__ == 'on_5m_kline_close':
                     logger.info(f"[WS] Calling on_5m_kline_close callback for {symbol}")
-                    if asyncio.iscoroutinefunction(callback):
-                        asyncio.create_task(callback(kline_info))
-                    else:
-                        callback(kline_info)
-        
-        # Add explicit logging for 15m kline close to help debug strategy callback
-        if interval == '15m' and is_closed:
-            logger.info(f"[WS] 15m kline closed for {symbol}, triggering strategy callbacks if any")
-            for callback in self.callbacks['kline']:
-                if hasattr(callback, '__name__') and callback.__name__ == 'on_15m_kline_close':
-                    logger.info(f"[WS] Calling on_15m_kline_close callback for {symbol}")
                     if asyncio.iscoroutinefunction(callback):
                         asyncio.create_task(callback(kline_info))
                     else:
@@ -338,7 +336,10 @@ class BinanceWSClient:
             try:
                 # logger.debug(f"[WS] Calling trade callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(trade_info))
+                    task = asyncio.create_task(callback(trade_info))
+                    self.active_tasks.append(task)
+                    # Clean up completed tasks
+                    self.active_tasks = [t for t in self.active_tasks if not t.done()]
                 else:
                     callback(trade_info)
                 # logger.debug(f"[WS] Trade callback {idx+1}/{callback_count} completed")
@@ -376,7 +377,10 @@ class BinanceWSClient:
             try:
                 # logger.debug(f"[WS] Calling mark price callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(mark_price_info))
+                    task = asyncio.create_task(callback(mark_price_info))
+                    self.active_tasks.append(task)
+                    # Clean up completed tasks
+                    self.active_tasks = [t for t in self.active_tasks if not t.done()]
                 else:
                     callback(mark_price_info)
                 # logger.debug(f"[WS] Mark price callback {idx+1}/{callback_count} completed")
@@ -419,7 +423,10 @@ class BinanceWSClient:
             try:
                 # logger.debug(f"[WS] Calling force order callback {idx+1}/{callback_count}...")
                 if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(force_order_info))
+                    task = asyncio.create_task(callback(force_order_info))
+                    self.active_tasks.append(task)
+                    # Clean up completed tasks
+                    self.active_tasks = [t for t in self.active_tasks if not t.done()]
                 else:
                     callback(force_order_info)
                 # logger.debug(f"[WS] Force order callback {idx+1}/{callback_count} completed")
@@ -463,30 +470,37 @@ class BinanceWSClient:
             self.is_connected = False
     
     async def start(self) -> None:
-        """Start WebSocket connection and listening"""
+        """Start WebSocket connection and listening with continuous reconnection"""
         attempt = 0
-        logger.info(f"Starting BinanceWSClient with {self.reconnect_attempts} max reconnect attempts")
+        logger.info(f"Starting BinanceWSClient with continuous reconnection")
         
-        while attempt < self.reconnect_attempts:
+        while True:  # Continuous reconnection loop
             try:
-                logger.info(f"Connection attempt {attempt + 1}/{self.reconnect_attempts}")
+                logger.info(f"Connection attempt {attempt + 1}")
                 await self.connect()
                 logger.info("Starting to listen for messages...")
                 await self.listen()
                 logger.warning("Listen loop ended unexpectedly")
+                
+                # Reset attempt counter on successful connection
+                attempt = 0
+                
             except Exception as e:
                 import traceback
                 attempt += 1
                 logger.error(f"✗ Connection attempt {attempt} failed: {e}")
                 logger.error(traceback.format_exc())
                 
-                if attempt < self.reconnect_attempts:
-                    logger.info(f"⏳ Reconnecting in {self.reconnect_delay} seconds...")
-                    await asyncio.sleep(self.reconnect_delay)
-                else:
-                    logger.error("✗ Max reconnection attempts reached. Giving up.")
-                    raise
-        logger.error("BinanceWSClient.start() exited")
+                # Calculate delay with exponential backoff (max 60 seconds)
+                delay = min(self.reconnect_delay * (2 ** min(attempt - 1, 4)), 60)
+                
+                logger.info(f"⏳ Reconnecting in {delay} seconds... (attempt {attempt})")
+                await asyncio.sleep(delay)
+                
+                # Reset attempt counter after long delay to allow fresh start
+                if attempt >= self.reconnect_attempts:
+                    logger.warning(f"Reached {self.reconnect_attempts} failed attempts, continuing to retry...")
+                    attempt = 0
     
     def get_latest_data(self, symbol: str, data_type: str = 'ticker') -> Optional[Dict]:
         """

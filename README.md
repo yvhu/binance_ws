@@ -1,3 +1,4 @@
+
 # Binance Futures Telegram Bot
 
 A cryptocurrency futures trading bot that fetches real-time market data from Binance Futures WebSocket, performs technical analysis using TA-Lib, and sends trading signals via Telegram.
@@ -15,7 +16,10 @@ A cryptocurrency futures trading bot that fetches real-time market data from Bin
 - Support for liquidation order monitoring / 支持强平订单监控
 - Docker deployment support / 支持Docker部署
 - Modular and extensible code design / 模块化可扩展的代码设计
-- 15-minute K-line trading strategy with SAR indicator / 15分钟K线+SAR指标交易策略
+- Position state persistence / 持仓状态持久化
+- Trend filtering with MA20 to avoid false breakouts / MA20趋势过滤避免假突破
+- 5-minute K-line trading strategy / 5分钟K线交易策略
+- Dynamic position sizing based on risk management / 基于风险管理的动态仓位计算
 - Comprehensive Telegram notifications (Chinese) / 完整的Telegram通知（中文）
 
 ## Project Structure / 项目结构
@@ -24,6 +28,7 @@ A cryptocurrency futures trading bot that fetches real-time market data from Bin
 binance_ws/
 ├── src/
 │   ├── config/                 # Configuration management / 配置管理
+您发送的内容疑似存在以下问题：【违禁】，已被拦截。
 │   ├── binance/                # Binance Futures WebSocket module / Binance合约WebSocket模块
 │   ├── telegram/               # Telegram communication module / Telegram通讯模块
 │   ├── indicators/             # Technical indicators module / 技术指标模块
@@ -102,7 +107,7 @@ symbols = ["BTCUSDC", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
 
 Available streams for futures / 合约可用数据流:
 - ticker: 24小时价格变动 / 24-hour ticker
-- kline_1m, kline_5m, kline_15m: K线数据 / Kline data
+- kline_5m: 5分钟K线数据 / 5-minute Kline data
 - markPrice: 标记价格 / Mark price
 - forceOrder: 强平订单 / Liquidation orders
 
@@ -114,10 +119,10 @@ Available streams for futures / 合约可用数据流:
 - Bollinger Bands / 布林带
 - ATR / 平均真实波幅
 - Stochastic Oscillator / 随机指标
-- SAR / 抛物线转向指标
 
 ## Documentation / 文档
 
+- [Strategy Flow](docs/STRATEGY_FLOW.md) - 策略流程说明
 - [Project Execution Flow](docs/PROJECT_FLOW.md) - 项目执行流程说明
 - [Trading Flow Documentation](docs/TRADING_FLOW.md) - 详细交易流程说明
 - [Telegram Notifications](docs/TELEGRAM_NOTIFICATIONS.md) - Telegram通知说明

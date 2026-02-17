@@ -34,7 +34,13 @@ class TradingExecutor:
         )
         
         self.leverage = config.leverage
-        self.position_size_percent = 100  # Full position (100% of account balance)
+        
+        # Risk management configuration
+        self.max_loss_per_trade_percent = config.get_config(
+            "trading",
+            "max_loss_per_trade_percent",
+            default=0.30
+        )  # 30% maximum loss per trade
         
         # Trading configuration
         self.fee_rate = config.get_config("trading", "fee_rate", default=0.0004)  # 0.04% for market orders
@@ -44,7 +50,8 @@ class TradingExecutor:
         self.leverage_cache = set()  # Track symbols with leverage already set
         
         logger.info(
-            f"Trading executor initialized with {self.leverage}x leverage (full position), "
+            f"Trading executor initialized with {self.leverage}x leverage, "
+            f"max_loss_per_trade={self.max_loss_per_trade_percent*100:.1f}%, "
             f"fee_rate={self.fee_rate:.4f}, safety_margin={self.safety_margin:.4f}"
         )
         
@@ -299,13 +306,31 @@ class TradingExecutor:
             logger.error(traceback.format_exc())
             return None
     
-    def calculate_position_size(self, current_price: float, symbol: str) -> Optional[float]:
+    def calculate_position_size(
+        self,
+        current_price: float,
+        symbol: str,
+        stop_loss_distance_percent: Optional[float] = None
+    ) -> Optional[float]:
         """
-        Calculate position size based on account balance, fees, and safety margin
+        Calculate position size based on risk management (max loss per trade)
+        
+        Position size is calculated based on:
+        1. Maximum loss per trade limit (e.g., 5% of account balance)
+        2. Stop loss distance (percentage from entry to stop loss)
+        3. Available leverage
+        4. Trading fees and safety margin
+        
+        Formula:
+        - Max position value by risk = (Balance × Max loss %) / Stop loss distance %
+        - Max position value by leverage = Balance × Leverage
+        - Actual position value = min(Max by risk, Max by leverage)
         
         Args:
             current_price: Current price of the asset
             symbol: Trading pair symbol (from configuration)
+            stop_loss_distance_percent: Stop loss distance as percentage (e.g., 0.005 for 0.5%)
+                                         If None, uses full leverage (old behavior)
             
         Returns:
             Position quantity or None
@@ -314,38 +339,61 @@ class TradingExecutor:
         if balance is None:
             return None
         
-        # Calculate maximum position value using leverage
-        # Maximum position value = Balance * Leverage
-        max_position_value = balance * self.leverage
+        # Calculate maximum position value based on leverage
+        max_position_value_by_leverage = balance * self.leverage
+        
+        # Calculate maximum position value based on risk management
+        if stop_loss_distance_percent is not None and stop_loss_distance_percent > 0:
+            # Risk-based position sizing
+            # Position value = (Balance × Max loss %) / Stop loss distance %
+            max_position_value_by_risk = (
+                balance * self.max_loss_per_trade_percent / stop_loss_distance_percent
+            )
+            
+            # Use the smaller of the two limits
+            actual_position_value = min(max_position_value_by_risk, max_position_value_by_leverage)
+            
+            logger.info(
+                f"Risk-based position sizing:\n"
+                f"  Balance: {balance:.2f} USDC\n"
+                f"  Max loss per trade: {self.max_loss_per_trade_percent*100:.1f}%\n"
+                f"  Stop loss distance: {stop_loss_distance_percent*100:.2f}%\n"
+                f"  Max position by risk: {max_position_value_by_risk:.2f} USDC\n"
+                f"  Max position by leverage: {max_position_value_by_leverage:.2f} USDC\n"
+                f"  Actual position value: {actual_position_value:.2f} USDC\n"
+                f"  Effective leverage: {actual_position_value/balance:.2f}x"
+            )
+        else:
+            # No stop loss distance provided, use full leverage (old behavior)
+            actual_position_value = max_position_value_by_leverage
+            
+            logger.info(
+                f"Full leverage position sizing (no stop loss distance provided):\n"
+                f"  Balance: {balance:.2f} USDC\n"
+                f"  Leverage: {self.leverage}x\n"
+                f"  Position value: {actual_position_value:.2f} USDC"
+            )
         
         # Calculate opening fee based on position value
-        # Opening fee = Position value * Fee rate
-        opening_fee = max_position_value * self.fee_rate
+        opening_fee = actual_position_value * self.fee_rate
         
         # Calculate safety margin based on position value
-        # Safety margin = Position value * Safety margin rate
-        safety_margin_amount = max_position_value * self.safety_margin
+        safety_margin_amount = actual_position_value * self.safety_margin
         
         # Calculate actual available position value after deducting fees and safety margin
-        # Available position value = Max position value - Opening fee - Safety margin
-        available_position_value = max_position_value - opening_fee - safety_margin_amount
+        available_position_value = actual_position_value - opening_fee - safety_margin_amount
         
         # Calculate quantity
-        # Quantity = Available position value / Current price
         quantity = available_position_value / current_price
         
         # Estimate closing fee for information only
         closing_fee = available_position_value * self.fee_rate
         
         # Calculate required margin
-        # Required margin = Available position value / Leverage
         required_margin = available_position_value / self.leverage
         
         logger.info(
-            f"Position size calculated:\n"
-            f"  Balance: {balance:.2f} USDC\n"
-            f"  Leverage: {self.leverage}x\n"
-            f"  Max position value: {max_position_value:.2f} USDC\n"
+            f"Position size calculation details:\n"
             f"  Opening fee: {opening_fee:.4f} USDC ({self.fee_rate*100:.2f}%)\n"
             f"  Safety margin: {safety_margin_amount:.4f} USDC ({self.safety_margin*100:.1f}%)\n"
             f"  Available position value: {available_position_value:.2f} USDC\n"
@@ -658,4 +706,97 @@ class TradingExecutor:
             
         except Exception as e:
             logger.error(f"Failed to close all positions for {symbol}: {e}")
+            return False
+    
+    def get_open_orders(self, symbol: str) -> Optional[list]:
+        """
+        Get all open orders for a symbol
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            List of open orders or None
+        """
+        try:
+            orders = self.client.futures_get_open_orders(symbol=symbol)
+            return orders
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get open orders for {symbol}: {e}")
+            return None
+    
+    def cancel_order(self, symbol: str, order_id: int) -> bool:
+        """
+        Cancel an order by order ID
+        
+        Args:
+            symbol: Trading pair symbol
+            order_id: Order ID to cancel
+            
+        Returns:
+            True if successful
+        """
+        try:
+            self.client.futures_cancel_order(symbol=symbol, orderId=order_id)
+            logger.info(f"Order {order_id} cancelled for {symbol}")
+            return True
+        except BinanceAPIException as e:
+            logger.error(f"Failed to cancel order {order_id} for {symbol}: {e}")
+            return False
+    
+    def cancel_all_stop_loss_orders(self, symbol: str) -> bool:
+        """
+        Cancel all stop loss orders for a symbol
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            True if successful
+        """
+        try:
+            orders = self.get_open_orders(symbol)
+            if not orders:
+                logger.debug(f"No open orders to cancel for {symbol}")
+                return True
+            
+            cancelled_count = 0
+            for order in orders:
+                # Check if it's a stop loss order (STOP_MARKET type and reduceOnly=True)
+                if order.get('type') == 'STOP_MARKET' and order.get('reduceOnly', False):
+                    order_id = order.get('orderId')
+                    if order_id:
+                        if self.cancel_order(symbol, order_id):
+                            cancelled_count += 1
+            
+            logger.info(f"Cancelled {cancelled_count} stop loss order(s) for {symbol}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to cancel stop loss orders for {symbol}: {e}")
+            return False
+    
+    def has_stop_loss_order(self, symbol: str) -> bool:
+        """
+        Check if there is an active stop loss order for a symbol
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            True if stop loss order exists
+        """
+        try:
+            orders = self.get_open_orders(symbol)
+            if not orders:
+                return False
+            
+            for order in orders:
+                if order.get('type') == 'STOP_MARKET' and order.get('reduceOnly', False):
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to check stop loss order for {symbol}: {e}")
             return False

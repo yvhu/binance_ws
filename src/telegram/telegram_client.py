@@ -2,18 +2,6 @@
 Telegram Client
 Handles communication with Telegram Bot API
 """
-import logging
-from typing import Optional, Dict
-from datetime import datetime, timedelta
-from telegram import Bot, Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.error import TelegramError, TimedOut
-
-from ..config.config_manager import ConfigManager
-from .message_formatter import MessageFormatter
-
-logger = logging.getLogger(__name__)
-
 import asyncio
 import logging
 from typing import Optional, Dict
@@ -342,6 +330,7 @@ class TelegramClient:
                                        volume_info: Optional[Dict] = None,
                                        range_info: Optional[Dict] = None,
                                        body_info: Optional[Dict] = None,
+                                       trend_info: Optional[Dict] = None,
                                        kline_time: Optional[int] = None) -> bool:
         """
         Send indicator analysis notification to Telegram
@@ -357,6 +346,7 @@ class TelegramClient:
             volume_info: Volume information dictionary (optional)
             range_info: Range information dictionary (optional)
             body_info: Body ratio information dictionary (optional)
+            trend_info: Trend filter information dictionary (optional)
             kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
@@ -364,7 +354,7 @@ class TelegramClient:
         """
         message = self.formatter.format_indicator_analysis(
             symbol, sar_direction, direction_3m, direction_5m,
-            sar_value, current_price, decision, volume_info, range_info, body_info, kline_time
+            sar_value, current_price, decision, volume_info, range_info, body_info, trend_info, kline_time
         )
         return await self.send_message(message, parse_mode='HTML')
     

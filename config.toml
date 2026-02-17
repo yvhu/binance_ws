@@ -6,7 +6,7 @@
 # symbols = ["BTCUSDC", "ETHUSDC", "BNBUSDC", "SOLUSDC"]
 symbols = ["BTCUSDC"]
 # WebSocket streams (Futures)
-streams = ["ticker", "kline_5m", "kline_15m"]
+streams = ["ticker", "kline_5m"]
 # Reconnection settings
 reconnect_attempts = 5
 reconnect_delay = 5  # seconds
@@ -39,26 +39,34 @@ bb_std = 2
 
 # Trading Strategy Configuration
 [strategy]
-# 15m K线交易策略
+# 5m K线交易策略
 # Position size: 100% of account balance (full position)
 
 # K线 intervals for strategy
-main_interval = "15m"  # Main trading interval
 check_interval = "5m"  # Check interval for opening position
 
 # Volume check parameters
-volume_ratio_threshold = 0.70  # Minimum volume ratio (current volume / average volume of last 5 klines)
+volume_ratio_threshold = 0.80  # Minimum volume ratio (current volume / average volume of last 5 klines)
 
 # K-line body ratio check parameters
-body_ratio_threshold = 0.6  # Minimum body ratio (body / range), filters klines with too much resistance
-shadow_ratio_threshold = 0.5  # Maximum shadow ratio (shadow / range), prevents single-sided shadows from being too long
+body_ratio_threshold = 0.7  # Minimum body ratio (body / range), filters klines with too much resistance
+shadow_ratio_threshold = 0.4  # Maximum shadow ratio (shadow / range), prevents single-sided shadows from being too long
 
 # K-line range check parameters
-range_ratio_threshold = 0.7  # Minimum range ratio (current range / average range of last 5 klines), ensures sufficient volatility
+range_ratio_threshold = 0.5  # Minimum range ratio (current range / average range of last 5 klines), ensures sufficient volatility
 
 # Stop loss parameters
-stop_loss_range_multiplier = 0.6  # Stop loss distance = 5m K-line range * this multiplier
+stop_loss_range_multiplier = 0.8  # Moving stop loss distance = latest 5m K-line range * this multiplier
+stop_loss_min_distance_percent = 0.5  # Minimum stop loss distance as percentage of price (0.5% = 0.005)
 engulfing_body_ratio_threshold = 0.7  # Minimum engulfing body ratio to trigger stop loss
+
+# Trend filter parameters (to avoid false breakouts in sideways markets)
+trend_filter_enabled = true  # Enable trend filter to avoid false breakouts
+trend_filter_ma_period = 20  # MA period for trend filter (default: 20)
+# Trend filter logic:
+# - For LONG: price must be ABOVE MA20 AND MA20 must be trending UP
+# - For SHORT: price must be BELOW MA20 AND MA20 must be trending DOWN
+# This helps avoid false breakouts in sideways markets
 
 # Trading Configuration
 [trading]
@@ -70,6 +78,12 @@ fee_rate = 0.0004  # 0.04% for market orders
 # Safety margin (extra buffer to ensure order can be filled)
 # 0.01 = 1% extra margin
 safety_margin = 0.01  # 1% safety margin
+
+# Risk Management
+# Maximum loss per trade as percentage of account balance
+# This limits the position size based on stop loss distance
+# Example: With 30% max loss and 0.5% stop loss distance, position size = 60x leverage
+max_loss_per_trade_percent = 0.30  # 30% maximum loss per trade
 
 # Logging Configuration
 [logging]
