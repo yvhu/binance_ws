@@ -151,7 +151,9 @@ class PositionManager:
         logger.info(f"Syncing positions from exchange for {len(symbols)} symbol(s)...")
         
         import asyncio
-        from binance.enums import SIDE_SELL, SIDE_BUY, ORDER_TYPE_STOP_MARKET
+        from binance.enums import SIDE_SELL, SIDE_BUY
+        # Use string for order type to avoid enum compatibility issues
+        ORDER_TYPE_STOP_MARKET = "STOP_MARKET"
         
         for symbol in symbols:
             try:

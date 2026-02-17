@@ -794,7 +794,9 @@ class FiveMinuteStrategy:
         """
         try:
             import asyncio
-            from binance.enums import SIDE_SELL, SIDE_BUY, ORDER_TYPE_STOP_MARKET
+            from binance.enums import SIDE_SELL, SIDE_BUY
+            # Use string for order type to avoid enum compatibility issues
+            ORDER_TYPE_STOP_MARKET = "STOP_MARKET"
             
             if side == 'LONG':
                 # For long position, stop loss is a SELL order
@@ -840,7 +842,9 @@ class FiveMinuteStrategy:
         """
         try:
             import asyncio
-            from binance.enums import SIDE_SELL, SIDE_BUY, ORDER_TYPE_STOP_MARKET
+            from binance.enums import SIDE_SELL, SIDE_BUY
+            # Use string for order type to avoid enum compatibility issues
+            ORDER_TYPE_STOP_MARKET = "STOP_MARKET"
             
             # Get position information
             position = self.position_manager.get_position(symbol)
