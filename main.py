@@ -402,7 +402,42 @@ class BinanceTelegramBot:
         try:
             symbol = order_info.get('symbol', 'UNKNOWN')
             status = order_info.get('status', 'UNKNOWN')
-            self.logger.info(f"Order update for {symbol}: {status}")
+            order_type = order_info.get('order_type', 'UNKNOWN')
+            side = order_info.get('side', 'UNKNOWN')
+            executed_qty = order_info.get('executed_quantity', 0)
+            avg_price = order_info.get('avg_price', 0)
+            
+            self.logger.info(f"Order update for {symbol}: {status} {order_type} {side}")
+            
+            # Check if this is a stop loss order that was filled
+            if order_type == 'STOP_MARKET' and status == 'FILLED':
+                # Stop loss was triggered - send detailed notification
+                position = self.position_manager.get_position(symbol)
+                if position:
+                    entry_price = position.get('entry_price', 0)
+                    quantity = position.get('quantity', 0)
+                    
+                    # Calculate PnL
+                    if position['side'] == 'LONG':
+                        pnl = (avg_price - entry_price) * quantity
+                    else:  # SHORT
+                        pnl = (entry_price - avg_price) * quantity
+                    
+                    # Send close notification with stop loss reason
+                    await self.telegram_client.send_close_notification(
+                        symbol=symbol,
+                        side=position['side'],
+                        entry_price=entry_price,
+                        exit_price=avg_price,
+                        quantity=quantity,
+                        pnl=pnl,
+                        close_reason="移动止损触发 (基于5m K线振幅)"
+                    )
+                    
+                    # Update position manager
+                    self.position_manager.close_position(symbol, avg_price)
+                    
+                    self.logger.info(f"Stop loss triggered for {symbol}, position closed")
         except Exception as e:
             self.logger.error(f"Error processing order update: {e}")
     

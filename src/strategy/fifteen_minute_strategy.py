@@ -411,33 +411,27 @@ class FiveMinuteStrategy:
                 logger.warning(f"Could not determine 5m K-line direction for {symbol}")
                 return
             
-            # Check volume condition
+            # Check all conditions and collect all information
             volume_valid, volume_info = self._check_volume_condition(symbol, kline_5m)
-            if not volume_valid:
-                logger.warning(f"Volume condition not met for {symbol}")
-                # Send notification with volume info
-                current_price = self.data_handler.get_current_price(symbol)
-                await self.telegram_client.send_indicator_analysis(
-                    symbol=symbol,
-                    sar_direction=None,
-                    direction_3m=None,
-                    direction_5m=direction_5m,
-                    sar_value=None,
-                    current_price=current_price,
-                    decision='NO_TRADE',
-                    volume_info=volume_info,
-                    range_info=None,
-                    body_info=None,
-                    kline_time=kline_5m.get('close_time')
-                )
-                return
-            
-            # Check range condition
             range_valid, range_info = self._check_range_condition(symbol, kline_5m)
-            if not range_valid:
-                logger.warning(f"Range condition not met for {symbol}")
-                # Send notification with range info
-                current_price = self.data_handler.get_current_price(symbol)
+            body_valid, body_info = self._check_body_ratio(kline_5m)
+            
+            # Check trend filter if enabled
+            trend_valid = True
+            trend_info = None
+            if self.trend_filter_enabled:
+                trend_valid, trend_info = self._check_trend_filter(symbol, direction_5m)
+            
+            # Determine if all conditions are met
+            all_conditions_met = volume_valid and range_valid and body_valid and trend_valid
+            
+            # Get current price for notification
+            current_price = self.data_handler.get_current_price(symbol)
+            
+            # Send indicator analysis notification with all condition information
+            if all_conditions_met:
+                # All conditions met - send trade decision
+                decision = 'LONG' if direction_5m == 'UP' else 'SHORT'
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
                     sar_direction=None,
@@ -445,20 +439,29 @@ class FiveMinuteStrategy:
                     direction_5m=direction_5m,
                     sar_value=None,
                     current_price=current_price,
-                    decision='NO_TRADE',
+                    decision=decision,
                     volume_info=volume_info,
                     range_info=range_info,
-                    body_info=None,
+                    body_info=body_info,
+                    trend_info=trend_info,
                     kline_time=kline_5m.get('close_time')
                 )
-                return
-            
-            # Check body ratio condition
-            body_valid, body_info = self._check_body_ratio(kline_5m)
-            if not body_valid:
-                logger.warning(f"Body ratio condition not met for {symbol}")
-                # Send notification with body info
-                current_price = self.data_handler.get_current_price(symbol)
+                
+                # Calculate stop loss price based on 5m K-line range
+                stop_loss_price = self._calculate_stop_loss_price(
+                    kline_5m,
+                    direction_5m,
+                    range_info.get('current_range', 0)
+                )
+                
+                # Open position with volume info, range info, stop loss and entry kline
+                if direction_5m == 'UP':
+                    await self._open_long_position(symbol, volume_info, range_info, stop_loss_price, kline_5m, kline_5m.get('close_time'))
+                else:  # DOWN
+                    await self._open_short_position(symbol, volume_info, range_info, stop_loss_price, kline_5m, kline_5m.get('close_time'))
+            else:
+                # Some conditions not met - send no trade notification with all condition info
+                logger.info(f"Not all conditions met for {symbol}: volume={volume_valid}, range={range_valid}, body={body_valid}, trend={trend_valid}")
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
                     sar_direction=None,
@@ -470,69 +473,9 @@ class FiveMinuteStrategy:
                     volume_info=volume_info,
                     range_info=range_info,
                     body_info=body_info,
+                    trend_info=trend_info,
                     kline_time=kline_5m.get('close_time')
                 )
-                return
-            
-            # Check trend filter if enabled
-            trend_info = None
-            if self.trend_filter_enabled:
-                trend_valid, trend_info = self._check_trend_filter(symbol, direction_5m)
-                if not trend_valid:
-                    logger.warning(f"Trend filter not met for {symbol}")
-                    # Send notification with trend info
-                    current_price = self.data_handler.get_current_price(symbol)
-                    await self.telegram_client.send_indicator_analysis(
-                        symbol=symbol,
-                        sar_direction=None,
-                        direction_3m=None,
-                        direction_5m=direction_5m,
-                        sar_value=None,
-                        current_price=current_price,
-                        decision='NO_TRADE',
-                        volume_info=volume_info,
-                        range_info=range_info,
-                        body_info=body_info,
-                        trend_info=trend_info,
-                        kline_time=kline_5m.get('close_time')
-                    )
-                    return
-            
-            # Log direction for debugging
-            logger.info(f"5m K-line direction for {symbol}: {direction_5m}")
-            
-            # Get current price for notification
-            current_price = self.data_handler.get_current_price(symbol)
-            
-            # Send indicator analysis notification with decision
-            decision = 'LONG' if direction_5m == 'UP' else 'SHORT'
-            await self.telegram_client.send_indicator_analysis(
-                symbol=symbol,
-                sar_direction=None,
-                direction_3m=None,
-                direction_5m=direction_5m,
-                sar_value=None,
-                current_price=current_price,
-                decision=decision,
-                volume_info=volume_info,
-                range_info=range_info,
-                body_info=body_info,
-                trend_info=trend_info,
-                kline_time=kline_5m.get('close_time')
-            )
-            
-            # Calculate stop loss price based on 5m K-line range
-            stop_loss_price = self._calculate_stop_loss_price(
-                kline_5m,
-                direction_5m,
-                range_info.get('current_range', 0)
-            )
-            
-            # Open position with volume info, range info, stop loss and entry kline
-            if direction_5m == 'UP':
-                await self._open_long_position(symbol, volume_info, range_info, stop_loss_price, kline_5m, kline_5m.get('close_time'))
-            else:  # DOWN
-                await self._open_short_position(symbol, volume_info, range_info, stop_loss_price, kline_5m, kline_5m.get('close_time'))
             
             # Add explicit log to confirm completion of check
             logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")
@@ -1030,15 +973,34 @@ class FiveMinuteStrategy:
                 success = await self.trading_executor.close_all_positions(symbol)
                 
                 if success:
-                    # Send stop loss notification
-                    await self.telegram_client.send_error_message(
-                        f"反向吞没止损触发 - {symbol}\n"
-                        f"持仓方向: {position_side}\n"
-                        f"上一根K线方向: {previous_direction}\n"
-                        f"当前K线方向: {current_direction}\n"
-                        f"吞没比例: {engulfing_ratio*100:.2f}%\n"
-                        f"阈值: {self.engulfing_body_ratio_threshold*100:.0f}%",
-                        "Engulfing Stop Loss"
+                    # Get position details for notification
+                    entry_price = position.get('entry_price', 0)
+                    quantity = position.get('quantity', 0)
+                    current_price = self.data_handler.get_current_price(symbol)
+                    
+                    # Calculate PnL
+                    pnl = 0.0
+                    if current_price and entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SHORT
+                            pnl = (entry_price - current_price) * quantity
+                    
+                    # Send stop loss notification with detailed information
+                    await self.telegram_client.send_close_notification(
+                        symbol=symbol,
+                        side=position_side,
+                        entry_price=entry_price,
+                        exit_price=current_price if current_price else 0,
+                        quantity=quantity,
+                        pnl=pnl,
+                        close_reason=f"反向吞没止损触发\n"
+                                   f"上一根K线方向: {previous_direction}\n"
+                                   f"当前K线方向: {current_direction}\n"
+                                   f"上一根K线实体: {previous_body:.2f}\n"
+                                   f"当前K线实体: {current_body:.2f}\n"
+                                   f"吞没比例: {engulfing_ratio*100:.2f}%\n"
+                                   f"阈值: {self.engulfing_body_ratio_threshold*100:.0f}%"
                     )
                     
                     logger.info(f"Position closed due to engulfing stop loss for {symbol}")

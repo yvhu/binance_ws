@@ -261,13 +261,13 @@ class MessageFormatter:
         # Add K-line time information
         if kline_time is not None:
             # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
-            # Calculate the start time by subtracting 5 minutes
+            # Calculate the start time by rounding down to the nearest 5-minute interval
             kline_end = datetime.fromtimestamp(kline_time / 1000)
-            kline_start = kline_end - timedelta(minutes=5)
-            # Round to nearest minute for cleaner display
-            kline_start_rounded = kline_start.replace(second=0, microsecond=0)
-            kline_end_rounded = kline_end.replace(second=0, microsecond=0) + timedelta(minutes=1)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start_rounded.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
+            # Round down to nearest 5 minutes
+            kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
+            # End time is start time + 5 minutes
+            kline_end_rounded = kline_start + timedelta(minutes=5)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
         
         # Add position calculation information if available
         if position_calc_info:
@@ -376,13 +376,13 @@ class MessageFormatter:
         # Add K-line time information
         if kline_time is not None:
             # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
-            # Calculate the start time by subtracting 5 minutes
+            # Calculate the start time by rounding down to the nearest 5-minute interval
             kline_end = datetime.fromtimestamp(kline_time / 1000)
-            kline_start = kline_end - timedelta(minutes=5)
-            # Round to nearest minute for cleaner display
-            kline_start_rounded = kline_start.replace(second=0, microsecond=0)
-            kline_end_rounded = kline_end.replace(second=0, microsecond=0) + timedelta(minutes=1)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start_rounded.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
+            # Round down to nearest 5 minutes
+            kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
+            # End time is start time + 5 minutes
+            kline_end_rounded = kline_start + timedelta(minutes=5)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
         
         message += f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
@@ -437,13 +437,13 @@ class MessageFormatter:
         # Add K-line time information
         if kline_time is not None:
             # close_time is the end time of the K-line (e.g., 18:54:59.999 for 18:50-18:55 K-line)
-            # Calculate the start time by subtracting 5 minutes
+            # Calculate the start time by rounding down to the nearest 5-minute interval
             kline_end = datetime.fromtimestamp(kline_time / 1000)
-            kline_start = kline_end - timedelta(minutes=5)
-            # Round to nearest minute for cleaner display
-            kline_start_rounded = kline_start.replace(second=0, microsecond=0)
-            kline_end_rounded = kline_end.replace(second=0, microsecond=0) + timedelta(minutes=1)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start_rounded.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n\n"
+            # Round down to nearest 5 minutes
+            kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
+            # End time is start time + 5 minutes
+            kline_end_rounded = kline_start + timedelta(minutes=5)
+            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n\n"
         
         if current_price is not None:
             message += f"💰 <b>当前价格:</b> ${current_price:,.2f}\n\n"
