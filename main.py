@@ -538,6 +538,29 @@ class BinanceTelegramBot:
             # 等待一小段时间让任务开始执行
             await asyncio.sleep(0.1)
             
+            # 等待WebSocket连接并获取价格数据 (最多 10 秒)
+            self.logger.info("Waiting for WebSocket connection and price data...")
+            for i in range(10):
+                await asyncio.sleep(1)
+                # 检查是否有持仓需要更新止损价格
+                if self.position_manager.positions:
+                    # 尝试获取第一个持仓的价格
+                    first_symbol = list(self.position_manager.positions.keys())[0]
+                    test_price = self.data_handler.get_current_price(first_symbol)
+                    if test_price is not None:
+                        self.logger.info(f"✓ Price data received for {first_symbol}: {test_price:.2f}")
+                        break
+                else:
+                    # 没有持仓，直接退出等待
+                    self.logger.info("No positions to monitor, skipping price data wait")
+                    break
+            
+            # 更新所有持仓的止损价格
+            if self.position_manager.positions:
+                self.logger.info("Updating stop loss prices for existing positions...")
+                await self.position_manager.update_stop_loss_prices()
+                self.logger.info("✓ Stop loss prices updated")
+            
             # 检查任务状态
             if self.user_data_task.done():
                 try:

@@ -241,3 +241,75 @@ class PositionManager:
         
         logger.info(f"Position sync completed. Current positions: {list(self.positions.keys())}")
     
+    async def update_stop_loss_prices(self) -> None:
+        """
+        Update stop loss prices for all open positions
+        This should be called after WebSocket is connected to ensure current price is available
+        """
+        if not self.positions:
+            logger.info("No positions to update stop loss prices")
+            return
+        
+        if not self.data_handler or not self.config:
+            logger.warning("Data handler or config not available, cannot update stop loss prices")
+            return
+        
+        logger.info(f"Updating stop loss prices for {len(self.positions)} position(s)...")
+        
+        import asyncio
+        
+        for symbol, position in self.positions.items():
+            try:
+                # Get current price
+                current_price = self.data_handler.get_current_price(symbol)
+                if current_price is None:
+                    logger.warning(f"Could not get current price for {symbol}, skipping stop loss update")
+                    continue
+                
+                # Get latest 5m K-line data
+                klines_5m = self.data_handler.get_klines(symbol, '5m', limit=1)
+                if not klines_5m or len(klines_5m) == 0:
+                    logger.warning(f"No 5m K-line data for {symbol}, skipping stop loss update")
+                    continue
+                
+                latest_kline = klines_5m[-1]
+                current_range = latest_kline['high'] - latest_kline['low']
+                
+                if current_range == 0:
+                    logger.warning(f"Current K-line range is zero for {symbol}, skipping stop loss update")
+                    continue
+                
+                # Get stop loss parameters from config
+                stop_loss_range_multiplier = self.config.get('strategy.stop_loss_range_multiplier', 0.8)
+                stop_loss_min_distance_percent = self.config.get('strategy.stop_loss_min_distance_percent', 0.003)
+                
+                # Calculate stop loss distance
+                stop_loss_distance = current_range * stop_loss_range_multiplier
+                min_stop_loss_distance = current_price * stop_loss_min_distance_percent
+                final_stop_loss_distance = max(stop_loss_distance, min_stop_loss_distance)
+                
+                # Calculate stop loss price based on position side
+                position_side = position.get('side', 'LONG')
+                if position_side == 'LONG':
+                    stop_loss_price = current_price - final_stop_loss_distance
+                else:  # SHORT
+                    stop_loss_price = current_price + final_stop_loss_distance
+                
+                # Update stop loss price in position
+                position['stop_loss_price'] = stop_loss_price
+                
+                logger.info(
+                    f"✓ Updated stop loss for {symbol}: "
+                    f"side={position_side}, "
+                    f"current_price={current_price:.2f}, "
+                    f"range={current_range:.2f}, "
+                    f"stop_loss_price={stop_loss_price:.2f}"
+                )
+                
+            except Exception as e:
+                logger.error(f"Error updating stop loss for {symbol}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        logger.info("Stop loss price update completed")
+    
