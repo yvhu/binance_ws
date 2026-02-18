@@ -229,6 +229,10 @@ class UserDataClient:
                     logger.debug("[USER_WS] Processing ACCOUNT_CONFIG_UPDATE...")
                     self._process_account_config_update(data)
                     logger.debug("[USER_WS] ACCOUNT_CONFIG_UPDATE processed")
+                elif event_type == 'TRADE_LITE':
+                    logger.debug("[USER_WS] Processing TRADE_LITE...")
+                    self._process_trade_lite(data)
+                    logger.debug("[USER_WS] TRADE_LITE processed")
                 else:
                     logger.warning(f"[USER_WS] Unknown user data event type: {event_type}")
             else:
@@ -420,6 +424,32 @@ class UserDataClient:
             logger.info(f"Account config update: {data}")
         except Exception as e:
             logger.error(f"Error processing account config update: {e}")
+    
+    def _process_trade_lite(self, data: Dict) -> None:
+        """
+        Process trade lite event (lightweight trade notification)
+        
+        Args:
+            data: Trade lite data from Binance
+        """
+        try:
+            # TRADE_LITE is a lightweight event that contains basic trade information
+            # We can log it for debugging purposes
+            logger.debug(f"[USER_WS] Trade lite event received: {data}")
+            
+            # Extract basic trade information if needed
+            trade_data = data.get('t', {})
+            symbol = trade_data.get('s', '')
+            price = float(trade_data.get('p', 0))
+            quantity = float(trade_data.get('q', 0))
+            trade_id = trade_data.get('t', 0)
+            
+            logger.debug(f"[USER_WS] Trade lite: {symbol} price={price} qty={quantity} trade_id={trade_id}")
+            
+        except Exception as e:
+            logger.error(f"[USER_WS] Error processing trade lite event: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def listen(self) -> None:
         """Listen for incoming messages from user data stream"""
