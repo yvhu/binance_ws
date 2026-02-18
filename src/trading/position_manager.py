@@ -212,11 +212,43 @@ class PositionManager:
                                         default=0.003
                                     )
                                     
-                                    # Get current price
-                                    current_price = self.data_handler.get_current_price(symbol)
+                                    # Get current price with retry mechanism
+                                    # First try to get from data_handler (WebSocket data)
+                                    # If WebSocket is not connected or no data, retry a few times
+                                    # If still no data after retries, use API as fallback
+                                    current_price = None
+                                    max_retries = 3
+                                    retry_delay = 1  # seconds
+                                    
+                                    for attempt in range(max_retries):
+                                        current_price = self.data_handler.get_current_price(symbol)
+                                        if current_price is not None:
+                                            logger.info(f"Got current price from data_handler for {symbol}: {current_price:.2f} (attempt {attempt + 1})")
+                                            break
+                                        
+                                        if attempt < max_retries - 1:
+                                            logger.warning(
+                                                f"Could not get current price from data_handler for {symbol} "
+                                                f"(attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s..."
+                                            )
+                                            await asyncio.sleep(retry_delay)
+                                    
+                                    # If still no price after retries, use API as fallback
                                     if current_price is None:
-                                        logger.error(f"Could not get current price for {symbol}")
-                                        continue
+                                        logger.warning(
+                                            f"Could not get current price from data_handler after {max_retries} attempts "
+                                            f"for {symbol}, using API as fallback..."
+                                        )
+                                        try:
+                                            ticker = await asyncio.to_thread(
+                                                self.trading_executor.client.futures_symbol_ticker,
+                                                symbol=symbol
+                                            )
+                                            current_price = float(ticker['price'])
+                                            logger.info(f"Got current price from API for {symbol}: {current_price:.2f}")
+                                        except Exception as e:
+                                            logger.error(f"Failed to get current price from API for {symbol}: {e}")
+                                            continue
                                     
                                     # Get latest 5m K-line to calculate range
                                     klines = self.data_handler.get_klines(symbol, "5m")
