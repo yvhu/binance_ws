@@ -174,7 +174,7 @@ class PositionManager:
                                 current_price = self.data_handler.get_current_price(symbol)
                                 
                                 # Get latest 5m K-line data
-                                klines_5m = self.data_handler.get_klines(symbol, '5m', limit=1)
+                                klines_5m = self.data_handler.get_klines(symbol, '5m', count=1)
                                 if klines_5m and len(klines_5m) > 0:
                                     latest_kline = klines_5m[-1]
                                     current_range = latest_kline['high'] - latest_kline['low']
@@ -221,7 +221,7 @@ class PositionManager:
                         logger.warning(
                             f"⚠️ Position synced from exchange: {symbol} {side} "
                             f"qty={quantity} entry_price={entry_price:.2f} "
-                            f"stop_loss={stop_loss_price:.2f if stop_loss_price else 'N/A'}"
+                            f"stop_loss={stop_loss_price:.2f if stop_loss_price is not None else 'N/A'}"
                         )
                     else:
                         # No position on exchange, ensure local state is also empty
@@ -267,7 +267,7 @@ class PositionManager:
                     continue
                 
                 # Get latest 5m K-line data
-                klines_5m = self.data_handler.get_klines(symbol, '5m', limit=1)
+                klines_5m = self.data_handler.get_klines(symbol, '5m', count=1)
                 if not klines_5m or len(klines_5m) == 0:
                     logger.warning(f"No 5m K-line data for {symbol}, skipping stop loss update")
                     continue

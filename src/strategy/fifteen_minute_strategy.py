@@ -61,6 +61,10 @@ class FiveMinuteStrategy:
         self.trend_filter_enabled = config.get_config("strategy", "trend_filter_enabled", default=True)
         self.trend_filter_ma_period = config.get_config("strategy", "trend_filter_ma_period", default=20)
         
+        # Trailing stop loss configuration
+        self.trailing_stop_enabled = config.get_config("strategy", "trailing_stop_enabled", default=False)
+        self.trailing_stop_kline_count = config.get_config("strategy", "trailing_stop_kline_count", default=3)
+        
         logger.info("5-minute strategy initialized")
     
     async def on_5m_kline_close(self, kline_info: Dict) -> None:
@@ -77,11 +81,12 @@ class FiveMinuteStrategy:
         
         # Check for stop losses if position exists
         if self.position_manager.has_position(symbol):
-            # Check real-time stop loss based on current price
-            await self._check_real_time_stop_loss(symbol, kline_info)
-            
             # Check engulfing stop loss
             await self._check_engulfing_stop_loss(symbol, kline_info)
+            
+            # Update trailing stop loss if enabled
+            if self.trailing_stop_enabled:
+                await self._update_trailing_stop_loss(symbol, kline_info)
         
         # Check if position can be opened (no existing position)
         if self.position_manager.has_position(symbol):
@@ -770,106 +775,6 @@ class FiveMinuteStrategy:
         except Exception as e:
             logger.error(f"Error opening short position for {symbol}: {e}")
     
-    async def _check_real_time_stop_loss(self, symbol: str, current_kline: Dict) -> None:
-        """
-        Check real-time stop loss based on current price
-        This monitors the position and closes it if stop loss is triggered
-        
-        Args:
-            symbol: Trading pair symbol
-            current_kline: Current 5m K-line that just closed
-        """
-        try:
-            # Get position information
-            position = self.position_manager.get_position(symbol)
-            if not position:
-                return
-            
-            position_side = position['side']
-            quantity = position['quantity']
-            entry_price = position.get('entry_price', 0)
-            
-            # Calculate current range of the latest 5m K-line
-            current_range = current_kline['high'] - current_kline['low']
-            
-            if current_range == 0:
-                logger.warning(f"Current K-line range is zero, cannot check stop loss")
-                return
-            
-            # Calculate stop loss distance based on latest 5m K-line range
-            stop_loss_distance = current_range * self.stop_loss_range_multiplier
-            
-            # Get current price
-            current_price = self.data_handler.get_current_price(symbol)
-            if current_price is None:
-                logger.warning(f"Could not get current price for {symbol}")
-                return
-            
-            # Calculate stop loss price
-            if position_side == 'LONG':
-                # For long position, stop loss is below current price
-                stop_loss_price = current_price - stop_loss_distance
-                # Check if current price is below stop loss
-                stop_loss_triggered = current_price <= stop_loss_price
-            else:  # SHORT
-                # For short position, stop loss is above current price
-                stop_loss_price = current_price + stop_loss_distance
-                # Check if current price is above stop loss
-                stop_loss_triggered = current_price >= stop_loss_price
-            
-            logger.info(
-                f"Real-time stop loss check for {symbol}: "
-                f"side={position_side}, "
-                f"current_price={current_price:.2f}, "
-                f"current_range={current_range:.2f}, "
-                f"multiplier={self.stop_loss_range_multiplier}, "
-                f"stop_loss_distance={stop_loss_distance:.2f}, "
-                f"stop_loss_price={stop_loss_price:.2f}, "
-                f"triggered={stop_loss_triggered}"
-            )
-            
-            if stop_loss_triggered:
-                logger.warning(
-                    f"Stop loss triggered for {symbol}: "
-                    f"current_price={current_price:.2f}, stop_loss_price={stop_loss_price:.2f}"
-                )
-                
-                # Close position immediately
-                success = await self.trading_executor.close_all_positions(symbol)
-                
-                if success:
-                    # Calculate PnL
-                    pnl = 0.0
-                    if current_price and entry_price > 0:
-                        if position_side == 'LONG':
-                            pnl = (current_price - entry_price) * quantity
-                        else:  # SHORT
-                            pnl = (entry_price - current_price) * quantity
-                    
-                    # Send close notification with stop loss reason
-                    await self.telegram_client.send_close_notification(
-                        symbol=symbol,
-                        side=position_side,
-                        entry_price=entry_price,
-                        exit_price=current_price if current_price else 0,
-                        quantity=quantity,
-                        pnl=pnl,
-                        close_reason=f"实时止损触发 (基于5m K线振幅)\n"
-                                   f"当前价格: {current_price:.2f}\n"
-                                   f"止损价格: {stop_loss_price:.2f}\n"
-                                   f"K线振幅: {current_range:.2f}\n"
-                                   f"止损距离: {stop_loss_distance:.2f}"
-                    )
-                    
-                    logger.info(f"Position closed due to real-time stop loss for {symbol}")
-                else:
-                    logger.error(f"Failed to close position due to real-time stop loss for {symbol}")
-            
-        except Exception as e:
-            logger.error(f"Error checking real-time stop loss for {symbol}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-    
     async def _check_engulfing_stop_loss(self, symbol: str, current_kline: Dict) -> None:
         """
         Check if the current 5m K-line forms an engulfing pattern with the previous K-line that triggers stop loss
@@ -1026,6 +931,149 @@ class FiveMinuteStrategy:
                 
         except Exception as e:
             logger.error(f"Error checking engulfing stop loss for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _update_trailing_stop_loss(self, symbol: str, current_kline: Dict) -> None:
+        """
+        Update trailing stop loss based on recent K-line highs/lows
+        
+        For LONG positions: stop loss follows recent N klines' lowest price
+        For SHORT positions: stop loss follows recent N klines' highest price
+        Stop loss can only move in favorable direction (up for LONG, down for SHORT)
+        
+        Args:
+            symbol: Trading pair symbol
+            current_kline: Current 5m K-line that just closed
+        """
+        try:
+            # Get position information
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            position_side = position['side']
+            current_stop_loss = position.get('stop_loss_price')
+            
+            # If no stop loss price is set, skip update
+            if current_stop_loss is None:
+                logger.debug(f"No stop loss price set for {symbol}, skipping trailing stop update")
+                return
+            
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < self.trailing_stop_kline_count:
+                logger.warning(
+                    f"Not enough closed K-lines for trailing stop: "
+                    f"{len(closed_klines)} (need at least {self.trailing_stop_kline_count})"
+                )
+                return
+            
+            # Find the index of current K-line in closed klines
+            current_open_time = current_kline['open_time']
+            current_index = -1
+            for i, k in enumerate(closed_klines):
+                if k['open_time'] == current_open_time:
+                    current_index = i
+                    break
+            
+            if current_index == -1:
+                logger.warning(f"Current K-line not found in closed klines for {symbol}")
+                return
+            
+            # Get recent N klines (including current)
+            recent_klines = closed_klines[max(0, current_index - self.trailing_stop_kline_count + 1):current_index + 1]
+            
+            if len(recent_klines) < self.trailing_stop_kline_count:
+                logger.warning(
+                    f"Not enough recent klines for trailing stop: "
+                    f"{len(recent_klines)} (need {self.trailing_stop_kline_count})"
+                )
+                return
+            
+            # Calculate new trailing stop loss price
+            new_stop_loss = None
+            
+            if position_side == 'LONG':
+                # For long position, trailing stop follows the lowest price in recent klines
+                lowest_price = min(k['low'] for k in recent_klines)
+                new_stop_loss = lowest_price
+                
+                # Stop loss can only move up (favorable direction)
+                if new_stop_loss <= current_stop_loss:
+                    logger.debug(
+                        f"Trailing stop for {symbol} (LONG): "
+                        f"new_stop={new_stop_loss:.2f} <= current_stop={current_stop_loss:.2f}, "
+                        f"no update needed"
+                    )
+                    return
+                
+                logger.info(
+                    f"Trailing stop updated for {symbol} (LONG): "
+                    f"current_stop={current_stop_loss:.2f} -> new_stop={new_stop_loss:.2f}, "
+                    f"lowest_in_recent={lowest_price:.2f}, "
+                    f"improvement={((new_stop_loss - current_stop_loss) / current_stop_loss * 100):.2f}%"
+                )
+                
+            else:  # SHORT
+                # For short position, trailing stop follows the highest price in recent klines
+                highest_price = max(k['high'] for k in recent_klines)
+                new_stop_loss = highest_price
+                
+                # Stop loss can only move down (favorable direction)
+                if new_stop_loss >= current_stop_loss:
+                    logger.debug(
+                        f"Trailing stop for {symbol} (SHORT): "
+                        f"new_stop={new_stop_loss:.2f} >= current_stop={current_stop_loss:.2f}, "
+                        f"no update needed"
+                    )
+                    return
+                
+                logger.info(
+                    f"Trailing stop updated for {symbol} (SHORT): "
+                    f"current_stop={current_stop_loss:.2f} -> new_stop={new_stop_loss:.2f}, "
+                    f"highest_in_recent={highest_price:.2f}, "
+                    f"improvement={((current_stop_loss - new_stop_loss) / current_stop_loss * 100):.2f}%"
+                )
+            
+            # Update stop loss price in position
+            position['stop_loss_price'] = new_stop_loss
+            
+            # Send notification about trailing stop update
+            entry_price = position.get('entry_price', 0)
+            current_price = self.data_handler.get_current_price(symbol)
+            
+            if current_price:
+                # Calculate unrealized PnL
+                quantity = position.get('quantity', 0)
+                unrealized_pnl = 0.0
+                if position_side == 'LONG':
+                    unrealized_pnl = (current_price - entry_price) * quantity
+                else:  # SHORT
+                    unrealized_pnl = (entry_price - current_price) * quantity
+                
+                await self.telegram_client.send_message(
+                    f"🔄 移动止损更新\n\n"
+                    f"交易对: {symbol}\n"
+                    f"方向: {position_side}\n"
+                    f"开仓价格: ${entry_price:.2f}\n"
+                    f"当前价格: ${current_price:.2f}\n"
+                    f"未实现盈亏: ${unrealized_pnl:.2f}\n"
+                    f"止损价格: ${current_stop_loss:.2f} → ${new_stop_loss:.2f}\n"
+                    f"参考K线数: {self.trailing_stop_kline_count}\n"
+                    f"{'最低价' if position_side == 'LONG' else '最高价'}: "
+                    f"{'${:.2f}'.format(lowest_price if position_side == 'LONG' else highest_price)}"
+                )
+            
+        except Exception as e:
+            logger.error(f"Error updating trailing stop loss for {symbol}: {e}")
             import traceback
             logger.error(traceback.format_exc())
     

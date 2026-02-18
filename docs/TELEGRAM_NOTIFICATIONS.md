@@ -248,6 +248,53 @@ All messages are formatted with:
 5. **No Trade**: When entry conditions are not met
 6. **Error**: When any error occurs in the system
 7. **Shutdown**: When the bot stops gracefully
+8. **Trailing Stop Update**: When trailing stop loss is updated (if enabled)
+
+## Trailing Stop Update Notification
+
+Sent when trailing stop loss is updated (only if `trailing_stop_enabled = true`), including:
+- Trading pair
+- Position direction (LONG/SHORT)
+- Entry price
+- Current price
+- Unrealized PnL
+- Stop loss price change (old → new)
+- Number of reference K-lines
+- Lowest/Highest price in recent K-lines
+
+Example (LONG):
+```
+🔄 移动止损更新
+
+交易对: BTCUSDC
+方向: LONG
+开仓价格: $50000.00
+当前价格: $51500.00
+未实现盈亏: $1500.00
+止损价格: $49000.00 → $50600.00
+参考K线数: 3
+最低价: $50600.00
+```
+
+Example (SHORT):
+```
+🔄 移动止损更新
+
+交易对: BTCUSDC
+方向: SHORT
+开仓价格: $50000.00
+当前价格: $48500.00
+未实现盈亏: $1500.00
+止损价格: $51000.00 → $49400.00
+参考K线数: 3
+最高价: $49400.00
+```
+
+**Important Notes:**
+- This notification is only sent when trailing stop loss is enabled
+- Stop loss price can only move in favorable direction (up for LONG, down for SHORT)
+- The update is based on recent K-line highs/lows
+- This notification helps track profit protection in real-time
 
 ## Volume Calculation Notes
 

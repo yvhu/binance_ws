@@ -23,6 +23,8 @@ A cryptocurrency futures trading bot that fetches real-time market data from Bin
 - Comprehensive Telegram notifications (Chinese) / 完整的Telegram通知（中文）
 - Real-time stop loss monitoring / 实时监控止损
 - Dynamic stop loss adjustment based on market volatility / 基于市场波动动态调整止损
+- Trailing stop loss based on K-line highs/lows / 基于K线高低点的移动止损
+- Engulfing pattern stop loss / 吞没形态止损
 
 ## Project Structure / 项目结构
 
