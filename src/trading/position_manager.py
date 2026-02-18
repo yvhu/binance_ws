@@ -194,11 +194,56 @@ class PositionManager:
                             symbol
                         )
                         
-                        if not has_stop_loss:
-                            logger.warning(f"⚠️ No stop loss order found for {symbol}, creating one...")
+                        # Cancel any existing stop loss orders before creating a new one
+                        if has_stop_loss:
+                            logger.warning(f"⚠️ Found existing stop loss order for {symbol}, cancelling before creating new one...")
                             
-                            # Calculate stop loss price based on current price and strategy config
-                            if self.config and self.data_handler:
+                            # Cancel existing stop loss orders with retry mechanism
+                            max_retries = 3
+                            cancel_success = False
+                            
+                            for attempt in range(max_retries):
+                                cancel_success = await asyncio.to_thread(
+                                    self.trading_executor.cancel_all_stop_loss_orders,
+                                    symbol
+                                )
+                                
+                                if cancel_success:
+                                    # Wait for cancellation to be processed
+                                    await asyncio.sleep(0.5)
+                                    
+                                    # Verify that all stop loss orders are cancelled
+                                    still_has_stop_loss = await asyncio.to_thread(
+                                        self.trading_executor.has_stop_loss_order,
+                                        symbol
+                                    )
+                                    
+                                    if not still_has_stop_loss:
+                                        logger.info(f"✓ Verified: All stop loss order(s) cancelled for {symbol}")
+                                        break
+                                    else:
+                                        logger.warning(
+                                            f"Stop loss orders still exist after cancellation (attempt {attempt + 1}/{max_retries})"
+                                        )
+                                        cancel_success = False
+                                else:
+                                    logger.warning(
+                                        f"Failed to cancel stop loss order for {symbol} (attempt {attempt + 1}/{max_retries})"
+                                    )
+                                
+                                if attempt < max_retries - 1:
+                                    # Wait before retry
+                                    await asyncio.sleep(1)
+                            
+                            if not cancel_success:
+                                logger.error(f"Failed to cancel stop loss order for {symbol} after {max_retries} attempts")
+                                continue
+                        
+                        # Create stop loss order (always create after cancelling any existing ones)
+                        logger.warning(f"⚠️ Creating stop loss order for {symbol}...")
+                        
+                        # Calculate stop loss price based on current price and strategy config
+                        if self.config and self.data_handler:
                                 try:
                                     # Get strategy configuration
                                     stop_loss_range_multiplier = self.config.get_config(
@@ -325,13 +370,11 @@ class PositionManager:
                                     logger.error(f"Failed to create stop loss order for {symbol}: {e}")
                                     import traceback
                                     logger.error(traceback.format_exc())
-                            else:
-                                logger.warning(
-                                    f"Cannot create stop loss order for {symbol}: "
-                                    f"config or data_handler not provided"
-                                )
                         else:
-                            logger.info(f"✓ Stop loss order already exists for {symbol}")
+                            logger.warning(
+                                f"Cannot create stop loss order for {symbol}: "
+                                f"config or data_handler not provided"
+                            )
                     else:
                         # No position on exchange, ensure local state is also empty
                         if symbol in self.positions:
