@@ -3,6 +3,7 @@
 Implements the 5m K-line trading strategy with dynamic position management
 """
 
+import asyncio
 import logging
 from typing import Optional, Dict, Tuple
 from datetime import datetime
@@ -1025,5 +1026,98 @@ class FiveMinuteStrategy:
                 
         except Exception as e:
             logger.error(f"Error checking engulfing stop loss for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def check_stop_loss_on_price_update(self, symbol: str, current_price: float) -> None:
+        """
+        Check stop loss when price is updated via WebSocket
+        This provides real-time stop loss protection
+        
+        Args:
+            symbol: Trading pair symbol
+            current_price: Current price from WebSocket ticker
+        """
+        try:
+            # Get position information
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            position_side = position['side']
+            quantity = position['quantity']
+            entry_price = position.get('entry_price', 0)
+            stop_loss_price = position.get('stop_loss_price')
+            
+            # If no stop loss price is set, skip check
+            if stop_loss_price is None:
+                logger.debug(f"No stop loss price set for {symbol}")
+                return
+            
+            # Check if stop loss is triggered
+            stop_loss_triggered = False
+            if position_side == 'LONG':
+                # For long position, stop loss is below entry price
+                stop_loss_triggered = current_price <= stop_loss_price
+            else:  # SHORT
+                # For short position, stop loss is above entry price
+                stop_loss_triggered = current_price >= stop_loss_price
+            
+            # Calculate distance from entry price
+            distance_from_entry = abs(current_price - entry_price)
+            distance_percent = (distance_from_entry / entry_price) * 100 if entry_price > 0 else 0
+            
+            # Calculate distance from stop loss
+            distance_from_stop_loss = abs(current_price - stop_loss_price)
+            
+            logger.info(
+                f"[STOP_LOSS_CHECK] {symbol}: "
+                f"side={position_side}, "
+                f"entry={entry_price:.2f}, "
+                f"current={current_price:.2f}, "
+                f"stop_loss={stop_loss_price:.2f}, "
+                f"from_entry={distance_from_entry:.2f} ({distance_percent:.2f}%), "
+                f"from_stop_loss={distance_from_stop_loss:.2f}, "
+                f"triggered={stop_loss_triggered}"
+            )
+            
+            if stop_loss_triggered:
+                logger.warning(
+                    f"[STOP_LOSS_TRIGGERED] {symbol}: "
+                    f"current_price={current_price:.2f}, stop_loss_price={stop_loss_price:.2f}"
+                )
+                
+                # Close position immediately
+                success = await self.trading_executor.close_all_positions(symbol)
+                
+                if success:
+                    # Calculate PnL
+                    pnl = 0.0
+                    if current_price and entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SHORT
+                            pnl = (entry_price - current_price) * quantity
+                    
+                    # Send close notification with stop loss reason
+                    await self.telegram_client.send_close_notification(
+                        symbol=symbol,
+                        side=position_side,
+                        entry_price=entry_price,
+                        exit_price=current_price,
+                        quantity=quantity,
+                        pnl=pnl,
+                        close_reason=f"实时止损触发\n"
+                                   f"当前价格: ${current_price:.2f}\n"
+                                   f"止损价格: ${stop_loss_price:.2f}\n"
+                                   f"距离开仓: ${distance_from_entry:.2f} ({distance_percent:.2f}%)"
+                    )
+                    
+                    logger.info(f"Position closed due to stop loss for {symbol}")
+                else:
+                    logger.error(f"Failed to close position due to stop loss for {symbol}")
+            
+        except Exception as e:
+            logger.error(f"Error checking stop loss for {symbol}: {e}")
             import traceback
             logger.error(traceback.format_exc())

@@ -212,9 +212,16 @@ class BinanceTelegramBot:
             # Store data
             self.data_handler.process_ticker(ticker_info)
             
+            # Check stop loss for positions with this symbol
+            symbol = ticker_info['symbol']
+            current_price = ticker_info.get('current_price')
+            
+            if current_price and self.position_manager.has_position(symbol):
+                # Real-time stop loss check on every price update
+                await self.strategy.check_stop_loss_on_price_update(symbol, current_price)
+            
             # Price alerts disabled - only store data for strategy use
             # Uncomment below to enable price alerts
-            # symbol = ticker_info['symbol']
             # price_change = ticker_info.get('price_change_percent', 0)
             # min_change = self.config.strategy_config.get('min_price_change', 0.5)
             # if abs(price_change) >= min_change:
@@ -524,6 +531,9 @@ class BinanceTelegramBot:
             # --- 关键改动：后台启动 WebSocket，不阻塞主协程 ---
             self.user_data_task = asyncio.create_task(self.user_data_client.start())
             self.market_data_task = asyncio.create_task(self.binance_client.start())
+            
+            # 实时止损检查已集成到ticker回调中，无需单独任务
+            self.logger.info("✓ Real-time stop loss checking enabled (via WebSocket ticker)")
             
             # 等待一小段时间让任务开始执行
             await asyncio.sleep(0.1)
