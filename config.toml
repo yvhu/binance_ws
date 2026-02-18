@@ -57,7 +57,7 @@ range_ratio_threshold = 0.5  # Minimum range ratio (current range / average rang
 
 # Stop loss parameters
 stop_loss_range_multiplier = 0.8  # Moving stop loss distance = latest 5m K-line range * this multiplier
-stop_loss_min_distance_percent = 0.5  # Minimum stop loss distance as percentage of price (0.5% = 0.005)
+stop_loss_min_distance_percent = 0.03  # Minimum stop loss distance as percentage of price (3.0% = 0.03)
 engulfing_body_ratio_threshold = 0.7  # Minimum engulfing body ratio to trigger stop loss
 
 # Trend filter parameters (to avoid false breakouts in sideways markets)
