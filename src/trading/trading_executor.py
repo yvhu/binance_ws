@@ -975,6 +975,7 @@ class TradingExecutor:
     def cancel_all_orders(self, symbol: str) -> bool:
         """
         Cancel all open orders for a symbol (including stop loss orders and algo orders)
+        Uses batch cancellation API for efficiency
         
         Args:
             symbol: Trading pair symbol
@@ -983,6 +984,17 @@ class TradingExecutor:
             True if successful
         """
         try:
+            # First, try to use the batch cancellation API
+            # This cancels all orders including conditional orders
+            try:
+                result = self.client.futures_cancel_all_open_orders(symbol=symbol)
+                logger.info(f"Batch cancelled all orders for {symbol}: {result}")
+                return True
+            except BinanceAPIException as e:
+                # If batch cancellation fails, fall back to individual cancellation
+                logger.warning(f"Batch cancellation failed for {symbol}, falling back to individual cancellation: {e}")
+            
+            # Fallback: cancel orders individually
             orders = self.get_open_orders(symbol)
             if not orders:
                 logger.debug(f"No open orders to cancel for {symbol}")
@@ -1103,14 +1115,25 @@ class TradingExecutor:
             List of open algo orders or None
         """
         try:
-            # Use futures_get_open_orders which returns both regular and conditional orders
-            orders = self.client.futures_get_open_orders(symbol=symbol)
-            if not orders:
+            # Try to use the dedicated API for algo orders first
+            try:
+                # This API returns all open algo orders (conditional orders)
+                algo_orders = self.client.futures_get_open_orders(symbol=symbol)
+                if not algo_orders:
+                    return []
+                
+                # Filter for conditional orders (those with algoId)
+                conditional_orders = [order for order in algo_orders if 'algoId' in order]
+                
+                if conditional_orders:
+                    logger.info(f"Found {len(conditional_orders)} conditional order(s) for {symbol}")
+                    for order in conditional_orders:
+                        logger.info(f"  - Algo order: algoId={order.get('algoId')}, type={order.get('orderType')}, status={order.get('algoStatus')}")
+                
+                return conditional_orders
+            except Exception as e:
+                logger.warning(f"Failed to get algo orders via standard API for {symbol}: {e}")
                 return []
-            
-            # Filter for conditional orders (those with algoId)
-            algo_orders = [order for order in orders if 'algoId' in order]
-            return algo_orders
             
         except BinanceAPIException as e:
             logger.error(f"Failed to get open algo orders for {symbol}: {e}")
