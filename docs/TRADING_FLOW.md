@@ -217,6 +217,31 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 - 最小止损距离保护：0.3%的价格，防止低波动时止损过窄
 - 最终止损距离 = max(振幅×0.8, 价格×0.3%)
 
+#### 7.5 止损单管理机制（重要更新）
+- **问题背景**：止损单是条件订单（CONDITIONAL），之前只处理普通订单导致无法正确取消
+- **解决方案**：
+  1. 同时支持普通订单和条件订单的检测、取消
+  2. 添加重试机制（最多3次）确保所有止损单都被取消
+  3. 每次取消后验证是否真的取消了
+  4. 如果取消失败，记录详细的错误信息
+- **实现位置**：
+  - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1019) - `has_stop_loss_order()` 方法
+  - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1045) - `get_open_algo_orders()` 方法
+  - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1063) - `cancel_algo_order()` 方法
+  - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1081) - `cancel_all_stop_loss_orders()` 方法
+  - [`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py:865) - `_update_moving_stop_loss()` 方法
+- **取消流程**：
+  1. 检查是否存在止损单（包括普通订单和条件订单）
+  2. 如果存在，尝试取消（最多3次）
+  3. 每次取消后验证是否成功
+  4. 只有确认所有止损单都被取消后，才创建新的止损单
+  5. 如果取消失败，记录错误并返回，不会创建新的止损单
+- **优势**：
+  - ✅ 取消所有旧的止损单（无论有多少个）
+  - ✅ 防止新的止损单在旧订单未取消时创建
+  - ✅ 提供详细的错误信息，方便调试
+  - ✅ 避免出现多个止损单的问题
+
 #### 7.5 移动反向吞没止损
 - **触发条件**（必须同时满足）：
   1. 当前K线方向与上一根K线方向相反
@@ -357,6 +382,48 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 请谨慎使用，充分理解风险后再进行实盘交易。
 
 ## 代码更新记录
+
+### 2026-02-18：修复止损单管理问题
+
+**问题描述：**
+- 随着时间推移，旧的市价止损单没有随着新的条件委托单出现而撤销
+- 导致某个订单持有时间很久时，出现多个条件单
+
+**根本原因：**
+- 止损单是条件订单（CONDITIONAL），有 `algoId` 而不是 `orderId`
+- 之前的代码只处理普通订单，无法正确取消条件订单
+- 取消操作没有验证是否真的取消成功
+
+**修复内容：**
+1. **在 `trading_executor.py` 中添加条件订单处理方法：**
+   - `get_open_algo_orders()` - 获取所有开放的条件订单
+   - `cancel_algo_order()` - 取消条件订单
+   - 更新 `has_stop_loss_order()` - 同时检查普通订单和条件订单
+   - 更新 `cancel_all_stop_loss_orders()` - 同时取消普通订单和条件订单，添加重试机制
+
+2. **在 `fifteen_minute_strategy.py` 中更新 `_update_moving_stop_loss()` 方法：**
+   - 添加重试机制（最多3次）
+   - 每次取消后验证是否真的取消了
+   - 如果取消失败，记录详细的错误信息
+
+3. **取消流程改进：**
+   - 检查是否存在止损单（包括普通订单和条件订单）
+   - 如果存在，尝试取消（最多3次）
+   - 每次取消后验证是否成功
+   - 只有确认所有止损单都被取消后，才创建新的止损单
+   - 如果取消失败，记录错误并返回，不会创建新的止损单
+
+**影响范围：**
+- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py) - 添加条件订单处理方法
+- [`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py) - 更新移动止损逻辑
+- [`docs/TRADING_FLOW.md`](docs/TRADING_FLOW.md) - 更新文档
+- [`docs/STRATEGY_FLOW.md`](docs/STRATEGY_FLOW.md) - 更新文档
+
+**优势：**
+- ✅ 取消所有旧的止损单（无论有多少个）
+- ✅ 防止新的止损单在旧订单未取消时创建
+- ✅ 提供详细的错误信息，方便调试
+- ✅ 避免出现多个止损单的问题
 
 ### 2026-02-17：策略从15m更新为5m
 
