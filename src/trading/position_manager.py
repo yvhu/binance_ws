@@ -151,9 +151,6 @@ class PositionManager:
         logger.info(f"Syncing positions from exchange for {len(symbols)} symbol(s)...")
         
         import asyncio
-        from binance.enums import SIDE_SELL, SIDE_BUY
-        # Use string for order type to avoid enum compatibility issues
-        ORDER_TYPE_STOP_MARKET = "STOP_MARKET"
         
         for symbol in symbols:
             try:
@@ -169,6 +166,43 @@ class PositionManager:
                         entry_price = float(position.get('entryPrice', 0))
                         quantity = abs(position_amt)
                         
+                        # Calculate stop loss price for the synced position
+                        stop_loss_price = None
+                        if self.data_handler and self.config:
+                            try:
+                                # Get current price
+                                current_price = self.data_handler.get_current_price(symbol)
+                                
+                                # Get latest 5m K-line data
+                                klines_5m = self.data_handler.get_klines(symbol, '5m', limit=1)
+                                if klines_5m and len(klines_5m) > 0:
+                                    latest_kline = klines_5m[-1]
+                                    current_range = latest_kline['high'] - latest_kline['low']
+                                    
+                                    # Get stop loss parameters from config
+                                    stop_loss_range_multiplier = self.config.get('strategy.stop_loss_range_multiplier', 0.6)
+                                    stop_loss_min_distance_percent = self.config.get('strategy.stop_loss_min_distance_percent', 0.005)
+                                    
+                                    # Calculate stop loss distance
+                                    stop_loss_distance = current_range * stop_loss_range_multiplier
+                                    min_stop_loss_distance = current_price * stop_loss_min_distance_percent
+                                    final_stop_loss_distance = max(stop_loss_distance, min_stop_loss_distance)
+                                    
+                                    # Calculate stop loss price based on position side
+                                    if side == 'LONG':
+                                        stop_loss_price = current_price - final_stop_loss_distance
+                                    else:  # SHORT
+                                        stop_loss_price = current_price + final_stop_loss_distance
+                                    
+                                    logger.info(
+                                        f"Calculated stop loss for synced position {symbol}: "
+                                        f"current_price={current_price:.2f}, "
+                                        f"range={current_range:.2f}, "
+                                        f"stop_loss_price={stop_loss_price:.2f}"
+                                    )
+                            except Exception as e:
+                                logger.error(f"Error calculating stop loss for synced position {symbol}: {e}")
+                        
                         # Reconstruct position info
                         position_info = {
                             'symbol': symbol,
@@ -178,203 +212,17 @@ class PositionManager:
                             'entry_time': datetime.now().timestamp(),  # Use current time as we don't have original
                             'entry_kline': None,  # We don't have the original entry kline
                             'is_open': True,
-                            'synced_from_exchange': True  # Mark as synced from exchange
+                            'synced_from_exchange': True,  # Mark as synced from exchange
+                            'stop_loss_price': stop_loss_price  # Add stop loss price
                         }
                         
                         self.positions[symbol] = position_info
                         
                         logger.warning(
                             f"⚠️ Position synced from exchange: {symbol} {side} "
-                            f"qty={quantity} entry_price={entry_price:.2f}"
+                            f"qty={quantity} entry_price={entry_price:.2f} "
+                            f"stop_loss={stop_loss_price:.2f if stop_loss_price else 'N/A'}"
                         )
-                        
-                        # Check if stop loss order exists
-                        has_stop_loss = await asyncio.to_thread(
-                            self.trading_executor.has_stop_loss_order,
-                            symbol
-                        )
-                        
-                        # Cancel any existing stop loss orders before creating a new one
-                        if has_stop_loss:
-                            logger.warning(f"⚠️ Found existing stop loss order for {symbol}, cancelling before creating new one...")
-                            
-                            # Cancel existing stop loss orders with retry mechanism
-                            max_retries = 3
-                            cancel_success = False
-                            
-                            for attempt in range(max_retries):
-                                cancel_success = await asyncio.to_thread(
-                                    self.trading_executor.cancel_all_stop_loss_orders,
-                                    symbol
-                                )
-                                
-                                if cancel_success:
-                                    # Wait for cancellation to be processed
-                                    await asyncio.sleep(0.5)
-                                    
-                                    # Verify that all stop loss orders are cancelled
-                                    still_has_stop_loss = await asyncio.to_thread(
-                                        self.trading_executor.has_stop_loss_order,
-                                        symbol
-                                    )
-                                    
-                                    if not still_has_stop_loss:
-                                        logger.info(f"✓ Verified: All stop loss order(s) cancelled for {symbol}")
-                                        break
-                                    else:
-                                        logger.warning(
-                                            f"Stop loss orders still exist after cancellation (attempt {attempt + 1}/{max_retries})"
-                                        )
-                                        cancel_success = False
-                                else:
-                                    logger.warning(
-                                        f"Failed to cancel stop loss order for {symbol} (attempt {attempt + 1}/{max_retries})"
-                                    )
-                                
-                                if attempt < max_retries - 1:
-                                    # Wait before retry
-                                    await asyncio.sleep(1)
-                            
-                            if not cancel_success:
-                                logger.error(f"Failed to cancel stop loss order for {symbol} after {max_retries} attempts")
-                                continue
-                        
-                        # Create stop loss order (always create after cancelling any existing ones)
-                        logger.warning(f"⚠️ Creating stop loss order for {symbol}...")
-                        
-                        # Calculate stop loss price based on current price and strategy config
-                        if self.config and self.data_handler:
-                                try:
-                                    # Get strategy configuration
-                                    stop_loss_range_multiplier = self.config.get_config(
-                                        "strategy",
-                                        "stop_loss_range_multiplier",
-                                        default=0.8
-                                    )
-                                    stop_loss_min_distance_percent = self.config.get_config(
-                                        "strategy",
-                                        "stop_loss_min_distance_percent",
-                                        default=0.003
-                                    )
-                                    
-                                    # Get current price with retry mechanism
-                                    # First try to get from data_handler (WebSocket data)
-                                    # If WebSocket is not connected or no data, retry a few times
-                                    # If still no data after retries, use API as fallback
-                                    current_price = None
-                                    max_retries = 3
-                                    retry_delay = 1  # seconds
-                                    
-                                    for attempt in range(max_retries):
-                                        current_price = self.data_handler.get_current_price(symbol)
-                                        if current_price is not None:
-                                            logger.info(f"Got current price from data_handler for {symbol}: {current_price:.2f} (attempt {attempt + 1})")
-                                            break
-                                        
-                                        if attempt < max_retries - 1:
-                                            logger.info(
-                                                f"Waiting for WebSocket data for {symbol} "
-                                                f"(attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s..."
-                                            )
-                                            await asyncio.sleep(retry_delay)
-                                    
-                                    # If still no price after retries, use API as fallback
-                                    if current_price is None:
-                                        logger.info(
-                                            f"WebSocket not ready for {symbol}, using API as fallback..."
-                                        )
-                                        try:
-                                            ticker = await asyncio.to_thread(
-                                                self.trading_executor.client.futures_symbol_ticker,
-                                                symbol=symbol
-                                            )
-                                            current_price = float(ticker['price'])
-                                            logger.info(f"Got current price from API for {symbol}: {current_price:.2f}")
-                                        except Exception as e:
-                                            logger.error(f"Failed to get current price from API for {symbol}: {e}")
-                                            continue
-                                    
-                                    # Get latest 5m K-line to calculate range
-                                    klines = self.data_handler.get_klines(symbol, "5m")
-                                    if not klines:
-                                        logger.warning(f"No K-line data for {symbol}, using minimum stop loss distance")
-                                        # Use minimum stop loss distance as fallback
-                                        stop_loss_distance = current_price * stop_loss_min_distance_percent
-                                    else:
-                                        # Get the latest closed K-line
-                                        closed_klines = [k for k in klines if k.get('is_closed', False)]
-                                        if closed_klines:
-                                            latest_kline = closed_klines[-1]
-                                            current_range = latest_kline['high'] - latest_kline['low']
-                                            if current_range > 0:
-                                                stop_loss_distance = current_range * stop_loss_range_multiplier
-                                            else:
-                                                stop_loss_distance = current_price * stop_loss_min_distance_percent
-                                        else:
-                                            stop_loss_distance = current_price * stop_loss_min_distance_percent
-                                    
-                                    # Calculate stop loss price
-                                    if side == 'LONG':
-                                        stop_loss_price = current_price - stop_loss_distance
-                                    else:  # SHORT
-                                        stop_loss_price = current_price + stop_loss_distance
-                                    
-                                    # Round stop loss price to match symbol's precision requirements
-                                    rounded_stop_loss_price = await asyncio.to_thread(
-                                        self.trading_executor.round_price,
-                                        stop_loss_price,
-                                        symbol
-                                    )
-                                    
-                                    if rounded_stop_loss_price is None:
-                                        logger.error(f"Failed to round stop loss price for {symbol}")
-                                        continue
-                                    
-                                    logger.info(
-                                        f"Stop loss price rounded: {stop_loss_price:.6f} -> {rounded_stop_loss_price:.6f}"
-                                    )
-                                    
-                                    logger.info(
-                                        f"Creating stop loss order for {symbol}: "
-                                        f"side={side}, current_price={current_price:.2f}, "
-                                        f"stop_loss_price={rounded_stop_loss_price:.2f}"
-                                    )
-                                    
-                                    # Create stop loss order
-                                    logger.info(f"[SYNC] Creating STOP_MARKET order for {symbol}: side={side}, stopPrice={rounded_stop_loss_price:.2f}, quantity={quantity:.6f}")
-                                    if side == 'LONG':
-                                        order = await asyncio.to_thread(
-                                            self.trading_executor.client.futures_create_order,
-                                            symbol=symbol,
-                                            side=SIDE_SELL,
-                                            type=ORDER_TYPE_STOP_MARKET,
-                                            stopPrice=rounded_stop_loss_price,
-                                            quantity=quantity,
-                                            reduceOnly=True
-                                        )
-                                    else:  # SHORT
-                                        order = await asyncio.to_thread(
-                                            self.trading_executor.client.futures_create_order,
-                                            symbol=symbol,
-                                            side=SIDE_BUY,
-                                            type=ORDER_TYPE_STOP_MARKET,
-                                            stopPrice=rounded_stop_loss_price,
-                                            quantity=quantity,
-                                            reduceOnly=True
-                                        )
-                                    
-                                    logger.info(f"[SYNC] ✓ Stop loss order created: orderId={order.get('orderId')}, status={order.get('status')}, type={order.get('type')}")
-                                    logger.info(f"[SYNC] Order details: {order}")
-                                    
-                                except Exception as e:
-                                    logger.error(f"Failed to create stop loss order for {symbol}: {e}")
-                                    import traceback
-                                    logger.error(traceback.format_exc())
-                        else:
-                            logger.warning(
-                                f"Cannot create stop loss order for {symbol}: "
-                                f"config or data_handler not provided"
-                            )
                     else:
                         # No position on exchange, ensure local state is also empty
                         if symbol in self.positions:

@@ -74,14 +74,10 @@ class TradingExecutor:
             try:
                 import time
                 
-                # Cancel all open orders (including stop loss orders) before setting leverage
+                # Cancel all open orders before setting leverage
                 # This prevents "Position side cannot be changed if there exists open orders" error
                 logger.info(f"Cancelling all orders for {symbol} before setting leverage...")
                 self.cancel_all_orders(symbol)
-                
-                # Also cancel all stop loss orders (including conditional orders)
-                logger.info(f"Cancelling all stop loss orders for {symbol} before setting leverage...")
-                self.cancel_all_stop_loss_orders(symbol)
                 
                 # Wait for cancellations to be processed
                 time.sleep(1)
@@ -91,18 +87,15 @@ class TradingExecutor:
                 max_retries = 3
                 for attempt in range(max_retries):
                     orders = self.get_open_orders(symbol)
-                    algo_orders = self.get_open_algo_orders(symbol)
                     
                     total_orders = len(orders) if orders else 0
-                    total_algo_orders = len(algo_orders) if algo_orders else 0
                     
-                    if total_orders == 0 and total_algo_orders == 0:
+                    if total_orders == 0:
                         logger.info(f"✓ All orders cancelled for {symbol} (attempt {attempt + 1})")
                         break
                     
                     logger.warning(
-                        f"Found {total_orders} open order(s) and {total_algo_orders} algo order(s) "
-                        f"for {symbol} after cancellation attempt {attempt + 1}/{max_retries}. "
+                        f"Found {total_orders} open order(s) for {symbol} after cancellation attempt {attempt + 1}/{max_retries}. "
                         f"Retrying cancellation..."
                     )
                     
@@ -112,35 +105,26 @@ class TradingExecutor:
                         for i, order in enumerate(orders, 1):
                             logger.warning(f"  {i}. Order: orderId={order.get('orderId')}, type={order.get('type')}, side={order.get('side')}, status={order.get('status')}")
                     
-                    if algo_orders:
-                        logger.warning(f"Remaining algo orders for {symbol}:")
-                        for i, order in enumerate(algo_orders, 1):
-                            logger.warning(f"  {i}. Algo Order: algoId={order.get('algoId')}, orderType={order.get('orderType')}, algoStatus={order.get('algoStatus')}")
-                    
                     # Retry cancellation
                     self.cancel_all_orders(symbol)
-                    self.cancel_all_stop_loss_orders(symbol)
                     time.sleep(1)
                     
                     # If this was the last retry and orders still exist, skip this symbol
                     if attempt == max_retries - 1:
                         logger.error(
                             f"Failed to cancel all orders for {symbol} after {max_retries} attempts. "
-                            f"Remaining: {total_orders} open orders, {total_algo_orders} algo orders. "
-                            f"Cannot set leverage."
+                            f"Remaining: {total_orders} open orders. Cannot set leverage."
                         )
                         continue
                 
                 # Only set leverage if all orders are cancelled
                 orders = self.get_open_orders(symbol)
-                algo_orders = self.get_open_algo_orders(symbol)
                 total_orders = len(orders) if orders else 0
-                total_algo_orders = len(algo_orders) if algo_orders else 0
                 
-                if total_orders > 0 or total_algo_orders > 0:
+                if total_orders > 0:
                     logger.error(
                         f"Skipping leverage setup for {symbol} due to remaining orders: "
-                        f"{total_orders} open orders, {total_algo_orders} algo orders"
+                        f"{total_orders} open orders"
                     )
                     continue
                 
@@ -982,41 +966,9 @@ class TradingExecutor:
             logger.error(f"[CANCEL_ORDER] ✗ Failed to cancel order {order_id} for {symbol}: {e}")
             return False
     
-    def cancel_all_stop_loss_orders(self, symbol: str) -> bool:
-        """
-        Cancel all stop loss orders for a symbol
-        
-        Args:
-            symbol: Trading pair symbol
-            
-        Returns:
-            True if successful
-        """
-        try:
-            orders = self.get_open_orders(symbol)
-            if not orders:
-                logger.debug(f"No open orders to cancel for {symbol}")
-                return True
-            
-            cancelled_count = 0
-            for order in orders:
-                # Check if it's a stop loss order (STOP_MARKET type and reduceOnly=True)
-                if order.get('type') == 'STOP_MARKET' and order.get('reduceOnly', False):
-                    order_id = order.get('orderId')
-                    if order_id:
-                        if self.cancel_order(symbol, order_id):
-                            cancelled_count += 1
-            
-            logger.info(f"Cancelled {cancelled_count} stop loss order(s) for {symbol}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to cancel stop loss orders for {symbol}: {e}")
-            return False
-    
     def cancel_all_orders(self, symbol: str) -> bool:
         """
-        Cancel all open orders for a symbol (including stop loss orders and algo orders)
+        Cancel all open orders for a symbol
         Uses batch cancellation API for efficiency
         
         Args:
@@ -1026,41 +978,11 @@ class TradingExecutor:
             True if successful
         """
         try:
-            # First, try to use the batch cancellation API
-            # This cancels all orders including conditional orders
-            try:
-                result = self.client.futures_cancel_all_open_orders(symbol=symbol)
-                logger.info(f"Batch cancelled all orders for {symbol}: {result}")
-                return True
-            except BinanceAPIException as e:
-                # If batch cancellation fails, fall back to individual cancellation
-                logger.warning(f"Batch cancellation failed for {symbol}, falling back to individual cancellation: {e}")
-            
-            # Fallback: cancel orders individually
-            orders = self.get_open_orders(symbol)
-            if not orders:
-                logger.debug(f"No open orders to cancel for {symbol}")
-                return True
-            
-            cancelled_count = 0
-            for order in orders:
-                # Check if it's an algo order (has algoId)
-                algo_id = order.get('algoId')
-                if algo_id:
-                    # Cancel algo order using algoId
-                    if self.cancel_algo_order(symbol, algo_id):
-                        cancelled_count += 1
-                else:
-                    # Cancel regular order using orderId
-                    order_id = order.get('orderId')
-                    if order_id:
-                        if self.cancel_order(symbol, order_id):
-                            cancelled_count += 1
-            
-            logger.info(f"Cancelled {cancelled_count} order(s) for {symbol}")
+            # Use the batch cancellation API
+            result = self.client.futures_cancel_all_open_orders(symbol=symbol)
+            logger.info(f"Cancelled all orders for {symbol}: {result}")
             return True
-            
-        except Exception as e:
+        except BinanceAPIException as e:
             logger.error(f"Failed to cancel all orders for {symbol}: {e}")
             return False
     
@@ -1112,246 +1034,3 @@ class TradingExecutor:
             logger.error(f"Error checking if order {order_id} is filled: {e}")
             return False
     
-    def has_stop_loss_order(self, symbol: str) -> bool:
-        """
-        Check if there is an active stop loss order for a symbol
-        This checks both regular orders and conditional orders (algo orders)
-        
-        Args:
-            symbol: Trading pair symbol
-            
-        Returns:
-            True if stop loss order exists
-        """
-        try:
-            logger.info(f"[CHECK_SL] Checking for stop loss orders for {symbol}")
-            
-            # Check regular orders
-            orders = self.get_open_orders(symbol)
-            logger.info(f"[CHECK_SL] Found {len(orders) if orders else 0} open orders for {symbol}")
-            
-            if orders:
-                for order in orders:
-                    logger.info(f"[CHECK_SL] Checking order: type={order.get('type')}, reduceOnly={order.get('reduceOnly')}, hasAlgoId={'algoId' in order}")
-                    if order.get('type') == 'STOP_MARKET' and order.get('reduceOnly', False):
-                        logger.info(f"[CHECK_SL] ✓ Found regular stop loss order: orderId={order.get('orderId')}, stopPrice={order.get('stopPrice')}, quantity={order.get('origQty')}")
-                        return True
-            
-            # Check conditional orders (algo orders)
-            algo_orders = self.get_open_algo_orders(symbol)
-            logger.info(f"[CHECK_SL] Found {len(algo_orders) if algo_orders else 0} algo orders for {symbol}")
-            
-            if algo_orders:
-                for order in algo_orders:
-                    logger.info(f"[CHECK_SL] Checking algo order: orderType={order.get('orderType')}, reduceOnly={order.get('reduceOnly')}, algoStatus={order.get('algoStatus')}")
-                    if (order.get('orderType') == 'STOP_MARKET' and
-                        order.get('reduceOnly', False) and
-                        order.get('algoStatus') == 'NEW'):
-                        logger.info(f"[CHECK_SL] ✓ Found algo stop loss order: algoId={order.get('algoId')}, triggerPrice={order.get('triggerPrice')}, quantity={order.get('origQty')}")
-                        return True
-            
-            logger.info(f"[CHECK_SL] No stop loss orders found for {symbol}")
-            return False
-            
-        except Exception as e:
-            logger.error(f"[CHECK_SL] Exception while checking stop loss order for {symbol}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
-    
-    def get_open_algo_orders(self, symbol: str) -> Optional[list]:
-        """
-        Get all open conditional (algo) orders for a symbol
-        
-        Args:
-            symbol: Trading pair symbol
-            
-        Returns:
-            List of open algo orders or None
-        """
-        try:
-            # Try to use the dedicated API for algo orders first
-            try:
-                # This API returns all open algo orders (conditional orders)
-                algo_orders = self.client.futures_get_open_orders(symbol=symbol)
-                if not algo_orders:
-                    return []
-                
-                # Filter for conditional orders (those with algoId)
-                conditional_orders = [order for order in algo_orders if 'algoId' in order]
-                
-                if conditional_orders:
-                    logger.info(f"Found {len(conditional_orders)} conditional order(s) for {symbol}")
-                    for order in conditional_orders:
-                        logger.info(f"  - Algo order: algoId={order.get('algoId')}, type={order.get('orderType')}, status={order.get('algoStatus')}")
-                
-                return conditional_orders
-            except Exception as e:
-                logger.warning(f"Failed to get algo orders via standard API for {symbol}: {e}")
-                return []
-            
-        except BinanceAPIException as e:
-            logger.error(f"Failed to get open algo orders for {symbol}: {e}")
-            return None
-    
-    def cancel_algo_order(self, symbol: str, algo_id: int) -> bool:
-        """
-        Cancel a conditional (algo) order by algo ID
-        
-        Args:
-            symbol: Trading pair symbol
-            algo_id: Algo order ID to cancel
-            
-        Returns:
-            True if successful
-        """
-        try:
-            logger.info(f"[CANCEL_ALGO] Attempting to cancel algo order {algo_id} for {symbol}")
-            
-            # Use the dedicated API endpoint for cancelling algo orders
-            # According to Binance API docs: DELETE /fapi/v1/algo/order
-            # Required parameters: algoId or clientAlgoId (at least one)
-            import time
-            timestamp = int(time.time() * 1000)
-            
-            # Use the client's internal request method to call the algo order cancellation endpoint
-            result = self.client._request(
-                method='DELETE',
-                path='/fapi/v1/algo/order',
-                signed=True,
-                data={
-                    'symbol': symbol,
-                    'algoId': algo_id,
-                    'timestamp': timestamp
-                }
-            )
-            
-            logger.info(f"[CANCEL_ALGO] ✓ Algo order {algo_id} cancelled successfully for {symbol}: {result}")
-            return True
-            
-        except BinanceAPIException as e:
-            logger.error(f"[CANCEL_ALGO] ✗ Failed to cancel algo order {algo_id} for {symbol}: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"[CANCEL_ALGO] ✗ Unexpected error cancelling algo order {algo_id} for {symbol}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
-    
-    def cancel_all_stop_loss_orders(self, symbol: str) -> bool:
-        """
-        Cancel all stop loss orders for a symbol
-        This cancels both regular orders and conditional (algo) orders
-        It will retry until all stop loss orders are confirmed cancelled
-        
-        Args:
-            symbol: Trading pair symbol
-            
-        Returns:
-            True if successful (all stop loss orders cancelled)
-        """
-        try:
-            import time
-            max_retries = 3
-            cancelled_count = 0
-            
-            logger.info(f"[CANCEL_SL] Starting cancellation of all stop loss orders for {symbol}")
-            
-            for attempt in range(max_retries):
-                cancelled_count = 0
-                
-                logger.info(f"[CANCEL_SL] Attempt {attempt + 1}/{max_retries} for {symbol}")
-                
-                # Cancel regular stop loss orders
-                orders = self.get_open_orders(symbol)
-                logger.info(f"[CANCEL_SL] Found {len(orders) if orders else 0} open orders for {symbol}")
-                
-                if orders:
-                    for order in orders:
-                        logger.info(f"[CANCEL_SL] Checking order: {order}")
-                        # Check if it's a stop loss order (STOP_MARKET type and reduceOnly=True)
-                        # and NOT a conditional order (no algoId)
-                        if (order.get('type') == 'STOP_MARKET' and
-                            order.get('reduceOnly', False) and
-                            'algoId' not in order):
-                            order_id = order.get('orderId')
-                            logger.info(f"[CANCEL_SL] Found regular stop loss order: orderId={order_id}, stopPrice={order.get('stopPrice')}, quantity={order.get('origQty')}")
-                            if order_id:
-                                logger.info(f"[CANCEL_SL] Attempting to cancel regular stop loss order {order_id} for {symbol}")
-                                if self.cancel_order(symbol, order_id):
-                                    cancelled_count += 1
-                                    logger.info(f"[CANCEL_SL] ✓ Successfully cancelled regular stop loss order {order_id}")
-                                else:
-                                    logger.error(f"[CANCEL_SL] ✗ Failed to cancel regular stop loss order {order_id}")
-                        else:
-                            logger.debug(f"[CANCEL_SL] Skipping non-stop-loss order: type={order.get('type')}, reduceOnly={order.get('reduceOnly')}, hasAlgoId={'algoId' in order}")
-                
-                # Cancel conditional stop loss orders
-                algo_orders = self.get_open_algo_orders(symbol)
-                logger.info(f"[CANCEL_SL] Found {len(algo_orders) if algo_orders else 0} algo orders for {symbol}")
-                
-                if algo_orders:
-                    for order in algo_orders:
-                        logger.info(f"[CANCEL_SL] Checking algo order: {order}")
-                        if (order.get('orderType') == 'STOP_MARKET' and
-                            order.get('reduceOnly', False) and
-                            order.get('algoStatus') == 'NEW'):
-                            algo_id = order.get('algoId')
-                            logger.info(f"[CANCEL_SL] Found algo stop loss order: algoId={algo_id}, triggerPrice={order.get('triggerPrice')}, quantity={order.get('origQty')}")
-                            if algo_id:
-                                logger.info(f"[CANCEL_SL] Attempting to cancel algo stop loss order {algo_id} for {symbol}")
-                                if self.cancel_algo_order(symbol, algo_id):
-                                    cancelled_count += 1
-                                    logger.info(f"[CANCEL_SL] ✓ Successfully cancelled algo stop loss order {algo_id}")
-                                else:
-                                    logger.error(f"[CANCEL_SL] ✗ Failed to cancel algo stop loss order {algo_id}")
-                        else:
-                            logger.debug(f"[CANCEL_SL] Skipping non-stop-loss algo order: orderType={order.get('orderType')}, reduceOnly={order.get('reduceOnly')}, algoStatus={order.get('algoStatus')}")
-                
-                logger.info(f"[CANCEL_SL] Cancelled {cancelled_count} stop loss order(s) for {symbol} in attempt {attempt + 1}/{max_retries}")
-                
-                if cancelled_count > 0:
-                    # Wait for cancellation to be processed
-                    time.sleep(0.5)
-                
-                # Verify that all stop loss orders are cancelled
-                still_has_stop_loss = self.has_stop_loss_order(symbol)
-                logger.info(f"[CANCEL_SL] Verification check: still_has_stop_loss={still_has_stop_loss} for {symbol}")
-                
-                if not still_has_stop_loss:
-                    logger.info(f"[CANCEL_SL] ✓ Verified: All stop loss orders cancelled for {symbol}")
-                    return True
-                else:
-                    logger.warning(
-                        f"[CANCEL_SL] ⚠️ Stop loss orders still exist after cancellation (attempt {attempt + 1}/{max_retries})"
-                    )
-                    if attempt < max_retries - 1:
-                        time.sleep(1)
-            
-            # After all retries, log remaining orders for debugging
-            logger.error(f"[CANCEL_SL] ✗ Failed to cancel all stop loss orders for {symbol} after {max_retries} attempts")
-            
-            # Log remaining orders
-            orders = self.get_open_orders(symbol)
-            if orders:
-                logger.error(f"[CANCEL_SL] Remaining open orders for {symbol} ({len(orders)} total):")
-                for i, order in enumerate(orders, 1):
-                    logger.error(f"[CANCEL_SL]   {i}. Order: {order}")
-            else:
-                logger.info(f"[CANCEL_SL] No remaining open orders for {symbol}")
-            
-            algo_orders = self.get_open_algo_orders(symbol)
-            if algo_orders:
-                logger.error(f"[CANCEL_SL] Remaining algo orders for {symbol} ({len(algo_orders)} total):")
-                for i, order in enumerate(algo_orders, 1):
-                    logger.error(f"[CANCEL_SL]   {i}. Algo Order: {order}")
-            else:
-                logger.info(f"[CANCEL_SL] No remaining algo orders for {symbol}")
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"[CANCEL_SL] Exception while cancelling stop loss orders for {symbol}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False

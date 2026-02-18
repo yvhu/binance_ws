@@ -179,68 +179,66 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 - 确保当前K线有足够的波动性
 - 避免在市场平静时开仓
 
-### 7. 止损机制
+### 7. 止损机制（实时监控平仓）
 
-#### 7.1 止损订单设置规则
-- **重要**：止损订单仅在开仓成功后设置
-  - 如果开仓订单未成交（订单失败），系统不会设置止损订单
-  - 系统会取消所有未成交订单，避免产生挂单
+#### 7.1 实时监控平仓机制
+- **重要变更**：系统已从止损订单（STOP_MARKET）改为实时监控平仓
+- **工作原理**：
+  - 开仓时计算止损价格并存储在内存中
+  - 每次5分钟K线关闭时检查止损条件
+  - 当价格触及止损价格时，立即执行市价平仓
+- **优势**：
+  - ✅ 避免止损订单管理复杂性
+  - ✅ 避免条件单（algo orders）的取消问题
+  - ✅ 更灵活的止损逻辑控制
+  - ✅ 减少订单管理错误
 
-#### 7.2 止损单创建失败的容错机制
-- 如果开仓成功但止损单创建失败，系统会：
-  1. 记录CRITICAL级别错误日志
-  2. 发送紧急Telegram通知，警告"仓位没有止损保护"
-  3. 保留已开仓的仓位（不会自动平仓）
-  4. 依赖反向吞没止损机制进行风险控制
-- 这种情况属于严重错误，需要人工介入处理
+#### 7.2 止损价格计算
+- **计算时机**：开仓时计算并存储在持仓信息中
+- **计算公式**：
+  - 基于振幅的止损距离 = 最新5m K线振幅 × 0.6（可在配置文件中调整）
+  - 最小止损距离 = 当前价格 × 0.5%（可在配置文件中调整）
+  - 最终止损距离 = max(基于振幅的止损距离, 最小止损距离)
+  - 做多止损价格 = 当前价格 - 最终止损距离
+  - 做空止损价格 = 当前价格 + 最终止损距离
+- **存储位置**：持仓信息中的 `stop_loss_price` 字段
 
-#### 7.3 启动时的订单和止损单检查（重要安全机制）
+#### 7.3 实时监控检查
+- **触发时机**：每次5分钟K线关闭时
+- **检查内容**：
+  1. 获取当前价格
+  2. 计算当前K线振幅
+  3. 基于当前振幅重新计算止损距离
+  4. 判断是否触发止损
+- **触发条件**：
+  - 做多持仓：当前价格 ≤ 止损价格
+  - 做空持仓：当前价格 ≥ 止损价格
+- **执行操作**：
+  - 立即执行市价平仓
+  - 发送止损通知
+  - 更新持仓状态
+
+#### 7.4 启动时的持仓同步（重要安全机制）
 - **触发时机**：每次系统启动时自动执行
 - **检查内容**：
   1. 从Binance API查询当前持仓
   2. 自动同步到本地持仓管理器
-  3. 检查每个持仓是否有对应的止损单
-  4. 如果没有止损单，自动创建止损单
-- **止损价格计算**：
-  - 基于当前价格和最新5m K线振幅
+  3. 重建持仓信息（包括止损价格）
+- **止损价格重建**：
+  - 获取当前价格和最新5m K线数据
+  - 基于当前K线振幅计算止损距离
   - 使用策略配置的止损参数（stop_loss_range_multiplier、stop_loss_min_distance_percent）
-  - 确保止损距离合理，避免过窄或过宽
+  - 根据持仓方向计算止损价格
+  - 将止损价格存储到持仓信息中
 - **目的**：
   - 避免重启后"逻辑空仓但真实有仓"的风险
-  - 避免因错误导致订单创建成功但没有止损单的情况
-  - 确保所有持仓都有止损保护
+  - 确保所有持仓都有止损保护（即使内存重置）
   - 提供自动恢复机制，减少人工干预
 - **实现位置**：[`../src/trading/position_manager.py`](../src/trading/position_manager.py:139) 的 `sync_from_exchange` 方法
-
-#### 7.4 移动止损
-- 基于最新5m K线振幅的0.8倍，每次5m K线关闭时更新
-- 最小止损距离保护：0.3%的价格，防止低波动时止损过窄
-- 最终止损距离 = max(振幅×0.8, 价格×0.3%)
-
-#### 7.5 止损单管理机制（重要更新）
-- **问题背景**：止损单是条件订单（CONDITIONAL），之前只处理普通订单导致无法正确取消
-- **解决方案**：
-  1. 同时支持普通订单和条件订单的检测、取消
-  2. 添加重试机制（最多3次）确保所有止损单都被取消
-  3. 每次取消后验证是否真的取消了
-  4. 如果取消失败，记录详细的错误信息
-- **实现位置**：
-  - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1019) - `has_stop_loss_order()` 方法
-  - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1045) - `get_open_algo_orders()` 方法
-  - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1063) - `cancel_algo_order()` 方法
-  - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1081) - `cancel_all_stop_loss_orders()` 方法
-  - [`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py:865) - `_update_moving_stop_loss()` 方法
-- **取消流程**：
-  1. 检查是否存在止损单（包括普通订单和条件订单）
-  2. 如果存在，尝试取消（最多3次）
-  3. 每次取消后验证是否成功
-  4. 只有确认所有止损单都被取消后，才创建新的止损单
-  5. 如果取消失败，记录错误并返回，不会创建新的止损单
-- **优势**：
-  - ✅ 取消所有旧的止损单（无论有多少个）
-  - ✅ 防止新的止损单在旧订单未取消时创建
-  - ✅ 提供详细的错误信息，方便调试
-  - ✅ 避免出现多个止损单的问题
+- **重要说明**：
+  - 由于止损价格存储在内存中，系统重启后会丢失
+  - 必须在启动时重新计算并存储止损价格
+  - 确保重启后持仓仍然有止损保护
 
 #### 7.5 移动反向吞没止损
 - **触发条件**（必须同时满足）：
@@ -374,8 +372,8 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 
 ✅ 自动化执行，无需人工干预
 ✅ 多重确认，减少假信号
-✅ 双重止损，控制风险
-✅ 实时监控，及时通知
+✅ 实时监控平仓，控制风险
+✅ 动态止损调整，适应市场变化
 ✅ 模块化设计，易于扩展
 ✅ 完整日志，便于追踪
 
@@ -383,77 +381,64 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 
 ## 代码更新记录
 
-### 2026-02-18：修复条件单取消和杠杆设置问题
+### 2026-02-18：从止损订单改为实时监控平仓
 
-**问题描述：**
-1. **条件单无法正确取消**：
-   - 随着时间推移，旧的止损单没有随着新的条件单出现而撤销
-   - 导致某个订单持有时间很久时，出现多个条件单
-   - 条件单不断累积，无法被正确管理
+**变更原因：**
+1. **止损订单管理复杂性**：
+   - 止损单是条件订单（CONDITIONAL），需要专门的API端点管理
+   - 条件单取消逻辑复杂，容易出现累积问题
+   - 需要处理普通订单和条件订单两种类型
 
-2. **杠杆设置失败**：
-   - 启动时设置杠杆失败，错误信息："Position side cannot be changed if there exists open orders"
-   - 即使尝试取消订单后，仍然存在未取消的条件单
+2. **订单管理错误风险**：
+   - 条件单可能无法正确取消
+   - 多个止损单可能同时存在
+   - 杠杆设置时可能因订单冲突而失败
 
-**根本原因：**
-1. **条件单API使用错误**：
-   - 止损单是条件订单（CONDITIONAL），有 `algoId` 而不是 `orderId`
-   - 之前的代码使用 `futures_cancel_order` API 无法取消条件单
-   - 条件单需要使用专门的端点 `DELETE /fapi/v1/algo/order`
+**新架构：实时监控平仓**
+- **工作原理**：
+  - 开仓时计算止损价格并存储在内存中
+  - 每次5分钟K线关闭时检查止损条件
+  - 当价格触及止损价格时，立即执行市价平仓
+- **优势**：
+  - ✅ 避免止损订单管理复杂性
+  - ✅ 避免条件单（algo orders）的取消问题
+  - ✅ 更灵活的止损逻辑控制
+  - ✅ 减少订单管理错误
+  - ✅ 简化代码逻辑
 
-2. **批量取消未使用**：
-   - 没有使用 Binance 的批量取消 API `futures_cancel_all_open_orders`
-   - 该 API 可以一次性取消所有订单（包括普通订单和条件单）
+**代码变更：**
 
-3. **订单检测不完整**：
-   - `futures_get_open_orders` 可能不返回所有类型的订单
-   - 需要更详细的日志来确认订单状态
+1. **删除止损订单相关方法**（[`../src/trading/trading_executor.py`](../src/trading/trading_executor.py)）：
+   - 删除 `cancel_all_stop_loss_orders()` 方法
+   - 删除 `has_stop_loss_order()` 方法
+   - 删除 `get_open_algo_orders()` 方法
+   - 删除 `cancel_algo_order()` 方法
+   - 简化 `cancel_all_orders()` 方法，只使用批量取消API
 
-**修复内容：**
+2. **删除止损订单创建逻辑**（[`../src/trading/position_manager.py`](../src/trading/position_manager.py)）：
+   - 从 `sync_from_exchange()` 方法中删除止损订单创建代码
+   - 只同步持仓信息，不创建止损订单
 
-1. **使用批量取消 API**（[`cancel_all_orders`](../src/trading/trading_executor.py:975)）：
-   - 优先使用 `futures_cancel_all_open_orders` 批量取消所有订单
-   - 该 API 会一次性取消普通订单和条件单
-   - 如果失败则回退到逐个取消
-
-2. **使用正确的条件单取消 API**（[`cancel_algo_order`](../src/trading/trading_executor.py:1111)）：
-   - 根据 Binance API 文档，使用专门的端点 `DELETE /fapi/v1/algo/order`
-   - 传递正确的参数：`symbol` 和 `algoId`
-   - 使用 `client._request` 方法直接调用 API 端点
-
-3. **改进条件单检测**（[`get_open_algo_orders`](../src/trading/trading_executor.py:1087)）：
-   - 添加详细的日志输出，显示找到的条件单信息
-   - 包括 algoId、订单类型和状态
-
-4. **增强杠杆设置前的订单清理**（[`_initialize_leverage`](../src/trading/trading_executor.py:64)）：
-   - 在设置杠杆前取消所有订单
-   - 添加等待时间确保取消操作完成
-   - 验证所有订单确实已被取消
-   - 如果仍有订单，重试取消操作
-
-5. **改进日志输出**（[`position_manager.py`](../src/trading/position_manager.py:229)）：
-   - 将 WebSocket 数据获取的警告日志改为信息日志
-   - 这些是正常的启动行为（WebSocket 需要时间连接）
+3. **实现实时监控平仓**（[`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py)）：
+   - 删除 `_set_stop_loss_order()` 方法
+   - 删除 `_update_moving_stop_loss()` 方法
+   - 添加 `_check_real_time_stop_loss()` 方法
+   - 在 `on_5m_kline_close()` 中调用实时监控检查
+   - 在开仓时存储止损价格到持仓信息
 
 **影响范围：**
-- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py) - 更新订单取消逻辑
-- [`../src/trading/position_manager.py`](../src/trading/position_manager.py) - 优化日志输出
+- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py) - 删除止损订单管理方法
+- [`../src/trading/position_manager.py`](../src/trading/position_manager.py) - 删除止损订单创建逻辑
+- [`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py) - 实现实时监控平仓
 - [`docs/TRADING_FLOW.md`](docs/TRADING_FLOW.md) - 更新文档
-- [`docs/PROJECT_FLOW.md`](docs/PROJECT_FLOW.md) - 更新文档
+- [`docs/STRATEGY_FLOW.md`](docs/STRATEGY_FLOW.md) - 更新文档
 
-**优势：**
-- ✅ 正确取消所有条件单（使用专门的 API 端点）
-- ✅ 使用批量取消 API 提高效率
-- ✅ 避免条件单不断累积的问题
-- ✅ 解决杠杆设置时的订单冲突
-- ✅ 提供详细的日志便于调试
-- ✅ 确保系统启动时订单状态正确
-
-**技术细节：**
-- 条件单取消端点：`DELETE /fapi/v1/algo/order`
-- 必需参数：`algoId` 或 `clientAlgoId`（至少一个）
-- 批量取消端点：`DELETE /fapi/v1/allOpenOrders`
-- 批量取消会同时取消普通订单和条件单
+**止损价格计算：**
+- 基于振幅的止损距离 = 最新5m K线振幅 × 0.6（可在配置文件中调整）
+- 最小止损距离 = 当前价格 × 0.5%（可在配置文件中调整）
+- 最终止损距离 = max(基于振幅的止损距离, 最小止损距离)
+- 做多止损价格 = 当前价格 - 最终止损距离
+- 做空止损价格 = 当前价格 + 最终止损距离
 
 ### 2026-02-17：策略从15m更新为5m
 

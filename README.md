@@ -21,9 +21,8 @@ A cryptocurrency futures trading bot that fetches real-time market data from Bin
 - 5-minute K-line trading strategy / 5分钟K线交易策略
 - Dynamic position sizing based on risk management / 基于风险管理的动态仓位计算
 - Comprehensive Telegram notifications (Chinese) / 完整的Telegram通知（中文）
-- Proper handling of conditional (algo) orders / 正确处理条件单（algo orders）
-- Automatic order cleanup on startup / 启动时自动清理订单
-- Batch order cancellation for efficiency / 批量取消订单提高效率
+- Real-time stop loss monitoring / 实时监控止损
+- Dynamic stop loss adjustment based on market volatility / 基于市场波动动态调整止损
 
 ## Project Structure / 项目结构
 

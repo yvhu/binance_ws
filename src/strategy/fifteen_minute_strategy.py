@@ -76,8 +76,8 @@ class FiveMinuteStrategy:
         
         # Check for stop losses if position exists
         if self.position_manager.has_position(symbol):
-            # Check moving stop loss (update stop loss order based on latest 5m K-line)
-            await self._update_moving_stop_loss(symbol, kline_info)
+            # Check real-time stop loss based on current price
+            await self._check_real_time_stop_loss(symbol, kline_info)
             
             # Check engulfing stop loss
             await self._check_engulfing_stop_loss(symbol, kline_info)
@@ -604,7 +604,7 @@ class FiveMinuteStrategy:
                     final_quantity = result.get('final_quantity', quantity)
                     final_price = result.get('final_price', current_price)
                     
-                    # Record position with entry kline
+                    # Record position with entry kline and stop loss price
                     self.position_manager.open_position(
                         symbol=symbol,
                         side='LONG',
@@ -613,25 +613,12 @@ class FiveMinuteStrategy:
                         entry_kline=entry_kline
                     )
                     
-                    logger.info(f"Long position opened successfully for {symbol}")
+                    # Store stop loss price in position for real-time monitoring
+                    position = self.position_manager.get_position(symbol)
+                    if position and stop_loss_price is not None:
+                        position['stop_loss_price'] = stop_loss_price
                     
-                    # Set stop loss order if stop loss price is provided
-                    stop_loss_set = False
-                    if stop_loss_price is not None:
-                        stop_loss_set = await self._set_stop_loss_order(symbol, 'LONG', final_quantity, stop_loss_price)
-                        
-                        if not stop_loss_set:
-                            # Stop loss order creation failed - this is a critical error
-                            logger.error(f"CRITICAL: Failed to set stop loss order for {symbol} after opening position!")
-                            
-                            # Send critical error notification
-                            await self.telegram_client.send_error_message(
-                                f"⚠️ CRITICAL: Long position opened for {symbol} but stop loss order failed!\n"
-                                f"Position: {final_quantity} @ {final_price:.2f}\n"
-                                f"Stop loss price: {stop_loss_price:.2f}\n"
-                                f"⚠️ Position has NO stop loss protection!",
-                                "Stop Loss Order Failed"
-                            )
+                    logger.info(f"Long position opened successfully for {symbol}")
                     
                     # Send trade notification with volume info, range info, stop loss and position calculation info
                     await self.telegram_client.send_trade_notification(
@@ -730,7 +717,7 @@ class FiveMinuteStrategy:
                     final_quantity = result.get('final_quantity', quantity)
                     final_price = result.get('final_price', current_price)
                     
-                    # Record position with entry kline
+                    # Record position with entry kline and stop loss price
                     self.position_manager.open_position(
                         symbol=symbol,
                         side='SHORT',
@@ -739,25 +726,12 @@ class FiveMinuteStrategy:
                         entry_kline=entry_kline
                     )
                     
-                    logger.info(f"Short position opened successfully for {symbol}")
+                    # Store stop loss price in position for real-time monitoring
+                    position = self.position_manager.get_position(symbol)
+                    if position and stop_loss_price is not None:
+                        position['stop_loss_price'] = stop_loss_price
                     
-                    # Set stop loss order if stop loss price is provided
-                    stop_loss_set = False
-                    if stop_loss_price is not None:
-                        stop_loss_set = await self._set_stop_loss_order(symbol, 'SHORT', final_quantity, stop_loss_price)
-                        
-                        if not stop_loss_set:
-                            # Stop loss order creation failed - this is a critical error
-                            logger.error(f"CRITICAL: Failed to set stop loss order for {symbol} after opening position!")
-                            
-                            # Send critical error notification
-                            await self.telegram_client.send_error_message(
-                                f"⚠️ CRITICAL: Short position opened for {symbol} but stop loss order failed!\n"
-                                f"Position: {final_quantity} @ {final_price:.2f}\n"
-                                f"Stop loss price: {stop_loss_price:.2f}\n"
-                                f"⚠️ Position has NO stop loss protection!",
-                                "Stop Loss Order Failed"
-                            )
+                    logger.info(f"Short position opened successfully for {symbol}")
                     
                     # Send trade notification with volume info, range info, stop loss and position calculation info
                     await self.telegram_client.send_trade_notification(
@@ -795,139 +769,16 @@ class FiveMinuteStrategy:
         except Exception as e:
             logger.error(f"Error opening short position for {symbol}: {e}")
     
-    async def _set_stop_loss_order(self, symbol: str, side: str, quantity: float, stop_loss_price: float) -> bool:
+    async def _check_real_time_stop_loss(self, symbol: str, current_kline: Dict) -> None:
         """
-        Set stop loss order for a position
-        Cancels any existing stop loss orders before creating a new one
-        
-        Args:
-            symbol: Trading pair symbol
-            side: 'LONG' or 'SHORT'
-            quantity: Position quantity
-            stop_loss_price: Stop loss price
-            
-        Returns:
-            True if successful
-        """
-        try:
-            import asyncio
-            from binance.enums import SIDE_SELL, SIDE_BUY
-            # Use string for order type to avoid enum compatibility issues
-            ORDER_TYPE_STOP_MARKET = "STOP_MARKET"
-            
-            # Check if there's an existing stop loss order and cancel it
-            has_stop_loss = await asyncio.to_thread(
-                self.trading_executor.has_stop_loss_order,
-                symbol
-            )
-            
-            if has_stop_loss:
-                logger.info(f"Found existing stop loss order for {symbol}, cancelling before creating new one...")
-                
-                # Cancel existing stop loss orders with retry mechanism
-                max_retries = 3
-                cancel_success = False
-                
-                for attempt in range(max_retries):
-                    cancel_success = await asyncio.to_thread(
-                        self.trading_executor.cancel_all_stop_loss_orders,
-                        symbol
-                    )
-                    
-                    if cancel_success:
-                        # Wait for cancellation to be processed
-                        await asyncio.sleep(0.5)
-                        
-                        # Verify that all stop loss orders are cancelled
-                        still_has_stop_loss = await asyncio.to_thread(
-                            self.trading_executor.has_stop_loss_order,
-                            symbol
-                        )
-                        
-                        if not still_has_stop_loss:
-                            logger.info(f"✓ Verified: All stop loss order(s) cancelled for {symbol}")
-                            break
-                        else:
-                            logger.warning(
-                                f"Stop loss orders still exist after cancellation (attempt {attempt + 1}/{max_retries})"
-                            )
-                            cancel_success = False
-                    else:
-                        logger.warning(
-                            f"Failed to cancel stop loss order for {symbol} (attempt {attempt + 1}/{max_retries})"
-                        )
-                    
-                    if attempt < max_retries - 1:
-                        # Wait before retry
-                        await asyncio.sleep(1)
-                
-                if not cancel_success:
-                    logger.error(f"Failed to cancel stop loss order for {symbol} after {max_retries} attempts")
-                    return False
-            
-            # Round stop loss price to match symbol's precision requirements
-            rounded_stop_loss_price = await asyncio.to_thread(
-                self.trading_executor.round_price,
-                stop_loss_price,
-                symbol
-            )
-            
-            if rounded_stop_loss_price is None:
-                logger.error(f"Failed to round stop loss price for {symbol}")
-                return False
-            
-            logger.info(
-                f"Stop loss price rounded: {stop_loss_price:.6f} -> {rounded_stop_loss_price:.6f}"
-            )
-            
-            if side == 'LONG':
-                # For long position, stop loss is a SELL order
-                order = await asyncio.to_thread(
-                    self.trading_executor.client.futures_create_order,
-                    symbol=symbol,
-                    side=SIDE_SELL,
-                    type=ORDER_TYPE_STOP_MARKET,
-                    stopPrice=rounded_stop_loss_price,
-                    quantity=quantity,
-                    reduceOnly=True
-                )
-                logger.info(f"Stop loss order set for LONG position {symbol}: {order}")
-            else:  # SHORT
-                # For short position, stop loss is a BUY order
-                order = await asyncio.to_thread(
-                    self.trading_executor.client.futures_create_order,
-                    symbol=symbol,
-                    side=SIDE_BUY,
-                    type=ORDER_TYPE_STOP_MARKET,
-                    stopPrice=rounded_stop_loss_price,
-                    quantity=quantity,
-                    reduceOnly=True
-                )
-                logger.info(f"Stop loss order set for SHORT position {symbol}: {order}")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error setting stop loss order for {symbol}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
-    
-    async def _update_moving_stop_loss(self, symbol: str, current_kline: Dict) -> None:
-        """
-        Update moving stop loss based on the latest 5m K-line range
-        This is a moving stop loss - recalculates stop loss price based on the latest 5m K-line
+        Check real-time stop loss based on current price
+        This monitors the position and closes it if stop loss is triggered
         
         Args:
             symbol: Trading pair symbol
             current_kline: Current 5m K-line that just closed
         """
         try:
-            import asyncio
-            from binance.enums import SIDE_SELL, SIDE_BUY
-            # Use string for order type to avoid enum compatibility issues
-            ORDER_TYPE_STOP_MARKET = "STOP_MARKET"
-            
             # Get position information
             position = self.position_manager.get_position(symbol)
             if not position:
@@ -935,15 +786,16 @@ class FiveMinuteStrategy:
             
             position_side = position['side']
             quantity = position['quantity']
+            entry_price = position.get('entry_price', 0)
             
             # Calculate current range of the latest 5m K-line
             current_range = current_kline['high'] - current_kline['low']
             
             if current_range == 0:
-                logger.warning(f"Current K-line range is zero, cannot update moving stop loss")
+                logger.warning(f"Current K-line range is zero, cannot check stop loss")
                 return
             
-            # Calculate new stop loss distance based on latest 5m K-line range
+            # Calculate stop loss distance based on latest 5m K-line range
             stop_loss_distance = current_range * self.stop_loss_range_multiplier
             
             # Get current price
@@ -952,156 +804,68 @@ class FiveMinuteStrategy:
                 logger.warning(f"Could not get current price for {symbol}")
                 return
             
-            # Calculate new stop loss price
+            # Calculate stop loss price
             if position_side == 'LONG':
                 # For long position, stop loss is below current price
-                new_stop_loss_price = current_price - stop_loss_distance
+                stop_loss_price = current_price - stop_loss_distance
+                # Check if current price is below stop loss
+                stop_loss_triggered = current_price <= stop_loss_price
             else:  # SHORT
                 # For short position, stop loss is above current price
-                new_stop_loss_price = current_price + stop_loss_distance
+                stop_loss_price = current_price + stop_loss_distance
+                # Check if current price is above stop loss
+                stop_loss_triggered = current_price >= stop_loss_price
             
             logger.info(
-                f"Moving stop loss update for {symbol}: "
+                f"Real-time stop loss check for {symbol}: "
                 f"side={position_side}, "
                 f"current_price={current_price:.2f}, "
                 f"current_range={current_range:.2f}, "
                 f"multiplier={self.stop_loss_range_multiplier}, "
                 f"stop_loss_distance={stop_loss_distance:.2f}, "
-                f"new_stop_loss_price={new_stop_loss_price:.2f}"
+                f"stop_loss_price={stop_loss_price:.2f}, "
+                f"triggered={stop_loss_triggered}"
             )
             
-            # Check if there's an existing stop loss order
-            has_stop_loss = await asyncio.to_thread(
-                self.trading_executor.has_stop_loss_order,
-                symbol
-            )
-            
-            if has_stop_loss:
-                # Query all existing stop loss orders before cancellation
-                logger.info(f"Querying existing stop loss orders for {symbol}...")
-                open_orders = await asyncio.to_thread(
-                    self.trading_executor.get_open_orders,
-                    symbol
-                )
-                algo_orders = await asyncio.to_thread(
-                    self.trading_executor.get_open_algo_orders,
-                    symbol
+            if stop_loss_triggered:
+                logger.warning(
+                    f"Stop loss triggered for {symbol}: "
+                    f"current_price={current_price:.2f}, stop_loss_price={stop_loss_price:.2f}"
                 )
                 
-                # Count stop loss orders
-                regular_sl_count = 0
-                algo_sl_count = 0
+                # Close position immediately
+                success = await self.trading_executor.close_all_positions(symbol)
                 
-                if open_orders:
-                    for order in open_orders:
-                        if order.get('type') == 'STOP_MARKET' and order.get('reduceOnly', False) and 'algoId' not in order:
-                            regular_sl_count += 1
-                            logger.info(f"  Found regular stop loss order: orderId={order.get('orderId')}, stopPrice={order.get('stopPrice')}")
-                
-                if algo_orders:
-                    for order in algo_orders:
-                        if order.get('orderType') == 'STOP_MARKET' and order.get('reduceOnly', False) and order.get('algoStatus') == 'NEW':
-                            algo_sl_count += 1
-                            logger.info(f"  Found algo stop loss order: algoId={order.get('algoId')}, triggerPrice={order.get('triggerPrice')}")
-                
-                total_sl_count = regular_sl_count + algo_sl_count
-                logger.info(f"Total stop loss orders found for {symbol}: {total_sl_count} (regular: {regular_sl_count}, algo: {algo_sl_count})")
-                
-                # Cancel existing stop loss orders with retry mechanism
-                logger.info(f"Cancelling all {total_sl_count} stop loss order(s) for {symbol}")
-                
-                max_retries = 3
-                cancel_success = False
-                
-                for attempt in range(max_retries):
-                    cancel_success = await asyncio.to_thread(
-                        self.trading_executor.cancel_all_stop_loss_orders,
-                        symbol
+                if success:
+                    # Calculate PnL
+                    pnl = 0.0
+                    if current_price and entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SHORT
+                            pnl = (entry_price - current_price) * quantity
+                    
+                    # Send close notification with stop loss reason
+                    await self.telegram_client.send_close_notification(
+                        symbol=symbol,
+                        side=position_side,
+                        entry_price=entry_price,
+                        exit_price=current_price if current_price else 0,
+                        quantity=quantity,
+                        pnl=pnl,
+                        close_reason=f"实时止损触发 (基于5m K线振幅)\n"
+                                   f"当前价格: {current_price:.2f}\n"
+                                   f"止损价格: {stop_loss_price:.2f}\n"
+                                   f"K线振幅: {current_range:.2f}\n"
+                                   f"止损距离: {stop_loss_distance:.2f}"
                     )
                     
-                    if cancel_success:
-                        # Wait for cancellation to be processed
-                        await asyncio.sleep(0.5)
-                        
-                        # Verify that all stop loss orders are cancelled
-                        still_has_stop_loss = await asyncio.to_thread(
-                            self.trading_executor.has_stop_loss_order,
-                            symbol
-                        )
-                        
-                        if not still_has_stop_loss:
-                            logger.info(f"✓ Verified: All {total_sl_count} stop loss order(s) cancelled for {symbol}")
-                            break
-                        else:
-                            logger.warning(
-                                f"Stop loss orders still exist after cancellation (attempt {attempt + 1}/{max_retries})"
-                            )
-                            cancel_success = False
-                    else:
-                        logger.warning(
-                            f"Failed to cancel stop loss order for {symbol} (attempt {attempt + 1}/{max_retries})"
-                        )
-                    
-                    if attempt < max_retries - 1:
-                        # Wait before retry
-                        await asyncio.sleep(1)
-                
-                if not cancel_success:
-                    logger.error(f"Failed to cancel stop loss order for {symbol} after {max_retries} attempts")
-                    # Get all open orders to diagnose the issue
-                    open_orders = await asyncio.to_thread(
-                        self.trading_executor.get_open_orders,
-                        symbol
-                    )
-                    if open_orders:
-                        logger.error(f"Current open orders for {symbol}: {open_orders}")
-                    return
-            
-            # Round new stop loss price to match symbol's precision requirements
-            rounded_stop_loss_price = await asyncio.to_thread(
-                self.trading_executor.round_price,
-                new_stop_loss_price,
-                symbol
-            )
-            
-            if rounded_stop_loss_price is None:
-                logger.error(f"Failed to round stop loss price for {symbol}")
-                return
-            
-            logger.info(
-                f"New stop loss price rounded: {new_stop_loss_price:.6f} -> {rounded_stop_loss_price:.6f}"
-            )
-            
-            # Create new stop loss order
-            logger.info(f"Creating new stop loss order for {symbol} at {rounded_stop_loss_price:.2f}")
-            
-            if position_side == 'LONG':
-                # For long position, stop loss is a SELL order
-                order = await asyncio.to_thread(
-                    self.trading_executor.client.futures_create_order,
-                    symbol=symbol,
-                    side=SIDE_SELL,
-                    type=ORDER_TYPE_STOP_MARKET,
-                    stopPrice=rounded_stop_loss_price,
-                    quantity=quantity,
-                    reduceOnly=True
-                )
-            else:  # SHORT
-                # For short position, stop loss is a BUY order
-                order = await asyncio.to_thread(
-                    self.trading_executor.client.futures_create_order,
-                    symbol=symbol,
-                    side=SIDE_BUY,
-                    type=ORDER_TYPE_STOP_MARKET,
-                    stopPrice=rounded_stop_loss_price,
-                    quantity=quantity,
-                    reduceOnly=True
-                )
-            
-            logger.info(f"Moving stop loss order created for {symbol}: {order}")
+                    logger.info(f"Position closed due to real-time stop loss for {symbol}")
+                else:
+                    logger.error(f"Failed to close position due to real-time stop loss for {symbol}")
             
         except Exception as e:
-            logger.error(f"Error updating moving stop loss for {symbol}: {e}")
+            logger.error(f"Error checking real-time stop loss for {symbol}: {e}")
             import traceback
             logger.error(traceback.format_exc())
     
