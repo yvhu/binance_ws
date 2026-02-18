@@ -814,6 +814,21 @@ class FiveMinuteStrategy:
             # Use string for order type to avoid enum compatibility issues
             ORDER_TYPE_STOP_MARKET = "STOP_MARKET"
             
+            # Round stop loss price to match symbol's precision requirements
+            rounded_stop_loss_price = await asyncio.to_thread(
+                self.trading_executor.round_price,
+                stop_loss_price,
+                symbol
+            )
+            
+            if rounded_stop_loss_price is None:
+                logger.error(f"Failed to round stop loss price for {symbol}")
+                return False
+            
+            logger.info(
+                f"Stop loss price rounded: {stop_loss_price:.6f} -> {rounded_stop_loss_price:.6f}"
+            )
+            
             if side == 'LONG':
                 # For long position, stop loss is a SELL order
                 order = await asyncio.to_thread(
@@ -821,7 +836,7 @@ class FiveMinuteStrategy:
                     symbol=symbol,
                     side=SIDE_SELL,
                     type=ORDER_TYPE_STOP_MARKET,
-                    stopPrice=stop_loss_price,
+                    stopPrice=rounded_stop_loss_price,
                     quantity=quantity,
                     reduceOnly=True
                 )
@@ -833,7 +848,7 @@ class FiveMinuteStrategy:
                     symbol=symbol,
                     side=SIDE_BUY,
                     type=ORDER_TYPE_STOP_MARKET,
-                    stopPrice=stop_loss_price,
+                    stopPrice=rounded_stop_loss_price,
                     quantity=quantity,
                     reduceOnly=True
                 )
@@ -925,8 +940,23 @@ class FiveMinuteStrategy:
                 # Wait a moment for the cancellation to be processed
                 await asyncio.sleep(0.5)
             
+            # Round new stop loss price to match symbol's precision requirements
+            rounded_stop_loss_price = await asyncio.to_thread(
+                self.trading_executor.round_price,
+                new_stop_loss_price,
+                symbol
+            )
+            
+            if rounded_stop_loss_price is None:
+                logger.error(f"Failed to round stop loss price for {symbol}")
+                return
+            
+            logger.info(
+                f"New stop loss price rounded: {new_stop_loss_price:.6f} -> {rounded_stop_loss_price:.6f}"
+            )
+            
             # Create new stop loss order
-            logger.info(f"Creating new stop loss order for {symbol} at {new_stop_loss_price:.2f}")
+            logger.info(f"Creating new stop loss order for {symbol} at {rounded_stop_loss_price:.2f}")
             
             if position_side == 'LONG':
                 # For long position, stop loss is a SELL order
@@ -935,7 +965,7 @@ class FiveMinuteStrategy:
                     symbol=symbol,
                     side=SIDE_SELL,
                     type=ORDER_TYPE_STOP_MARKET,
-                    stopPrice=new_stop_loss_price,
+                    stopPrice=rounded_stop_loss_price,
                     quantity=quantity,
                     reduceOnly=True
                 )
@@ -946,7 +976,7 @@ class FiveMinuteStrategy:
                     symbol=symbol,
                     side=SIDE_BUY,
                     type=ORDER_TYPE_STOP_MARKET,
-                    stopPrice=new_stop_loss_price,
+                    stopPrice=rounded_stop_loss_price,
                     quantity=quantity,
                     reduceOnly=True
                 )

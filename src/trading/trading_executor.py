@@ -332,6 +332,62 @@ class TradingExecutor:
             logger.error(traceback.format_exc())
             return None
     
+    def round_price(self, price: float, symbol: str) -> Optional[float]:
+        """
+        Round price to match symbol's precision requirements
+        
+        Args:
+            price: Calculated price
+            symbol: Trading pair symbol
+            
+        Returns:
+            Rounded price or None
+        """
+        try:
+            symbol_info = self.get_symbol_info(symbol)
+            if not symbol_info:
+                logger.error(f"Could not get symbol info for {symbol}")
+                return None
+            
+            # Find PRICE_FILTER filter
+            price_filter = None
+            for f in symbol_info['filters']:
+                if f['filterType'] == 'PRICE_FILTER':
+                    price_filter = f
+                    break
+            
+            if not price_filter:
+                logger.error(f"PRICE_FILTER not found for {symbol}")
+                return None
+            
+            tick_size = float(price_filter['tickSize'])
+            
+            # Calculate precision (number of decimal places)
+            precision = 0
+            if tick_size < 1:
+                precision = len(str(tick_size).rstrip('0').split('.')[1])
+            
+            # Round down to tick size using proper precision
+            # Use floor division to avoid floating point precision issues
+            ticks = int(price / tick_size)
+            rounded_price = ticks * tick_size
+            
+            # Format to exact precision to avoid floating point representation issues
+            rounded_price = float(f"{rounded_price:.{precision}f}")
+            
+            logger.info(
+                f"Price rounded: {price:.6f} -> {rounded_price:.6f} "
+                f"(tick: {tick_size:.6f}, precision: {precision})"
+            )
+            
+            return rounded_price
+            
+        except Exception as e:
+            logger.error(f"Error rounding price for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
     def calculate_position_size(
         self,
         current_price: float,
@@ -664,12 +720,20 @@ class TradingExecutor:
             
             quantity = abs(float(position['positionAmt']))
             
+            # Round quantity to match symbol precision (unified precision handling)
+            rounded_quantity = self.round_quantity(quantity, symbol)
+            if rounded_quantity is None:
+                logger.error(f"Failed to round quantity for closing long position {symbol}")
+                return None
+            
+            logger.info(f"Closing long position: quantity={quantity:.6f} -> rounded={rounded_quantity:.6f}")
+            
             # Place market order to close
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=SIDE_SELL,
                 type=ORDER_TYPE_MARKET,
-                quantity=quantity,
+                quantity=rounded_quantity,
                 reduceOnly=True
             )
             
@@ -714,12 +778,20 @@ class TradingExecutor:
             
             quantity = abs(float(position['positionAmt']))
             
+            # Round quantity to match symbol precision (unified precision handling)
+            rounded_quantity = self.round_quantity(quantity, symbol)
+            if rounded_quantity is None:
+                logger.error(f"Failed to round quantity for closing short position {symbol}")
+                return None
+            
+            logger.info(f"Closing short position: quantity={quantity:.6f} -> rounded={rounded_quantity:.6f}")
+            
             # Place market order to close
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=SIDE_BUY,
                 type=ORDER_TYPE_MARKET,
-                quantity=quantity,
+                quantity=rounded_quantity,
                 reduceOnly=True
             )
             

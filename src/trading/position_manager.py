@@ -243,21 +243,36 @@ class PositionManager:
                                     else:  # SHORT
                                         stop_loss_price = current_price + stop_loss_distance
                                     
+                                    # Round stop loss price to match symbol's precision requirements
+                                    rounded_stop_loss_price = await asyncio.to_thread(
+                                        self.trading_executor.round_price,
+                                        stop_loss_price,
+                                        symbol
+                                    )
+                                    
+                                    if rounded_stop_loss_price is None:
+                                        logger.error(f"Failed to round stop loss price for {symbol}")
+                                        continue
+                                    
+                                    logger.info(
+                                        f"Stop loss price rounded: {stop_loss_price:.6f} -> {rounded_stop_loss_price:.6f}"
+                                    )
+                                    
                                     logger.info(
                                         f"Creating stop loss order for {symbol}: "
                                         f"side={side}, current_price={current_price:.2f}, "
-                                        f"stop_loss_price={stop_loss_price:.2f}"
+                                        f"stop_loss_price={rounded_stop_loss_price:.2f}"
                                     )
                                     
                                     # Create stop loss order
-                                    logger.info(f"[SYNC] Creating STOP_MARKET order for {symbol}: side={side}, stopPrice={stop_loss_price:.2f}, quantity={quantity:.6f}")
+                                    logger.info(f"[SYNC] Creating STOP_MARKET order for {symbol}: side={side}, stopPrice={rounded_stop_loss_price:.2f}, quantity={quantity:.6f}")
                                     if side == 'LONG':
                                         order = await asyncio.to_thread(
                                             self.trading_executor.client.futures_create_order,
                                             symbol=symbol,
                                             side=SIDE_SELL,
                                             type=ORDER_TYPE_STOP_MARKET,
-                                            stopPrice=stop_loss_price,
+                                            stopPrice=rounded_stop_loss_price,
                                             quantity=quantity,
                                             reduceOnly=True
                                         )
@@ -267,7 +282,7 @@ class PositionManager:
                                             symbol=symbol,
                                             side=SIDE_BUY,
                                             type=ORDER_TYPE_STOP_MARKET,
-                                            stopPrice=stop_loss_price,
+                                            stopPrice=rounded_stop_loss_price,
                                             quantity=quantity,
                                             reduceOnly=True
                                         )
