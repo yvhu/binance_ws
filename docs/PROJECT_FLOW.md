@@ -527,5 +527,5 @@ If stop loss price hit:
 3. **Notification Flow**: All events → TelegramClient → Telegram
 4. **Error Handling**: All errors logged and sent to Telegram
 5. **Position Management**: Full position (100%) with configurable leverage
-6. **Risk Control**: Fixed stop loss + Engulfing stop loss
+6. **Risk Control**: Fixed stop loss (0.8) + Engulfing stop loss (0.85)
 7. **Strategy**: 5-minute K-line based trading strategy

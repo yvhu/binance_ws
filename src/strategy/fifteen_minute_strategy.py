@@ -1033,6 +1033,34 @@ class FiveMinuteStrategy:
             # Calculate engulfing ratio
             engulfing_ratio = current_body / previous_body
             
+            # Check for true engulfing pattern (price range containment)
+            # For a true engulfing pattern, the current K-line must completely contain the previous K-line's price range
+            is_true_engulfing = False
+            
+            if current_direction == 'UP' and previous_direction == 'DOWN':
+                # Current is bullish, previous is bearish
+                # True engulfing: current open < previous close AND current close > previous open
+                is_true_engulfing = (
+                    current_kline['open'] < previous_kline['close'] and
+                    current_kline['close'] > previous_kline['open']
+                )
+            elif current_direction == 'DOWN' and previous_direction == 'UP':
+                # Current is bearish, previous is bullish
+                # True engulfing: current open > previous close AND current close < previous open
+                is_true_engulfing = (
+                    current_kline['open'] > previous_kline['close'] and
+                    current_kline['close'] < previous_kline['open']
+                )
+            
+            if not is_true_engulfing:
+                logger.debug(
+                    f"Engulfing ratio {engulfing_ratio:.2f} meets threshold but not a true engulfing pattern: "
+                    f"current_direction={current_direction}, previous_direction={previous_direction}, "
+                    f"current_open={current_kline['open']:.2f}, current_close={current_kline['close']:.2f}, "
+                    f"previous_open={previous_kline['open']:.2f}, previous_close={previous_kline['close']:.2f}"
+                )
+                return
+            
             # Check if engulfing ratio meets threshold
             if engulfing_ratio >= self.engulfing_body_ratio_threshold:
                 logger.warning(
