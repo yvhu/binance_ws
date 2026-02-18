@@ -425,11 +425,21 @@ class FiveMinuteStrategy:
             # Determine if all conditions are met
             all_conditions_met = volume_valid and range_valid and body_valid and trend_valid
             
+            logger.info(
+                f"[STRATEGY] Condition check for {symbol}: "
+                f"volume_valid={volume_valid}, "
+                f"range_valid={range_valid}, "
+                f"body_valid={body_valid}, "
+                f"trend_valid={trend_valid}, "
+                f"all_conditions_met={all_conditions_met}"
+            )
+            
             # Get current price for notification
             current_price = self.data_handler.get_current_price(symbol)
             
             # Send indicator analysis notification with all condition information
             if all_conditions_met:
+                logger.info(f"[STRATEGY] All conditions met for {symbol}, preparing to open position...")
                 # All conditions met - send trade decision
                 decision = 'LONG' if direction_5m == 'UP' else 'SHORT'
                 await self.telegram_client.send_indicator_analysis(
@@ -455,10 +465,15 @@ class FiveMinuteStrategy:
                 )
                 
                 # Open position with volume info, range info, stop loss and entry kline
+                logger.info(f"[STRATEGY] Opening position for {symbol}, direction={direction_5m}")
                 if direction_5m == 'UP':
+                    logger.info(f"[STRATEGY] Calling _open_long_position for {symbol}")
                     await self._open_long_position(symbol, volume_info, range_info, stop_loss_price, kline_5m, kline_5m.get('close_time'))
+                    logger.info(f"[STRATEGY] _open_long_position completed for {symbol}")
                 else:  # DOWN
+                    logger.info(f"[STRATEGY] Calling _open_short_position for {symbol}")
                     await self._open_short_position(symbol, volume_info, range_info, stop_loss_price, kline_5m, kline_5m.get('close_time'))
+                    logger.info(f"[STRATEGY] _open_short_position completed for {symbol}")
             else:
                 # Some conditions not met - send no trade notification with all condition info
                 logger.info(f"Not all conditions met for {symbol}: volume={volume_valid}, range={range_valid}, body={body_valid}, trend={trend_valid}")
