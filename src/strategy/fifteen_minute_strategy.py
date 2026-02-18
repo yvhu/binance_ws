@@ -926,19 +926,55 @@ class FiveMinuteStrategy:
             )
             
             if has_stop_loss:
-                # Cancel existing stop loss orders
+                # Cancel existing stop loss orders with retry mechanism
                 logger.info(f"Cancelling existing stop loss order for {symbol}")
-                cancel_success = await asyncio.to_thread(
-                    self.trading_executor.cancel_all_stop_loss_orders,
-                    symbol
-                )
+                
+                max_retries = 3
+                cancel_success = False
+                
+                for attempt in range(max_retries):
+                    cancel_success = await asyncio.to_thread(
+                        self.trading_executor.cancel_all_stop_loss_orders,
+                        symbol
+                    )
+                    
+                    if cancel_success:
+                        # Wait for cancellation to be processed
+                        await asyncio.sleep(0.5)
+                        
+                        # Verify that all stop loss orders are cancelled
+                        still_has_stop_loss = await asyncio.to_thread(
+                            self.trading_executor.has_stop_loss_order,
+                            symbol
+                        )
+                        
+                        if not still_has_stop_loss:
+                            logger.info(f"✓ Verified: All stop loss orders cancelled for {symbol}")
+                            break
+                        else:
+                            logger.warning(
+                                f"Stop loss orders still exist after cancellation (attempt {attempt + 1}/{max_retries})"
+                            )
+                            cancel_success = False
+                    else:
+                        logger.warning(
+                            f"Failed to cancel stop loss order for {symbol} (attempt {attempt + 1}/{max_retries})"
+                        )
+                    
+                    if attempt < max_retries - 1:
+                        # Wait before retry
+                        await asyncio.sleep(1)
                 
                 if not cancel_success:
-                    logger.error(f"Failed to cancel stop loss order for {symbol}")
+                    logger.error(f"Failed to cancel stop loss order for {symbol} after {max_retries} attempts")
+                    # Get all open orders to diagnose the issue
+                    open_orders = await asyncio.to_thread(
+                        self.trading_executor.get_open_orders,
+                        symbol
+                    )
+                    if open_orders:
+                        logger.error(f"Current open orders for {symbol}: {open_orders}")
                     return
-                
-                # Wait a moment for the cancellation to be processed
-                await asyncio.sleep(0.5)
             
             # Round new stop loss price to match symbol's precision requirements
             rounded_stop_loss_price = await asyncio.to_thread(
