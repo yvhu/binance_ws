@@ -57,6 +57,9 @@ class TradingExecutor:
         
         # Initialize leverage for all configured symbols
         self._initialize_leverage()
+        
+        # Cancel all open orders on startup to clean up any stale orders
+        self._cleanup_stale_orders()
     
     def _initialize_leverage(self) -> None:
         """Initialize leverage for all configured symbols"""
@@ -78,6 +81,29 @@ class TradingExecutor:
                 logger.error(f"✗ Exception while setting leverage for {symbol}: {e}")
         
         logger.info(f"Leverage initialization complete. Set for {len(self.leverage_cache)}/{len(symbols)} symbols")
+    
+    def _cleanup_stale_orders(self) -> None:
+        """Cancel all open orders on startup to clean up any stale orders"""
+        symbols = self.config.binance_symbols
+        
+        logger.info(f"Cleaning up stale orders for {len(symbols)} symbol(s)...")
+        
+        for symbol in symbols:
+            try:
+                orders = self.get_open_orders(symbol)
+                if orders:
+                    logger.warning(f"Found {len(orders)} stale order(s) for {symbol}, cancelling...")
+                    success = self.cancel_all_orders(symbol)
+                    if success:
+                        logger.info(f"✓ Cleaned up stale orders for {symbol}")
+                    else:
+                        logger.error(f"✗ Failed to clean up stale orders for {symbol}")
+                else:
+                    logger.info(f"No stale orders found for {symbol}")
+            except Exception as e:
+                logger.error(f"Error cleaning up stale orders for {symbol}: {e}")
+        
+        logger.info("Stale order cleanup complete")
     
     def set_margin_type(self, symbol: str, margin_type: str = 'CROSSED') -> bool:
         """
@@ -489,7 +515,22 @@ class TradingExecutor:
                 quantity=quantity
             )
             
-            logger.info(f"Long position opened for {symbol}: {order}")
+            logger.info(f"Long position order placed for {symbol}: {order}")
+            
+            # Check if order is filled
+            order_id = order.get('orderId')
+            if order_id:
+                import time
+                time.sleep(1)  # Wait a moment for order to be processed
+                
+                is_filled = self.check_order_filled(symbol, order_id)
+                if not is_filled:
+                    logger.error(f"Long position order {order_id} for {symbol} was not filled!")
+                    # Cancel any remaining open orders
+                    self.cancel_all_orders(symbol)
+                    return None
+            
+            logger.info(f"Long position opened successfully for {symbol}")
             
             # Return both order and position calculation info
             return {
@@ -571,7 +612,22 @@ class TradingExecutor:
                 quantity=quantity
             )
             
-            logger.info(f"Short position opened for {symbol}: {order}")
+            logger.info(f"Short position order placed for {symbol}: {order}")
+            
+            # Check if order is filled
+            order_id = order.get('orderId')
+            if order_id:
+                import time
+                time.sleep(1)  # Wait a moment for order to be processed
+                
+                is_filled = self.check_order_filled(symbol, order_id)
+                if not is_filled:
+                    logger.error(f"Short position order {order_id} for {symbol} was not filled!")
+                    # Cancel any remaining open orders
+                    self.cancel_all_orders(symbol)
+                    return None
+            
+            logger.info(f"Short position opened successfully for {symbol}")
             
             # Return both order and position calculation info
             return {
@@ -613,7 +669,22 @@ class TradingExecutor:
                 reduceOnly=True
             )
             
-            logger.info(f"Long position closed for {symbol}: {order}")
+            logger.info(f"Long position close order placed for {symbol}: {order}")
+            
+            # Check if order is filled
+            order_id = order.get('orderId')
+            if order_id:
+                import time
+                time.sleep(1)  # Wait a moment for order to be processed
+                
+                is_filled = self.check_order_filled(symbol, order_id)
+                if not is_filled:
+                    logger.error(f"Long position close order {order_id} for {symbol} was not filled!")
+                    # Cancel any remaining open orders
+                    self.cancel_all_orders(symbol)
+                    return None
+            
+            logger.info(f"Long position closed successfully for {symbol}")
             return order
             
         except BinanceAPIException as e:
@@ -648,7 +719,22 @@ class TradingExecutor:
                 reduceOnly=True
             )
             
-            logger.info(f"Short position closed for {symbol}: {order}")
+            logger.info(f"Short position close order placed for {symbol}: {order}")
+            
+            # Check if order is filled
+            order_id = order.get('orderId')
+            if order_id:
+                import time
+                time.sleep(1)  # Wait a moment for order to be processed
+                
+                is_filled = self.check_order_filled(symbol, order_id)
+                if not is_filled:
+                    logger.error(f"Short position close order {order_id} for {symbol} was not filled!")
+                    # Cancel any remaining open orders
+                    self.cancel_all_orders(symbol)
+                    return None
+            
+            logger.info(f"Short position closed successfully for {symbol}")
             return order
             
         except BinanceAPIException as e:
@@ -774,6 +860,84 @@ class TradingExecutor:
             
         except Exception as e:
             logger.error(f"Failed to cancel stop loss orders for {symbol}: {e}")
+            return False
+    
+    def cancel_all_orders(self, symbol: str) -> bool:
+        """
+        Cancel all open orders for a symbol (including stop loss orders)
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            True if successful
+        """
+        try:
+            orders = self.get_open_orders(symbol)
+            if not orders:
+                logger.debug(f"No open orders to cancel for {symbol}")
+                return True
+            
+            cancelled_count = 0
+            for order in orders:
+                order_id = order.get('orderId')
+                if order_id:
+                    if self.cancel_order(symbol, order_id):
+                        cancelled_count += 1
+            
+            logger.info(f"Cancelled {cancelled_count} order(s) for {symbol}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to cancel all orders for {symbol}: {e}")
+            return False
+    
+    def get_order_status(self, symbol: str, order_id: int) -> Optional[Dict]:
+        """
+        Get order status by order ID
+        
+        Args:
+            symbol: Trading pair symbol
+            order_id: Order ID
+            
+        Returns:
+            Order information or None
+        """
+        try:
+            order = self.client.futures_get_order(symbol=symbol, orderId=order_id)
+            return order
+        except BinanceAPIException as e:
+            logger.error(f"Failed to get order status for {symbol} order {order_id}: {e}")
+            return None
+    
+    def check_order_filled(self, symbol: str, order_id: int) -> bool:
+        """
+        Check if an order is filled
+        
+        Args:
+            symbol: Trading pair symbol
+            order_id: Order ID
+            
+        Returns:
+            True if order is filled
+        """
+        try:
+            order = self.get_order_status(symbol, order_id)
+            if not order:
+                return False
+            
+            status = order.get('status', '')
+            is_filled = status == 'FILLED'
+            
+            logger.info(
+                f"Order {order_id} status: {status}, filled: {is_filled}, "
+                f"executedQty: {order.get('executedQty', 0)}, origQty: {order.get('origQty', 0)}"
+            )
+            
+            return is_filled
+            
+        except Exception as e:
+            logger.error(f"Error checking if order {order_id} is filled: {e}")
             return False
     
     def has_stop_loss_order(self, symbol: str) -> bool:

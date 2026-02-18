@@ -590,52 +590,67 @@ class FiveMinuteStrategy:
                 logger.error(f"Could not calculate position size for {symbol}")
                 return
             
-            # Execute order
-            result = self.trading_executor.open_long_position(symbol, quantity)
+            # Execute order with retry logic
+            max_retries = 3
+            retry_delay = 2  # seconds
             
-            if result:
-                # Extract order and position calculation info
-                order = result.get('order')
-                position_calc_info = result.get('position_calc_info')
-                final_quantity = result.get('final_quantity', quantity)
-                final_price = result.get('final_price', current_price)
+            for attempt in range(max_retries):
+                result = self.trading_executor.open_long_position(symbol, quantity)
                 
-                # Record position with entry kline
-                self.position_manager.open_position(
-                    symbol=symbol,
-                    side='LONG',
-                    entry_price=final_price,
-                    quantity=final_quantity,
-                    entry_kline=entry_kline
-                )
-                
-                logger.info(f"Long position opened successfully for {symbol}")
-                
-                # Set stop loss order if stop loss price is provided
-                if stop_loss_price is not None:
-                    await self._set_stop_loss_order(symbol, 'LONG', final_quantity, stop_loss_price)
-                
-                # Send trade notification with volume info, range info, stop loss and position calculation info
-                await self.telegram_client.send_trade_notification(
-                    symbol=symbol,
-                    side='LONG',
-                    price=final_price,
-                    quantity=final_quantity,
-                    leverage=self.config.leverage,
-                    volume_info=volume_info,
-                    range_info=range_info,
-                    stop_loss_price=stop_loss_price,
-                    position_calc_info=position_calc_info,
-                    kline_time=kline_time
-                )
-            else:
-                logger.error(f"Failed to open long position for {symbol}")
-                
-                # Send error notification
-                await self.telegram_client.send_error_message(
-                    f"Failed to open long position for {symbol}",
-                    "Trading execution error"
-                )
+                if result:
+                    # Extract order and position calculation info
+                    order = result.get('order')
+                    position_calc_info = result.get('position_calc_info')
+                    final_quantity = result.get('final_quantity', quantity)
+                    final_price = result.get('final_price', current_price)
+                    
+                    # Record position with entry kline
+                    self.position_manager.open_position(
+                        symbol=symbol,
+                        side='LONG',
+                        entry_price=final_price,
+                        quantity=final_quantity,
+                        entry_kline=entry_kline
+                    )
+                    
+                    logger.info(f"Long position opened successfully for {symbol}")
+                    
+                    # Set stop loss order if stop loss price is provided
+                    if stop_loss_price is not None:
+                        await self._set_stop_loss_order(symbol, 'LONG', final_quantity, stop_loss_price)
+                    
+                    # Send trade notification with volume info, range info, stop loss and position calculation info
+                    await self.telegram_client.send_trade_notification(
+                        symbol=symbol,
+                        side='LONG',
+                        price=final_price,
+                        quantity=final_quantity,
+                        leverage=self.config.leverage,
+                        volume_info=volume_info,
+                        range_info=range_info,
+                        stop_loss_price=stop_loss_price,
+                        position_calc_info=position_calc_info,
+                        kline_time=kline_time
+                    )
+                    break  # Success, exit retry loop
+                else:
+                    logger.error(f"Failed to open long position for {symbol} (attempt {attempt + 1}/{max_retries})")
+                    
+                    if attempt < max_retries - 1:
+                        # Cancel any remaining orders before retry
+                        import asyncio
+                        await asyncio.to_thread(self.trading_executor.cancel_all_orders, symbol)
+                        await asyncio.sleep(retry_delay)
+                        logger.info(f"Retrying to open long position for {symbol}...")
+                    else:
+                        # All retries failed
+                        logger.error(f"All {max_retries} attempts failed to open long position for {symbol}")
+                        
+                        # Send error notification
+                        await self.telegram_client.send_error_message(
+                            f"Failed to open long position for {symbol} after {max_retries} attempts",
+                            "Trading execution error"
+                        )
                 
         except Exception as e:
             logger.error(f"Error opening long position for {symbol}: {e}")
@@ -687,52 +702,67 @@ class FiveMinuteStrategy:
                 logger.error(f"Could not calculate position size for {symbol}")
                 return
             
-            # Execute order
-            result = self.trading_executor.open_short_position(symbol, quantity)
+            # Execute order with retry logic
+            max_retries = 3
+            retry_delay = 2  # seconds
             
-            if result:
-                # Extract order and position calculation info
-                order = result.get('order')
-                position_calc_info = result.get('position_calc_info')
-                final_quantity = result.get('final_quantity', quantity)
-                final_price = result.get('final_price', current_price)
+            for attempt in range(max_retries):
+                result = self.trading_executor.open_short_position(symbol, quantity)
                 
-                # Record position with entry kline
-                self.position_manager.open_position(
-                    symbol=symbol,
-                    side='SHORT',
-                    entry_price=final_price,
-                    quantity=final_quantity,
-                    entry_kline=entry_kline
-                )
-                
-                logger.info(f"Short position opened successfully for {symbol}")
-                
-                # Set stop loss order if stop loss price is provided
-                if stop_loss_price is not None:
-                    await self._set_stop_loss_order(symbol, 'SHORT', final_quantity, stop_loss_price)
-                
-                # Send trade notification with volume info, range info, stop loss and position calculation info
-                await self.telegram_client.send_trade_notification(
-                    symbol=symbol,
-                    side='SHORT',
-                    price=final_price,
-                    quantity=final_quantity,
-                    leverage=self.config.leverage,
-                    volume_info=volume_info,
-                    range_info=range_info,
-                    stop_loss_price=stop_loss_price,
-                    position_calc_info=position_calc_info,
-                    kline_time=kline_time
-                )
-            else:
-                logger.error(f"Failed to open short position for {symbol}")
-                
-                # Send error notification
-                await self.telegram_client.send_error_message(
-                    f"Failed to open short position for {symbol}",
-                    "Trading execution error"
-                )
+                if result:
+                    # Extract order and position calculation info
+                    order = result.get('order')
+                    position_calc_info = result.get('position_calc_info')
+                    final_quantity = result.get('final_quantity', quantity)
+                    final_price = result.get('final_price', current_price)
+                    
+                    # Record position with entry kline
+                    self.position_manager.open_position(
+                        symbol=symbol,
+                        side='SHORT',
+                        entry_price=final_price,
+                        quantity=final_quantity,
+                        entry_kline=entry_kline
+                    )
+                    
+                    logger.info(f"Short position opened successfully for {symbol}")
+                    
+                    # Set stop loss order if stop loss price is provided
+                    if stop_loss_price is not None:
+                        await self._set_stop_loss_order(symbol, 'SHORT', final_quantity, stop_loss_price)
+                    
+                    # Send trade notification with volume info, range info, stop loss and position calculation info
+                    await self.telegram_client.send_trade_notification(
+                        symbol=symbol,
+                        side='SHORT',
+                        price=final_price,
+                        quantity=final_quantity,
+                        leverage=self.config.leverage,
+                        volume_info=volume_info,
+                        range_info=range_info,
+                        stop_loss_price=stop_loss_price,
+                        position_calc_info=position_calc_info,
+                        kline_time=kline_time
+                    )
+                    break  # Success, exit retry loop
+                else:
+                    logger.error(f"Failed to open short position for {symbol} (attempt {attempt + 1}/{max_retries})")
+                    
+                    if attempt < max_retries - 1:
+                        # Cancel any remaining orders before retry
+                        import asyncio
+                        await asyncio.to_thread(self.trading_executor.cancel_all_orders, symbol)
+                        await asyncio.sleep(retry_delay)
+                        logger.info(f"Retrying to open short position for {symbol}...")
+                    else:
+                        # All retries failed
+                        logger.error(f"All {max_retries} attempts failed to open short position for {symbol}")
+                        
+                        # Send error notification
+                        await self.telegram_client.send_error_message(
+                            f"Failed to open short position for {symbol} after {max_retries} attempts",
+                            "Trading execution error"
+                        )
                 
         except Exception as e:
             logger.error(f"Error opening short position for {symbol}: {e}")
