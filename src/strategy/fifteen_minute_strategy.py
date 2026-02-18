@@ -324,7 +324,7 @@ class FiveMinuteStrategy:
                 'upper_shadow_ratio': upper_shadow_ratio,
                 'lower_shadow_ratio': lower_shadow_ratio,
                 'threshold': self.body_ratio_threshold,
-                'shadow_ratio_threshold': self.shadow_ratio_threshold
+                # 'shadow_ratio_threshold': self.shadow_ratio_threshold
             }
             
             logger.info(
