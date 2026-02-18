@@ -50,7 +50,7 @@ volume_ratio_threshold = 0.80  # Minimum volume ratio (current volume / average 
 
 # K-line body ratio check parameters
 body_ratio_threshold = 0.7  # Minimum body ratio (body / range), filters klines with too much resistance
-shadow_ratio_threshold = 0.42  # Maximum shadow ratio (shadow / range), prevents single-sided shadows from being too long
+shadow_ratio_threshold = 0.4  # Maximum shadow ratio (shadow / range), prevents single-sided shadows from being too long
 
 # K-line range check parameters
 range_ratio_threshold = 0.5  # Minimum range ratio (current range / average range of last 5 klines), ensures sufficient volatility
