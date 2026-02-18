@@ -516,3 +516,26 @@ class BinanceWSClient:
         key = f"{symbol}_{data_type}"
         return self.latest_data.get(key)
     
+# 这里假设ws_client.py是WebSocket客户端管理文件，添加调用杠杆初始化的钩子
+
+from src.trading.trading_executor import TradingExecutor
+
+# 假设已有TradingExecutor实例 te
+# 在WebSocket连接成功的回调中调用
+# 这里假设TradingExecutor实例te是在main.py中创建的，示例代码如下：
+# 请根据实际情况调整
+
+from src.trading.trading_executor import TradingExecutor
+from src.config.config_manager import ConfigManager
+
+config = ConfigManager()
+te = TradingExecutor(config)
+
+def on_ws_connected():
+    te.initialize_leverage_after_ws()
+
+def on_ws_connected():
+    # 连接成功后调用杠杆初始化
+    te.initialize_leverage_after_ws()
+
+# 具体实现请根据ws_client.py的结构调整

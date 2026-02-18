@@ -56,10 +56,11 @@ class TradingExecutor:
         )
         
         # Initialize leverage for all configured symbols
-        self._initialize_leverage()
-        
-        # Cancel all open orders on startup to clean up any stale orders
+        # 延迟杠杆初始化，等待WebSocket连接后再执行
         self._cleanup_stale_orders()
+        
+        # 标记杠杆初始化状态
+        self.leverage_initialized = False
     
     def _initialize_leverage(self) -> None:
         """Initialize leverage for all configured symbols"""
@@ -71,6 +72,8 @@ class TradingExecutor:
         for symbol in symbols:
             logger.info(f"Processing symbol: {symbol}")
             try:
+                import time
+                
                 # Cancel all open orders (including stop loss orders) before setting leverage
                 # This prevents "Position side cannot be changed if there exists open orders" error
                 logger.info(f"Cancelling all orders for {symbol} before setting leverage...")
@@ -81,29 +84,65 @@ class TradingExecutor:
                 self.cancel_all_stop_loss_orders(symbol)
                 
                 # Wait for cancellations to be processed
-                import time
                 time.sleep(1)
                 
                 # Verify all orders are cancelled before setting leverage
-                orders = self.get_open_orders(symbol)
-                if orders:
+                # Retry up to 3 times to ensure all orders are cancelled
+                max_retries = 3
+                for attempt in range(max_retries):
+                    orders = self.get_open_orders(symbol)
+                    algo_orders = self.get_open_algo_orders(symbol)
+                    
+                    total_orders = len(orders) if orders else 0
+                    total_algo_orders = len(algo_orders) if algo_orders else 0
+                    
+                    if total_orders == 0 and total_algo_orders == 0:
+                        logger.info(f"✓ All orders cancelled for {symbol} (attempt {attempt + 1})")
+                        break
+                    
                     logger.warning(
-                        f"Found {len(orders)} open order(s) for {symbol} after cancellation attempt. "
+                        f"Found {total_orders} open order(s) and {total_algo_orders} algo order(s) "
+                        f"for {symbol} after cancellation attempt {attempt + 1}/{max_retries}. "
                         f"Retrying cancellation..."
                     )
+                    
+                    # Log remaining orders for debugging
+                    if orders:
+                        logger.warning(f"Remaining open orders for {symbol}:")
+                        for i, order in enumerate(orders, 1):
+                            logger.warning(f"  {i}. Order: orderId={order.get('orderId')}, type={order.get('type')}, side={order.get('side')}, status={order.get('status')}")
+                    
+                    if algo_orders:
+                        logger.warning(f"Remaining algo orders for {symbol}:")
+                        for i, order in enumerate(algo_orders, 1):
+                            logger.warning(f"  {i}. Algo Order: algoId={order.get('algoId')}, orderType={order.get('orderType')}, algoStatus={order.get('algoStatus')}")
+                    
                     # Retry cancellation
                     self.cancel_all_orders(symbol)
                     self.cancel_all_stop_loss_orders(symbol)
                     time.sleep(1)
                     
-                    # Check again
-                    orders = self.get_open_orders(symbol)
-                    if orders:
+                    # If this was the last retry and orders still exist, skip this symbol
+                    if attempt == max_retries - 1:
                         logger.error(
-                            f"Failed to cancel all orders for {symbol}. "
-                            f"Remaining orders: {len(orders)}. Cannot set leverage."
+                            f"Failed to cancel all orders for {symbol} after {max_retries} attempts. "
+                            f"Remaining: {total_orders} open orders, {total_algo_orders} algo orders. "
+                            f"Cannot set leverage."
                         )
                         continue
+                
+                # Only set leverage if all orders are cancelled
+                orders = self.get_open_orders(symbol)
+                algo_orders = self.get_open_algo_orders(symbol)
+                total_orders = len(orders) if orders else 0
+                total_algo_orders = len(algo_orders) if algo_orders else 0
+                
+                if total_orders > 0 or total_algo_orders > 0:
+                    logger.error(
+                        f"Skipping leverage setup for {symbol} due to remaining orders: "
+                        f"{total_orders} open orders, {total_algo_orders} algo orders"
+                    )
+                    continue
                 
                 success = self.set_leverage(symbol)
                 if success:
@@ -113,6 +152,8 @@ class TradingExecutor:
                     logger.error(f"✗ Failed to set leverage for {symbol}")
             except Exception as e:
                 logger.error(f"✗ Exception while setting leverage for {symbol}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
         
         logger.info(f"Leverage initialization complete. Set for {len(self.leverage_cache)}/{len(symbols)} symbols")
     
