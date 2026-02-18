@@ -508,6 +508,7 @@ class TradingExecutor:
             }
             
             # Place market order
+            logger.info(f"[ORDER] Creating MARKET order for {symbol}: side=BUY, quantity={quantity:.6f}")
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=SIDE_BUY,
@@ -515,7 +516,8 @@ class TradingExecutor:
                 quantity=quantity
             )
             
-            logger.info(f"Long position order placed for {symbol}: {order}")
+            logger.info(f"[ORDER] MARKET order created: orderId={order.get('orderId')}, status={order.get('status')}, type={order.get('type')}")
+            logger.info(f"[ORDER] Order details: {order}")
             
             # Check if order is filled
             order_id = order.get('orderId')
@@ -605,6 +607,7 @@ class TradingExecutor:
             }
             
             # Place market order
+            logger.info(f"[ORDER] Creating MARKET order for {symbol}: side=SELL, quantity={quantity:.6f}")
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=SIDE_SELL,
@@ -612,7 +615,8 @@ class TradingExecutor:
                 quantity=quantity
             )
             
-            logger.info(f"Short position order placed for {symbol}: {order}")
+            logger.info(f"[ORDER] MARKET order created: orderId={order.get('orderId')}, status={order.get('status')}, type={order.get('type')}")
+            logger.info(f"[ORDER] Order details: {order}")
             
             # Check if order is filled
             order_id = order.get('orderId')

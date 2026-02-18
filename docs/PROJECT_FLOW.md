@@ -177,9 +177,15 @@ Use recalculated quantity for order
     ↓
 Send market buy order to Binance
     ↓
+Check if order is filled:
+    ├── If filled: Continue to next steps
+    └── If not filled: Cancel all orders, return None (NO STOP LOSS SET)
+    ↓
 PositionManager.open_position()
     ↓
 Record position information
+    ↓
+Set stop loss order (ONLY if opening succeeded)
     ↓
 Send opening notification to Telegram
 ```
@@ -222,9 +228,15 @@ Use recalculated quantity for order
     ↓
 Send market sell order to Binance
     ↓
+Check if order is filled:
+    ├── If filled: Continue to next steps
+    └── If not filled: Cancel all orders, return None (NO STOP LOSS SET)
+    ↓
 PositionManager.open_position()
     ↓
 Record position information
+    ↓
+Set stop loss order (ONLY if opening succeeded)
     ↓
 Send opening notification to Telegram
 ```
@@ -357,9 +369,9 @@ Check opening conditions:
     ↓
 All match → Open LONG position
     ↓
-Set stop loss order
-    ↓
-Send opening notification
+Check if order is filled:
+    ├── If filled: Set stop loss order, Send opening notification
+    └── If not filled: Cancel all orders, NO stop loss set, NO notification
 ```
 
 ### Time: 12:10:00

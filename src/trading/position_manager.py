@@ -250,6 +250,7 @@ class PositionManager:
                                     )
                                     
                                     # Create stop loss order
+                                    logger.info(f"[SYNC] Creating STOP_MARKET order for {symbol}: side={side}, stopPrice={stop_loss_price:.2f}, quantity={quantity:.6f}")
                                     if side == 'LONG':
                                         order = await asyncio.to_thread(
                                             self.trading_executor.client.futures_create_order,
@@ -271,7 +272,8 @@ class PositionManager:
                                             reduceOnly=True
                                         )
                                     
-                                    logger.info(f"✓ Stop loss order created for {symbol}: {order}")
+                                    logger.info(f"[SYNC] ✓ Stop loss order created: orderId={order.get('orderId')}, status={order.get('status')}, type={order.get('type')}")
+                                    logger.info(f"[SYNC] Order details: {order}")
                                     
                                 except Exception as e:
                                     logger.error(f"Failed to create stop loss order for {symbol}: {e}")
