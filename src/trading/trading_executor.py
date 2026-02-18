@@ -80,6 +80,31 @@ class TradingExecutor:
                 logger.info(f"Cancelling all stop loss orders for {symbol} before setting leverage...")
                 self.cancel_all_stop_loss_orders(symbol)
                 
+                # Wait for cancellations to be processed
+                import time
+                time.sleep(1)
+                
+                # Verify all orders are cancelled before setting leverage
+                orders = self.get_open_orders(symbol)
+                if orders:
+                    logger.warning(
+                        f"Found {len(orders)} open order(s) for {symbol} after cancellation attempt. "
+                        f"Retrying cancellation..."
+                    )
+                    # Retry cancellation
+                    self.cancel_all_orders(symbol)
+                    self.cancel_all_stop_loss_orders(symbol)
+                    time.sleep(1)
+                    
+                    # Check again
+                    orders = self.get_open_orders(symbol)
+                    if orders:
+                        logger.error(
+                            f"Failed to cancel all orders for {symbol}. "
+                            f"Remaining orders: {len(orders)}. Cannot set leverage."
+                        )
+                        continue
+                
                 success = self.set_leverage(symbol)
                 if success:
                     self.leverage_cache.add(symbol)
@@ -949,7 +974,7 @@ class TradingExecutor:
     
     def cancel_all_orders(self, symbol: str) -> bool:
         """
-        Cancel all open orders for a symbol (including stop loss orders)
+        Cancel all open orders for a symbol (including stop loss orders and algo orders)
         
         Args:
             symbol: Trading pair symbol
@@ -965,10 +990,18 @@ class TradingExecutor:
             
             cancelled_count = 0
             for order in orders:
-                order_id = order.get('orderId')
-                if order_id:
-                    if self.cancel_order(symbol, order_id):
+                # Check if it's an algo order (has algoId)
+                algo_id = order.get('algoId')
+                if algo_id:
+                    # Cancel algo order using algoId
+                    if self.cancel_algo_order(symbol, algo_id):
                         cancelled_count += 1
+                else:
+                    # Cancel regular order using orderId
+                    order_id = order.get('orderId')
+                    if order_id:
+                        if self.cancel_order(symbol, order_id):
+                            cancelled_count += 1
             
             logger.info(f"Cancelled {cancelled_count} order(s) for {symbol}")
             return True

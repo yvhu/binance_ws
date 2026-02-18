@@ -227,17 +227,16 @@ class PositionManager:
                                             break
                                         
                                         if attempt < max_retries - 1:
-                                            logger.warning(
-                                                f"Could not get current price from data_handler for {symbol} "
+                                            logger.info(
+                                                f"Waiting for WebSocket data for {symbol} "
                                                 f"(attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s..."
                                             )
                                             await asyncio.sleep(retry_delay)
                                     
                                     # If still no price after retries, use API as fallback
                                     if current_price is None:
-                                        logger.warning(
-                                            f"Could not get current price from data_handler after {max_retries} attempts "
-                                            f"for {symbol}, using API as fallback..."
+                                        logger.info(
+                                            f"WebSocket not ready for {symbol}, using API as fallback..."
                                         )
                                         try:
                                             ticker = await asyncio.to_thread(
