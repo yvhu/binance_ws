@@ -529,3 +529,57 @@ If stop loss price hit:
 5. **Position Management**: Full position (100%) with configurable leverage
 6. **Risk Control**: Fixed stop loss (0.8) + Engulfing stop loss (0.85)
 7. **Strategy**: 5-minute K-line based trading strategy
+8. **Order Management**: Proper handling of both regular orders and conditional (algo) orders
+
+## Order Management Details
+
+### Order Types
+
+1. **Regular Orders**:
+   - Market orders for opening/closing positions
+   - Identified by `orderId`
+   - Cancelled using `futures_cancel_order`
+
+2. **Conditional Orders (Algo Orders)**:
+   - Stop loss orders (STOP_MARKET type)
+   - Identified by `algoId`
+   - Cancelled using dedicated endpoint `DELETE /fapi/v1/algo/order`
+   - Have `algoType: CONDITIONAL` and `algoStatus: NEW`
+
+### Order Cancellation Strategy
+
+1. **Batch Cancellation** (Preferred):
+   - Use `futures_cancel_all_open_orders` API
+   - Cancels all orders (regular + conditional) in one call
+   - Most efficient method
+
+2. **Individual Cancellation** (Fallback):
+   - For regular orders: use `orderId` with `futures_cancel_order`
+   - For conditional orders: use `algoId` with `/fapi/v1/algo/order` endpoint
+   - Used only if batch cancellation fails
+
+### Implementation
+
+- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:975) - `cancel_all_orders()`
+- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1111) - `cancel_algo_order()`
+- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1087) - `get_open_algo_orders()`
+
+### Critical Safety Checks
+
+1. **Before Setting Leverage**:
+   - Cancel all orders (including conditional orders)
+   - Wait for cancellation to complete
+   - Verify all orders are cancelled
+   - Retry if orders still exist
+
+2. **Before Creating New Stop Loss**:
+   - Check for existing stop loss orders (both regular and conditional)
+   - Cancel all existing stop loss orders
+   - Verify cancellation success
+   - Only create new stop loss after confirmation
+
+3. **Startup Position Sync**:
+   - Query positions from exchange
+   - Check for stop loss orders
+   - Create missing stop loss orders
+   - Ensure all positions have protection

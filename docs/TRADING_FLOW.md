@@ -383,47 +383,77 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 
 ## 代码更新记录
 
-### 2026-02-18：修复止损单管理问题
+### 2026-02-18：修复条件单取消和杠杆设置问题
 
 **问题描述：**
-- 随着时间推移，旧的市价止损单没有随着新的条件委托单出现而撤销
-- 导致某个订单持有时间很久时，出现多个条件单
+1. **条件单无法正确取消**：
+   - 随着时间推移，旧的止损单没有随着新的条件单出现而撤销
+   - 导致某个订单持有时间很久时，出现多个条件单
+   - 条件单不断累积，无法被正确管理
+
+2. **杠杆设置失败**：
+   - 启动时设置杠杆失败，错误信息："Position side cannot be changed if there exists open orders"
+   - 即使尝试取消订单后，仍然存在未取消的条件单
 
 **根本原因：**
-- 止损单是条件订单（CONDITIONAL），有 `algoId` 而不是 `orderId`
-- 之前的代码只处理普通订单，无法正确取消条件订单
-- 取消操作没有验证是否真的取消成功
+1. **条件单API使用错误**：
+   - 止损单是条件订单（CONDITIONAL），有 `algoId` 而不是 `orderId`
+   - 之前的代码使用 `futures_cancel_order` API 无法取消条件单
+   - 条件单需要使用专门的端点 `DELETE /fapi/v1/algo/order`
+
+2. **批量取消未使用**：
+   - 没有使用 Binance 的批量取消 API `futures_cancel_all_open_orders`
+   - 该 API 可以一次性取消所有订单（包括普通订单和条件单）
+
+3. **订单检测不完整**：
+   - `futures_get_open_orders` 可能不返回所有类型的订单
+   - 需要更详细的日志来确认订单状态
 
 **修复内容：**
-1. **在 `trading_executor.py` 中添加条件订单处理方法：**
-   - `get_open_algo_orders()` - 获取所有开放的条件订单
-   - `cancel_algo_order()` - 取消条件订单
-   - 更新 `has_stop_loss_order()` - 同时检查普通订单和条件订单
-   - 更新 `cancel_all_stop_loss_orders()` - 同时取消普通订单和条件订单，添加重试机制
 
-2. **在 `fifteen_minute_strategy.py` 中更新 `_update_moving_stop_loss()` 方法：**
-   - 添加重试机制（最多3次）
-   - 每次取消后验证是否真的取消了
-   - 如果取消失败，记录详细的错误信息
+1. **使用批量取消 API**（[`cancel_all_orders`](../src/trading/trading_executor.py:975)）：
+   - 优先使用 `futures_cancel_all_open_orders` 批量取消所有订单
+   - 该 API 会一次性取消普通订单和条件单
+   - 如果失败则回退到逐个取消
 
-3. **取消流程改进：**
-   - 检查是否存在止损单（包括普通订单和条件订单）
-   - 如果存在，尝试取消（最多3次）
-   - 每次取消后验证是否成功
-   - 只有确认所有止损单都被取消后，才创建新的止损单
-   - 如果取消失败，记录错误并返回，不会创建新的止损单
+2. **使用正确的条件单取消 API**（[`cancel_algo_order`](../src/trading/trading_executor.py:1111)）：
+   - 根据 Binance API 文档，使用专门的端点 `DELETE /fapi/v1/algo/order`
+   - 传递正确的参数：`symbol` 和 `algoId`
+   - 使用 `client._request` 方法直接调用 API 端点
+
+3. **改进条件单检测**（[`get_open_algo_orders`](../src/trading/trading_executor.py:1087)）：
+   - 添加详细的日志输出，显示找到的条件单信息
+   - 包括 algoId、订单类型和状态
+
+4. **增强杠杆设置前的订单清理**（[`_initialize_leverage`](../src/trading/trading_executor.py:64)）：
+   - 在设置杠杆前取消所有订单
+   - 添加等待时间确保取消操作完成
+   - 验证所有订单确实已被取消
+   - 如果仍有订单，重试取消操作
+
+5. **改进日志输出**（[`position_manager.py`](../src/trading/position_manager.py:229)）：
+   - 将 WebSocket 数据获取的警告日志改为信息日志
+   - 这些是正常的启动行为（WebSocket 需要时间连接）
 
 **影响范围：**
-- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py) - 添加条件订单处理方法
-- [`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py) - 更新移动止损逻辑
+- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py) - 更新订单取消逻辑
+- [`../src/trading/position_manager.py`](../src/trading/position_manager.py) - 优化日志输出
 - [`docs/TRADING_FLOW.md`](docs/TRADING_FLOW.md) - 更新文档
-- [`docs/STRATEGY_FLOW.md`](docs/STRATEGY_FLOW.md) - 更新文档
+- [`docs/PROJECT_FLOW.md`](docs/PROJECT_FLOW.md) - 更新文档
 
 **优势：**
-- ✅ 取消所有旧的止损单（无论有多少个）
-- ✅ 防止新的止损单在旧订单未取消时创建
-- ✅ 提供详细的错误信息，方便调试
-- ✅ 避免出现多个止损单的问题
+- ✅ 正确取消所有条件单（使用专门的 API 端点）
+- ✅ 使用批量取消 API 提高效率
+- ✅ 避免条件单不断累积的问题
+- ✅ 解决杠杆设置时的订单冲突
+- ✅ 提供详细的日志便于调试
+- ✅ 确保系统启动时订单状态正确
+
+**技术细节：**
+- 条件单取消端点：`DELETE /fapi/v1/algo/order`
+- 必需参数：`algoId` 或 `clientAlgoId`（至少一个）
+- 批量取消端点：`DELETE /fapi/v1/allOpenOrders`
+- 批量取消会同时取消普通订单和条件单
 
 ### 2026-02-17：策略从15m更新为5m
 

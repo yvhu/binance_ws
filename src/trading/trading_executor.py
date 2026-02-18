@@ -1151,11 +1151,34 @@ class TradingExecutor:
             True if successful
         """
         try:
-            self.client.futures_cancel_order(symbol=symbol, orderId=algo_id)
-            logger.info(f"Algo order {algo_id} cancelled for {symbol}")
+            # Use the dedicated API endpoint for cancelling algo orders
+            # According to Binance API docs: DELETE /fapi/v1/algo/order
+            # Required parameters: algoId or clientAlgoId (at least one)
+            import time
+            timestamp = int(time.time() * 1000)
+            
+            # Use the client's internal request method to call the algo order cancellation endpoint
+            result = self.client._request(
+                method='DELETE',
+                path='/fapi/v1/algo/order',
+                signed=True,
+                data={
+                    'symbol': symbol,
+                    'algoId': algo_id,
+                    'timestamp': timestamp
+                }
+            )
+            
+            logger.info(f"Algo order {algo_id} cancelled for {symbol}: {result}")
             return True
+            
         except BinanceAPIException as e:
             logger.error(f"Failed to cancel algo order {algo_id} for {symbol}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error cancelling algo order {algo_id} for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def cancel_all_stop_loss_orders(self, symbol: str) -> bool:
