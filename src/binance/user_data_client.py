@@ -438,13 +438,21 @@ class UserDataClient:
             logger.debug(f"[USER_WS] Trade lite event received: {data}")
             
             # Extract basic trade information if needed
-            trade_data = data.get('t', {})
-            symbol = trade_data.get('s', '')
-            price = float(trade_data.get('p', 0))
-            quantity = float(trade_data.get('q', 0))
-            trade_id = trade_data.get('t', 0)
+            # Note: The structure of TRADE_LITE may vary, so we need to handle it carefully
+            trade_data = data.get('t')
             
-            logger.debug(f"[USER_WS] Trade lite: {symbol} price={price} qty={quantity} trade_id={trade_id}")
+            # Check if trade_data is a dictionary before accessing its fields
+            if isinstance(trade_data, dict):
+                symbol = trade_data.get('s', '')
+                price = float(trade_data.get('p', 0))
+                quantity = float(trade_data.get('q', 0))
+                trade_id = trade_data.get('t', 0)
+                
+                logger.debug(f"[USER_WS] Trade lite: {symbol} price={price} qty={quantity} trade_id={trade_id}")
+            else:
+                # If trade_data is not a dictionary, log the raw data for debugging
+                logger.debug(f"[USER_WS] Trade lite data is not a dictionary: {trade_data} (type: {type(trade_data)})")
+                logger.debug(f"[USER_WS] Full trade lite event data: {data}")
             
         except Exception as e:
             logger.error(f"[USER_WS] Error processing trade lite event: {e}")

@@ -36,6 +36,16 @@ Start Telegram Bot
     ↓
 Register WebSocket callbacks
     ↓
+⚠️ Sync positions from exchange (CRITICAL SAFETY CHECK)
+    ├── Query current positions from Binance API
+    ├── Sync to local position manager
+    ├── Check if each position has stop loss order
+    └── Create stop loss order if missing
+    ↓
+Load historical kline data
+    ↓
+Register user data stream callbacks
+    ↓
 Send startup notification to Telegram
     ↓
 Start Binance WebSocket connection
@@ -98,6 +108,67 @@ If no position exists:
     Check opening conditions
     ↓
     Execute opening position logic
+
+## 3.5 Startup Position and Stop Loss Check (CRITICAL SAFETY MECHANISM)
+
+### 3.5.1 Position Sync from Exchange
+```
+PositionManager.sync_from_exchange(symbols)
+    ↓
+For each symbol:
+    ↓
+    Query position from Binance API
+    ↓
+    If position exists (positionAmt != 0):
+        ↓
+        Sync to local position manager
+        ↓
+        Check if stop loss order exists
+        ↓
+        If no stop loss order:
+            ↓
+            Calculate stop loss price based on:
+            ├── Current price
+            ├── Latest 5m K-line range
+            └── Strategy config (stop_loss_range_multiplier, stop_loss_min_distance_percent)
+            ↓
+            Create STOP_MARKET order
+            ↓
+            Log success/failure
+        ↓
+    Else (no position on exchange):
+        ↓
+        Remove local position if exists
+```
+
+### 3.5.2 Stop Loss Price Calculation
+```
+Get current price
+    ↓
+Get latest 5m K-line
+    ↓
+Calculate current range = high - low
+    ↓
+Calculate stop loss distance:
+    ├── If range > 0: distance = range × stop_loss_range_multiplier (0.8)
+    └── If range == 0: distance = price × stop_loss_min_distance_percent (0.3%)
+    ↓
+Calculate stop loss price:
+    ├── LONG: stop_loss_price = current_price - distance
+    └── SHORT: stop_loss_price = current_price + distance
+```
+
+### 3.5.3 Purpose
+- Avoid "logic empty but real has position" risk after restart
+- Ensure all positions have stop loss protection
+- Automatically recover from errors where position opened but stop loss failed
+- Reduce need for manual intervention
+- Provide automatic recovery mechanism
+
+### 3.5.4 Implementation
+- Location: [`../src/trading/position_manager.py`](../src/trading/position_manager.py:139)
+- Method: `sync_from_exchange()`
+- Called during: System initialization (bot.initialize())
 ```
 
 
@@ -185,7 +256,13 @@ PositionManager.open_position()
     ↓
 Record position information
     ↓
-Set stop loss order (ONLY if opening succeeded)
+Set stop loss order (ONLY if opening succeeded):
+    ├── If stop loss set successfully: Continue
+    └── If stop loss failed:
+        ├── Log CRITICAL error
+        ├── Send emergency Telegram notification
+        ├── Keep position open (NO auto-close)
+        └── Rely on engulfing stop loss for protection
     ↓
 Send opening notification to Telegram
 ```
@@ -236,7 +313,13 @@ PositionManager.open_position()
     ↓
 Record position information
     ↓
-Set stop loss order (ONLY if opening succeeded)
+Set stop loss order (ONLY if opening succeeded):
+    ├── If stop loss set successfully: Continue
+    └── If stop loss failed:
+        ├── Log CRITICAL error
+        ├── Send emergency Telegram notification
+        ├── Keep position open (NO auto-close)
+        └── Rely on engulfing stop loss for protection
     ↓
 Send opening notification to Telegram
 ```

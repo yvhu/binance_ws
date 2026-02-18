@@ -616,8 +616,22 @@ class FiveMinuteStrategy:
                     logger.info(f"Long position opened successfully for {symbol}")
                     
                     # Set stop loss order if stop loss price is provided
+                    stop_loss_set = False
                     if stop_loss_price is not None:
-                        await self._set_stop_loss_order(symbol, 'LONG', final_quantity, stop_loss_price)
+                        stop_loss_set = await self._set_stop_loss_order(symbol, 'LONG', final_quantity, stop_loss_price)
+                        
+                        if not stop_loss_set:
+                            # Stop loss order creation failed - this is a critical error
+                            logger.error(f"CRITICAL: Failed to set stop loss order for {symbol} after opening position!")
+                            
+                            # Send critical error notification
+                            await self.telegram_client.send_error_message(
+                                f"⚠️ CRITICAL: Long position opened for {symbol} but stop loss order failed!\n"
+                                f"Position: {final_quantity} @ {final_price:.2f}\n"
+                                f"Stop loss price: {stop_loss_price:.2f}\n"
+                                f"⚠️ Position has NO stop loss protection!",
+                                "Stop Loss Order Failed"
+                            )
                     
                     # Send trade notification with volume info, range info, stop loss and position calculation info
                     await self.telegram_client.send_trade_notification(
@@ -728,8 +742,22 @@ class FiveMinuteStrategy:
                     logger.info(f"Short position opened successfully for {symbol}")
                     
                     # Set stop loss order if stop loss price is provided
+                    stop_loss_set = False
                     if stop_loss_price is not None:
-                        await self._set_stop_loss_order(symbol, 'SHORT', final_quantity, stop_loss_price)
+                        stop_loss_set = await self._set_stop_loss_order(symbol, 'SHORT', final_quantity, stop_loss_price)
+                        
+                        if not stop_loss_set:
+                            # Stop loss order creation failed - this is a critical error
+                            logger.error(f"CRITICAL: Failed to set stop loss order for {symbol} after opening position!")
+                            
+                            # Send critical error notification
+                            await self.telegram_client.send_error_message(
+                                f"⚠️ CRITICAL: Short position opened for {symbol} but stop loss order failed!\n"
+                                f"Position: {final_quantity} @ {final_price:.2f}\n"
+                                f"Stop loss price: {stop_loss_price:.2f}\n"
+                                f"⚠️ Position has NO stop loss protection!",
+                                "Stop Loss Order Failed"
+                            )
                     
                     # Send trade notification with volume info, range info, stop loss and position calculation info
                     await self.telegram_client.send_trade_notification(
