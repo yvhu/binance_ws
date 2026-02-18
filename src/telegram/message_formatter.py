@@ -530,12 +530,11 @@ class MessageFormatter:
             upper_shadow_ratio = body_info.get('upper_shadow_ratio', 0)
             lower_shadow_ratio = body_info.get('lower_shadow_ratio', 0)
             threshold = body_info.get('threshold', 0)
-            # shadow_ratio_threshold = body_info.get('shadow_ratio_threshold', 0.5)
+            shadow_ratio_threshold = body_info.get('shadow_ratio_threshold', 0.5)
             
             body_valid = body_ratio >= threshold
-            # shadow_valid = upper_shadow_ratio < shadow_ratio_threshold and lower_shadow_ratio < shadow_ratio_threshold
-            # body_status = "✅ 通过" if (body_valid and shadow_valid) else "❌ 未通过"
-            body_status = "✅ 通过" if body_valid else "❌ 未通过"
+            shadow_valid = upper_shadow_ratio < shadow_ratio_threshold and lower_shadow_ratio < shadow_ratio_threshold
+            body_status = "✅ 通过" if (body_valid and shadow_valid) else "❌ 未通过"
             
             message += (
                 f"\n"
@@ -545,7 +544,7 @@ class MessageFormatter:
                 f"  • 实体比例: {body_ratio:.4f}\n"
                 f"  • 上影线: {upper_shadow:.2f} ({upper_shadow_ratio*100:.1f}%)\n"
                 f"  • 下影线: {lower_shadow:.2f} ({lower_shadow_ratio*100:.1f}%)\n"
-                # f"  • 阈值要求: 实体≥{threshold:.4f}, 单边影线<{shadow_ratio_threshold*100:.0f}%\n"
+                f"  • 阈值要求: 实体≥{threshold:.4f}, 单边影线<({shadow_ratio_threshold*100:.0f}%)\n"
                 f"  • 实体检查: {body_status}\n"
             )
         
