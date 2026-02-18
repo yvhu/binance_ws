@@ -921,6 +921,9 @@ class FiveMinuteStrategy:
                                    f"阈值: {self.engulfing_body_ratio_threshold*100:.0f}%"
                     )
                     
+                    # Clear local position state to prevent duplicate notifications
+                    self.position_manager.close_position(symbol, current_price if current_price else 0)
+                    
                     logger.info(f"Position closed due to engulfing stop loss for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to engulfing stop loss for {symbol}")
@@ -1160,6 +1163,9 @@ class FiveMinuteStrategy:
                                    f"止损价格: ${stop_loss_price:.2f}\n"
                                    f"距离开仓: ${distance_from_entry:.2f} ({distance_percent:.2f}%)"
                     )
+                    
+                    # Clear local position state to prevent duplicate notifications
+                    self.position_manager.close_position(symbol, current_price)
                     
                     logger.info(f"Position closed due to stop loss for {symbol}")
                 else:
