@@ -71,6 +71,15 @@ class TradingExecutor:
         for symbol in symbols:
             logger.info(f"Processing symbol: {symbol}")
             try:
+                # Cancel all open orders (including stop loss orders) before setting leverage
+                # This prevents "Position side cannot be changed if there exists open orders" error
+                logger.info(f"Cancelling all orders for {symbol} before setting leverage...")
+                self.cancel_all_orders(symbol)
+                
+                # Also cancel all stop loss orders (including conditional orders)
+                logger.info(f"Cancelling all stop loss orders for {symbol} before setting leverage...")
+                self.cancel_all_stop_loss_orders(symbol)
+                
                 success = self.set_leverage(symbol)
                 if success:
                     self.leverage_cache.add(symbol)

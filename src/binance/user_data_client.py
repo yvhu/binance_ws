@@ -233,6 +233,10 @@ class UserDataClient:
                     logger.debug("[USER_WS] Processing TRADE_LITE...")
                     self._process_trade_lite(data)
                     logger.debug("[USER_WS] TRADE_LITE processed")
+                elif event_type == 'ALGO_UPDATE':
+                    logger.debug("[USER_WS] Processing ALGO_UPDATE...")
+                    self._process_algo_update(data)
+                    logger.debug("[USER_WS] ALGO_UPDATE processed")
                 else:
                     logger.warning(f"[USER_WS] Unknown user data event type: {event_type}")
             else:
@@ -456,6 +460,34 @@ class UserDataClient:
             
         except Exception as e:
             logger.error(f"[USER_WS] Error processing trade lite event: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def _process_algo_update(self, data: Dict) -> None:
+        """
+        Process algo order update (conditional orders like stop loss orders)
+        
+        Args:
+            data: Algo order update data from Binance
+        """
+        try:
+            # ALGO_UPDATE contains information about conditional orders (stop loss, take profit, etc.)
+            algo_order = data.get('o', {})
+            symbol = algo_order.get('s', '')
+            algo_id = algo_order.get('i', 0)
+            algo_status = algo_order.get('X', '')
+            order_type = algo_order.get('o', '')
+            
+            logger.info(
+                f"[USER_WS] Algo order update: {symbol} "
+                f"algoId={algo_id} status={algo_status} type={order_type}"
+            )
+            
+            # Log detailed information for debugging
+            logger.debug(f"[USER_WS] Algo order details: {algo_order}")
+            
+        except Exception as e:
+            logger.error(f"[USER_WS] Error processing algo update event: {e}")
             import traceback
             logger.error(traceback.format_exc())
     

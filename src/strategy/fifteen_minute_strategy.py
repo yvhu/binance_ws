@@ -926,8 +926,38 @@ class FiveMinuteStrategy:
             )
             
             if has_stop_loss:
+                # Query all existing stop loss orders before cancellation
+                logger.info(f"Querying existing stop loss orders for {symbol}...")
+                open_orders = await asyncio.to_thread(
+                    self.trading_executor.get_open_orders,
+                    symbol
+                )
+                algo_orders = await asyncio.to_thread(
+                    self.trading_executor.get_open_algo_orders,
+                    symbol
+                )
+                
+                # Count stop loss orders
+                regular_sl_count = 0
+                algo_sl_count = 0
+                
+                if open_orders:
+                    for order in open_orders:
+                        if order.get('type') == 'STOP_MARKET' and order.get('reduceOnly', False) and 'algoId' not in order:
+                            regular_sl_count += 1
+                            logger.info(f"  Found regular stop loss order: orderId={order.get('orderId')}, stopPrice={order.get('stopPrice')}")
+                
+                if algo_orders:
+                    for order in algo_orders:
+                        if order.get('orderType') == 'STOP_MARKET' and order.get('reduceOnly', False) and order.get('algoStatus') == 'NEW':
+                            algo_sl_count += 1
+                            logger.info(f"  Found algo stop loss order: algoId={order.get('algoId')}, triggerPrice={order.get('triggerPrice')}")
+                
+                total_sl_count = regular_sl_count + algo_sl_count
+                logger.info(f"Total stop loss orders found for {symbol}: {total_sl_count} (regular: {regular_sl_count}, algo: {algo_sl_count})")
+                
                 # Cancel existing stop loss orders with retry mechanism
-                logger.info(f"Cancelling existing stop loss order for {symbol}")
+                logger.info(f"Cancelling all {total_sl_count} stop loss order(s) for {symbol}")
                 
                 max_retries = 3
                 cancel_success = False
@@ -949,7 +979,7 @@ class FiveMinuteStrategy:
                         )
                         
                         if not still_has_stop_loss:
-                            logger.info(f"✓ Verified: All stop loss orders cancelled for {symbol}")
+                            logger.info(f"✓ Verified: All {total_sl_count} stop loss order(s) cancelled for {symbol}")
                             break
                         else:
                             logger.warning(
