@@ -544,7 +544,7 @@ class MessageFormatter:
                 f"  • 实体比例: {body_ratio:.4f}\n"
                 f"  • 上影线: {upper_shadow:.2f} ({upper_shadow_ratio*100:.1f}%)\n"
                 f"  • 下影线: {lower_shadow:.2f} ({lower_shadow_ratio*100:.1f}%)\n"
-                f"  • 阈值要求: 实体≥{threshold:.4f}, 单边影线&lt;{shadow_ratio_threshold*100:.0f}%\n"
+                f"  • 阈值要求: 实体大于等于{threshold:.4f}, 单边影线小于{shadow_ratio_threshold*100:.0f}百分比\n"
                 f"  • 实体检查: {body_status}\n"
             )
         
