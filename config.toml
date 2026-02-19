@@ -60,6 +60,12 @@ stop_loss_range_multiplier = 0.8  # Moving stop loss distance = latest 5m K-line
 stop_loss_min_distance_percent = 0.03  # Minimum stop loss distance as percentage of price (3.0% = 0.03)
 engulfing_body_ratio_threshold = 0.85  # Minimum engulfing body ratio to trigger stop loss (85% = less sensitive)
 
+# Real-time stop loss optimization parameters (实时止损优化参数)
+# 适应高波动市场的保守配置，大幅减少误触发
+stop_loss_price_buffer_percent = 0.003  # Price buffer to avoid false triggers (0.3% = 0.003) - 高波动市场保守配置
+stop_loss_time_threshold = 8  # Time threshold in seconds to confirm stop loss trigger (8 seconds) - 高波动市场保守配置
+stop_loss_check_interval = 1  # Check interval in seconds (1 second)
+
 # Trailing stop loss parameters (移动止损参数)
 trailing_stop_enabled = true  # Enable trailing stop loss (移动止损开关)
 trailing_stop_kline_count = 3  # Number of recent klines to use for trailing stop (使用最近N根K线的最低/最高点)

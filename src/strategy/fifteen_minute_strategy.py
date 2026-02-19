@@ -65,6 +65,15 @@ class FiveMinuteStrategy:
         self.trailing_stop_enabled = config.get_config("strategy", "trailing_stop_enabled", default=False)
         self.trailing_stop_kline_count = config.get_config("strategy", "trailing_stop_kline_count", default=3)
         
+        # Real-time stop loss optimization configuration
+        self.stop_loss_price_buffer_percent = config.get_config("strategy", "stop_loss_price_buffer_percent", default=0.001)  # 0.1% buffer
+        self.stop_loss_time_threshold = config.get_config("strategy", "stop_loss_time_threshold", default=3)  # 3 seconds
+        self.stop_loss_check_interval = config.get_config("strategy", "stop_loss_check_interval", default=1)  # Check every 1 second
+        
+        # Track stop loss trigger times for each symbol
+        self.stop_loss_trigger_times: Dict[str, float] = {}
+        self.stop_loss_first_trigger_time: Dict[str, float] = {}
+        
         logger.info("5-minute strategy initialized")
     
     async def on_5m_kline_close(self, kline_info: Dict) -> None:
@@ -1083,7 +1092,7 @@ class FiveMinuteStrategy:
     async def check_stop_loss_on_price_update(self, symbol: str, current_price: float) -> None:
         """
         Check stop loss when price is updated via WebSocket
-        This provides real-time stop loss protection
+        This provides real-time stop loss protection with price buffer and time threshold
         
         Args:
             symbol: Trading pair symbol
@@ -1105,14 +1114,19 @@ class FiveMinuteStrategy:
                 logger.debug(f"No stop loss price set for {symbol}")
                 return
             
-            # Check if stop loss is triggered
+            # Calculate price buffer to avoid false triggers from minor fluctuations
+            price_buffer = stop_loss_price * self.stop_loss_price_buffer_percent
+            
+            # Check if stop loss is triggered with buffer
             stop_loss_triggered = False
             if position_side == 'LONG':
                 # For long position, stop loss is below entry price
-                stop_loss_triggered = current_price <= stop_loss_price
+                # Only trigger if price goes below stop_loss - buffer
+                stop_loss_triggered = current_price <= (stop_loss_price - price_buffer)
             else:  # SHORT
                 # For short position, stop loss is above entry price
-                stop_loss_triggered = current_price >= stop_loss_price
+                # Only trigger if price goes above stop_loss + buffer
+                stop_loss_triggered = current_price >= (stop_loss_price + price_buffer)
             
             # Calculate distance from entry price
             distance_from_entry = abs(current_price - entry_price)
@@ -1121,21 +1135,41 @@ class FiveMinuteStrategy:
             # Calculate distance from stop loss
             distance_from_stop_loss = abs(current_price - stop_loss_price)
             
-            logger.info(
-                f"[STOP_LOSS_CHECK] {symbol}: "
-                f"side={position_side}, "
-                f"entry={entry_price:.2f}, "
-                f"current={current_price:.2f}, "
-                f"stop_loss={stop_loss_price:.2f}, "
-                f"from_entry={distance_from_entry:.2f} ({distance_percent:.2f}%), "
-                f"from_stop_loss={distance_from_stop_loss:.2f}, "
-                f"triggered={stop_loss_triggered}"
-            )
+            # Get current time
+            import time
+            current_time = time.time()
             
+            # Handle stop loss trigger with time threshold
             if stop_loss_triggered:
+                # Check if this is the first time we've seen the trigger
+                if symbol not in self.stop_loss_first_trigger_time:
+                    self.stop_loss_first_trigger_time[symbol] = current_time
+                    logger.warning(
+                        f"[STOP_LOSS_FIRST_TRIGGER] {symbol}: "
+                        f"current_price={current_price:.2f}, "
+                        f"stop_loss_price={stop_loss_price:.2f}, "
+                        f"buffer={price_buffer:.2f}, "
+                        f"waiting {self.stop_loss_time_threshold}s for confirmation..."
+                    )
+                    return
+                
+                # Check if enough time has passed since first trigger
+                time_since_first_trigger = current_time - self.stop_loss_first_trigger_time[symbol]
+                
+                if time_since_first_trigger < self.stop_loss_time_threshold:
+                    # Not enough time has passed, continue waiting
+                    logger.debug(
+                        f"[STOP_LOSS_WAITING] {symbol}: "
+                        f"waiting {self.stop_loss_time_threshold - time_since_first_trigger:.1f}s more..."
+                    )
+                    return
+                
+                # Time threshold passed, confirm stop loss trigger
                 logger.warning(
-                    f"[STOP_LOSS_TRIGGERED] {symbol}: "
-                    f"current_price={current_price:.2f}, stop_loss_price={stop_loss_price:.2f}"
+                    f"[STOP_LOSS_CONFIRMED] {symbol}: "
+                    f"current_price={current_price:.2f}, "
+                    f"stop_loss_price={stop_loss_price:.2f}, "
+                    f"duration={time_since_first_trigger:.1f}s"
                 )
                 
                 # Close position immediately
@@ -1161,15 +1195,44 @@ class FiveMinuteStrategy:
                         close_reason=f"实时止损触发\n"
                                    f"当前价格: ${current_price:.2f}\n"
                                    f"止损价格: ${stop_loss_price:.2f}\n"
+                                   f"价格缓冲: ${price_buffer:.2f} ({self.stop_loss_price_buffer_percent*100:.2f}%)\n"
+                                   f"持续时间: {time_since_first_trigger:.1f}s\n"
                                    f"距离开仓: ${distance_from_entry:.2f} ({distance_percent:.2f}%)"
                     )
                     
                     # Clear local position state to prevent duplicate notifications
                     self.position_manager.close_position(symbol, current_price)
                     
+                    # Clear trigger time tracking
+                    if symbol in self.stop_loss_first_trigger_time:
+                        del self.stop_loss_first_trigger_time[symbol]
+                    
                     logger.info(f"Position closed due to stop loss for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to stop loss for {symbol}")
+            else:
+                # Price moved back above stop loss threshold, reset trigger time
+                if symbol in self.stop_loss_first_trigger_time:
+                    logger.info(
+                        f"[STOP_LOSS_RESET] {symbol}: "
+                        f"price moved back, resetting trigger timer"
+                    )
+                    del self.stop_loss_first_trigger_time[symbol]
+            
+            # Log stop loss check status (less frequent to avoid log spam)
+            if symbol not in self.stop_loss_trigger_times or (current_time - self.stop_loss_trigger_times[symbol]) >= 5:
+                logger.info(
+                    f"[STOP_LOSS_CHECK] {symbol}: "
+                    f"side={position_side}, "
+                    f"entry={entry_price:.2f}, "
+                    f"current={current_price:.2f}, "
+                    f"stop_loss={stop_loss_price:.2f}, "
+                    f"buffer={price_buffer:.2f}, "
+                    f"from_entry={distance_from_entry:.2f} ({distance_percent:.2f}%), "
+                    f"from_stop_loss={distance_from_stop_loss:.2f}, "
+                    f"triggered={stop_loss_triggered}"
+                )
+                self.stop_loss_trigger_times[symbol] = current_time
             
         except Exception as e:
             logger.error(f"Error checking stop loss for {symbol}: {e}")
