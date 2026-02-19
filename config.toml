@@ -6,7 +6,7 @@
 # symbols = ["BTCUSDC", "ETHUSDC", "BNBUSDC", "SOLUSDC"]
 symbols = ["BTCUSDC"]
 # WebSocket streams (Futures)
-streams = ["ticker", "kline_5m"]
+streams = ["ticker", "kline_5m", "kline_15m", "kline_1h"]
 # Reconnection settings
 reconnect_attempts = 5
 reconnect_delay = 5  # seconds

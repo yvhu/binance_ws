@@ -157,7 +157,7 @@ class BinanceTelegramBot:
         """Load historical kline data for all configured symbols and intervals"""
         try:
             symbols = self.config.binance_symbols
-            intervals = ['5m']  # Load data for all intervals used in strategy
+            intervals = ['5m', '15m', '1h']  # Load data for all intervals used in strategy
             
             for symbol in symbols:
                 for interval in intervals:
