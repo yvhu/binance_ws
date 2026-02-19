@@ -258,8 +258,6 @@ class FiveMinuteStrategy:
         interval = kline_info['interval']
         is_closed = kline_info.get('is_closed', False)
         
-        logger.info(f"[STRATEGY] on_5m_kline_update called for {symbol} {interval} closed={is_closed}")
-        
         # Check for real-time engulfing stop loss if position exists
         if self.position_manager.has_position(symbol):
             await self._check_engulfing_stop_loss_realtime(symbol, kline_info)
@@ -277,8 +275,6 @@ class FiveMinuteStrategy:
         """
         symbol = kline_info['symbol']
         interval = kline_info['interval']
-        
-        logger.info(f"[STRATEGY] on_5m_kline_close called for {symbol} {interval}")
         
         # Check for signal reversal and handle pending orders
         await self._check_signal_reversal(symbol, kline_info)
@@ -301,15 +297,12 @@ class FiveMinuteStrategy:
         
         # Check if position can be opened (no existing position)
         if self.position_manager.has_position(symbol):
-            logger.info(f"Position already exists for {symbol}, skipping entry check")
             return
         
         # Check entry confirmation if enabled
         if self.entry_confirmation_enabled and symbol in self.pending_entry_confirmations:
             await self._check_entry_confirmation(symbol, kline_info)
             return
-        
-        logger.info(f"5m K-line closed for {symbol}, checking entry conditions...")
         
         # Execute strategy logic
         await self._check_and_open_position(symbol, kline_info)
@@ -379,14 +372,6 @@ class FiveMinuteStrategy:
                 'ratio_5': ratio_5,
                 'threshold': self.volume_ratio_threshold
             }
-            
-            logger.info(
-                f"Volume check for {symbol}: "
-                f"current={current_volume:.2f}, "
-                f"avg_5={avg_volume_5:.2f} (ratio={ratio_5:.2f}), "
-                f"threshold={self.volume_ratio_threshold}, "
-                f"valid={is_valid}"
-            )
             
             return is_valid, volume_info
             
@@ -462,14 +447,6 @@ class FiveMinuteStrategy:
                 'ratio_5': ratio_5,
                 'threshold': self.range_ratio_threshold
             }
-            
-            logger.info(
-                f"Range check for {symbol}: "
-                f"current={current_range:.2f}, "
-                f"avg_5={avg_range_5:.2f} (ratio={ratio_5:.2f}), "
-                f"threshold={self.range_ratio_threshold}, "
-                f"valid={is_valid}"
-            )
             
             return is_valid, range_info
             
@@ -548,19 +525,6 @@ class FiveMinuteStrategy:
                 'threshold': self.body_ratio_threshold,
                 'shadow_ratio_threshold': self.shadow_ratio_threshold
             }
-            
-            logger.info(
-                f"Body ratio check: "
-                f"body={body:.2f}, "
-                f"range={range_val:.2f}, "
-                f"body_ratio={body_ratio:.4f}, "
-                f"upper_shadow={upper_shadow:.2f} ({upper_shadow_ratio*100:.2f}%), "
-                f"lower_shadow={lower_shadow:.2f} ({lower_shadow_ratio*100:.2f}%), "
-                f"threshold={self.body_ratio_threshold}, "
-                f"body_valid={body_valid}, "
-                f"shadow_valid={shadow_valid}, "
-                f"valid={is_valid}"
-            )
             
             return is_valid, body_info
             
@@ -869,14 +833,6 @@ class FiveMinuteStrategy:
                 'kline_direction': kline_direction
             }
             
-            logger.info(
-                f"[MULTI_TIMEFRAME] {symbol}: "
-                f"5m={kline_direction}, "
-                f"aligned={aligned_count}/{total_count}, "
-                f"trends={timeframe_trends}, "
-                f"valid={is_valid}"
-            )
-            
             return is_valid, timeframe_info
             
         except Exception as e:
@@ -918,15 +874,7 @@ class FiveMinuteStrategy:
             )
             
             if sentiment_info:
-                logger.info(
-                    f"[SENTIMENT_FILTER] "
-                    f"direction={kline_direction}, "
-                    f"fear_greed={sentiment_info.get('fear_greed_value', 'N/A')} "
-                    f"({sentiment_info.get('fear_greed_classification', 'N/A')}), "
-                    f"valid={sentiment_valid}"
-                )
-            
-            return sentiment_valid, sentiment_info
+                return sentiment_valid, sentiment_info
             
         except Exception as e:
             logger.error(f"Error checking sentiment filter: {e}")
@@ -1054,11 +1002,6 @@ class FiveMinuteStrategy:
             # Mark this K-line as checked
             self.early_entry_checked[symbol] = kline_open_time
             
-            logger.info(
-                f"[EARLY_ENTRY] {symbol}: "
-                f"K-line progress={progress*100:.1f}%, "
-                f"checking early entry conditions..."
-            )
             
             # Get K-line direction
             direction = self.technical_analyzer.get_kline_direction(kline)
@@ -1135,19 +1078,10 @@ class FiveMinuteStrategy:
             
             # Check if only strong signals are allowed for early entry
             if self.early_entry_strong_signal_only and signal_strength != 'STRONG':
-                logger.info(
-                    f"[EARLY_ENTRY] {symbol}: "
-                    f"Signal strength={signal_strength}, "
-                    f"only STRONG signals allowed for early entry, skipping"
-                )
                 return
             
             # If all conditions met, open position
             if all_conditions_met:
-                logger.info(
-                    f"[EARLY_ENTRY] {symbol}: "
-                    f"All conditions met, opening position early at {progress*100:.1f}% K-line progress"
-                )
                 
                 # Get current price
                 current_price = self.data_handler.get_current_price(symbol)
@@ -1186,12 +1120,6 @@ class FiveMinuteStrategy:
                     f"止损价格: ${stop_loss_price:.2f if stop_loss_price else 'N/A'}\n"
                     f"止盈比例: {take_profit_percent*100:.1f}%"
                 )
-            else:
-                logger.info(
-                    f"[EARLY_ENTRY] {symbol}: "
-                    f"Conditions not met, waiting for K-line close"
-                )
-                
         except Exception as e:
             logger.error(f"Error checking early entry for {symbol}: {e}")
             import traceback
@@ -1214,10 +1142,6 @@ class FiveMinuteStrategy:
             direction = pending['direction']
             entry_kline = pending['entry_kline']
             
-            logger.info(
-                f"[ENTRY_CONFIRMATION] {symbol}: "
-                f"Checking confirmation for {direction} signal..."
-            )
             
             # Get current price
             current_price = current_kline.get('close', 0)
@@ -1241,12 +1165,6 @@ class FiveMinuteStrategy:
                     # For short, price should continue down
                     price_confirmed = price_change <= -self.entry_confirmation_price_threshold
                 
-                logger.info(
-                    f"[ENTRY_CONFIRMATION] {symbol}: "
-                    f"Price confirmation: {price_confirmed}, "
-                    f"price_change={price_change*100:.2f}%, "
-                    f"threshold={self.entry_confirmation_price_threshold*100:.2f}%"
-                )
             
             # Check volume confirmation
             volume_confirmed = False
@@ -1255,12 +1173,6 @@ class FiveMinuteStrategy:
                 volume_valid, volume_info = self._check_volume_condition(symbol, current_kline)
                 volume_confirmed = volume_valid and volume_info.get('ratio_5', 0) >= self.entry_confirmation_volume_threshold
                 
-                logger.info(
-                    f"[ENTRY_CONFIRMATION] {symbol}: "
-                    f"Volume confirmation: {volume_confirmed}, "
-                    f"volume_ratio={volume_info.get('ratio_5', 0):.2f}, "
-                    f"threshold={self.entry_confirmation_volume_threshold}"
-                )
             
             # Determine if confirmation is met
             if self.entry_confirmation_type == 'price':
@@ -1271,10 +1183,6 @@ class FiveMinuteStrategy:
                 confirmation_met = price_confirmed and volume_confirmed
             
             if confirmation_met:
-                logger.info(
-                    f"[ENTRY_CONFIRMATION] {symbol}: "
-                    f"Confirmation met, opening position..."
-                )
                 
                 # Calculate stop loss price
                 stop_loss_price = self._calculate_stop_loss_price(
@@ -1327,10 +1235,6 @@ class FiveMinuteStrategy:
                 # Clear pending confirmation
                 del self.pending_entry_confirmations[symbol]
             else:
-                logger.info(
-                    f"[ENTRY_CONFIRMATION] {symbol}: "
-                    f"Confirmation not met, signal rejected"
-                )
                 
                 # Send rejection notification
                 await self.telegram_client.send_message(
@@ -1440,7 +1344,6 @@ class FiveMinuteStrategy:
                 self.consecutive_losses = 0
                 if self.position_reduction_active:
                     self.position_reduction_active = False
-                    logger.info("[DRAWDOWN_PROTECTION] Position reduction deactivated")
             
             # Check daily loss limit
             if self.daily_start_balance > 0:
@@ -1487,10 +1390,6 @@ class FiveMinuteStrategy:
             # Apply position reduction if active
             if self.position_reduction_active:
                 adjusted_ratio = base_ratio * self.position_reduction_on_loss
-                logger.info(
-                    f"[DRAWDOWN_PROTECTION] "
-                    f"Position reduction active: {base_ratio*100:.1f}% -> {adjusted_ratio*100:.1f}%"
-                )
                 return adjusted_ratio
             
             return base_ratio
@@ -1507,7 +1406,6 @@ class FiveMinuteStrategy:
             symbol: Trading pair symbol
             kline_5m: The current closed 5m K-line
         """
-        logger.info(f"[STRATEGY] _check_and_open_position called for {symbol}")
         try:
             # Use the provided 5m K-line directly
             if kline_5m is None:
@@ -1588,40 +1486,11 @@ class FiveMinuteStrategy:
                 elif signal_strength == 'MEDIUM':
                     signal_strength = 'WEAK'
             
-            logger.info(
-                f"[STRATEGY] Condition check for {symbol}: "
-                f"volume_valid={volume_valid}, "
-                f"range_valid={range_valid}, "
-                f"body_valid={body_valid}, "
-                f"trend_valid={trend_valid}, "
-                f"rsi_valid={rsi_valid}, "
-                f"macd_valid={macd_valid}, "
-                f"adx_valid={adx_valid}, "
-                f"market_env_valid={market_env_valid}, "
-                f"multi_timeframe_valid={multi_timeframe_valid}, "
-                f"sentiment_valid={sentiment_valid}, "
-                f"ml_valid={ml_valid}, "
-                f"signal_strength={signal_strength}, "
-                f"all_conditions_met={all_conditions_met}"
-            )
-            
-            # Log market environment details if available
-            if market_env_info:
-                logger.info(
-                    f"[MARKET_ENV] {symbol}: "
-                    f"type={market_env_info.get('market_type')}, "
-                    f"direction={market_env_info.get('trend_direction')}, "
-                    f"strength={market_env_info.get('trend_strength')}, "
-                    f"confidence={market_env_info.get('confidence')}%, "
-                    f"volatility={market_env_info.get('volatility', 0):.2f}%"
-                )
-            
             # Get current price for notification
             current_price = self.data_handler.get_current_price(symbol)
             
             # Send indicator analysis notification with all condition information
             if all_conditions_met:
-                logger.info(f"[STRATEGY] All conditions met for {symbol}, preparing to open position...")
                 # All conditions met - send trade decision
                 decision = 'LONG' if direction_5m == 'UP' else 'SHORT'
                 
@@ -1688,10 +1557,6 @@ class FiveMinuteStrategy:
                         'ml_info': ml_info,
                         'entry_kline': kline_5m
                     }
-                    logger.info(
-                        f"[ENTRY_CONFIRMATION] {symbol}: "
-                        f"Signal detected, waiting for confirmation on next kline..."
-                    )
                     await self.telegram_client.send_message(
                         f"⏳ 等待入场确认\n\n"
                         f"交易对: {symbol}\n"
@@ -1715,42 +1580,33 @@ class FiveMinuteStrategy:
                     take_profit_percent = self._calculate_take_profit_percent(symbol, direction_5m)
                     
                     # Open position with volume info, range info, stop loss and entry kline
-                    logger.info(f"[STRATEGY] Opening position for {symbol}, direction={direction_5m}, signal_strength={signal_strength}")
-                    
                     # Check if limit order is enabled for entry
                     use_limit_order = self.limit_order_enabled and self.limit_order_entry_enabled
                     
                     if direction_5m == 'UP':
                         if use_limit_order:
-                            logger.info(f"[STRATEGY] Using limit order for long position on {symbol}")
                             await self._open_long_position_with_limit_order(
                                 symbol, volume_info, range_info, stop_loss_price, kline_5m,
                                 kline_5m.get('close_time'), signal_strength, take_profit_percent
                             )
                         else:
-                            logger.info(f"[STRATEGY] Using market order for long position on {symbol}")
                             await self._open_long_position(
                                 symbol, volume_info, range_info, stop_loss_price, kline_5m,
                                 kline_5m.get('close_time'), signal_strength, take_profit_percent
                             )
-                        logger.info(f"[STRATEGY] Long position opening completed for {symbol}")
                     else:  # DOWN
                         if use_limit_order:
-                            logger.info(f"[STRATEGY] Using limit order for short position on {symbol}")
                             await self._open_short_position_with_limit_order(
                                 symbol, volume_info, range_info, stop_loss_price, kline_5m,
                                 kline_5m.get('close_time'), signal_strength, take_profit_percent
                             )
                         else:
-                            logger.info(f"[STRATEGY] Using market order for short position on {symbol}")
                             await self._open_short_position(
                                 symbol, volume_info, range_info, stop_loss_price, kline_5m,
                                 kline_5m.get('close_time'), signal_strength, take_profit_percent
                             )
-                        logger.info(f"[STRATEGY] Short position opening completed for {symbol}")
             else:
                 # Some conditions not met - send no trade notification with all condition info
-                logger.info(f"Not all conditions met for {symbol}: volume={volume_valid}, range={range_valid}, body={body_valid}, trend={trend_valid}, rsi={rsi_valid}, macd={macd_valid}, adx={adx_valid}, market_env={market_env_valid}, multi_timeframe={multi_timeframe_valid}")
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
                     sar_direction=None,
@@ -1775,9 +1631,6 @@ class FiveMinuteStrategy:
                     kline_time=kline_5m.get('close_time')
                 )
             
-            # Add explicit log to confirm completion of check
-            logger.info(f"[STRATEGY] _check_and_open_position completed for {symbol}")
-                
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")
     
@@ -1870,15 +1723,6 @@ class FiveMinuteStrategy:
             max_take_profit = 0.10  # Maximum 10%
             take_profit_percent = max(min_take_profit, min(max_take_profit, take_profit_percent))
             
-            logger.info(
-                f"[DYNAMIC_TAKE_PROFIT] {symbol}: "
-                f"ADX={latest_adx:.2f} ({trend_strength}), "
-                f"ATR={latest_atr:.2f} ({atr_percent:.2f}%, {volatility_level}), "
-                f"base_tp={base_take_profit*100:.1f}%, "
-                f"adjustment={volatility_adjustment*100:+.1f}%, "
-                f"final_tp={take_profit_percent*100:.1f}%"
-            )
-            
             return take_profit_percent
             
         except Exception as e:
@@ -1925,17 +1769,6 @@ class FiveMinuteStrategy:
             else:  # DOWN
                 # For short position, stop loss is above entry price
                 stop_loss_price = close_price + stop_loss_distance
-            
-            logger.info(
-                f"Stop loss calculated: "
-                f"symbol={symbol}, "
-                f"direction={direction}, "
-                f"close_price={close_price:.2f}, "
-                f"range={current_range:.2f}, "
-                f"atr_enabled={self.atr_stop_loss_enabled}, "
-                f"stop_loss_distance={stop_loss_distance:.2f}, "
-                f"stop_loss_price={stop_loss_price:.2f}"
-            )
             
             return stop_loss_price
             
@@ -2012,15 +1845,6 @@ class FiveMinuteStrategy:
             max_distance = current_price * self.stop_loss_max_distance_percent
             stop_loss_distance = max(min_distance, min(max_distance, stop_loss_distance))
             
-            logger.info(
-                f"[DYNAMIC_ATR_STOP_LOSS] {symbol}: "
-                f"ATR={latest_atr:.2f} ({atr_percent:.2f}%, {volatility_level}), "
-                f"base_multiplier={self.atr_stop_loss_multiplier}, "
-                f"dynamic_multiplier={dynamic_multiplier:.2f}, "
-                f"distance={stop_loss_distance:.2f} ({stop_loss_distance/current_price*100:.2f}%), "
-                f"bounds=[{min_distance:.2f}, {max_distance:.2f}]"
-            )
-            
             return stop_loss_distance
             
         except Exception as e:
@@ -2075,15 +1899,6 @@ class FiveMinuteStrategy:
                     if position:
                         position['stop_loss_price'] = stop_loss_price
                 
-                logger.info(
-                    f"Stop loss distance for {symbol}: "
-                    f"price={current_price:.2f}, "
-                    f"calculated_stop_loss={calculated_stop_loss_distance:.2f} ({calculated_stop_loss_distance/current_price*100:.2f}%), "
-                    f"min_distance={min_stop_loss_distance:.2f} ({self.stop_loss_min_distance_percent*100:.2f}%), "
-                    f"max_distance={max_stop_loss_distance:.2f} ({self.stop_loss_max_distance_percent*100:.2f}%), "
-                    f"actual_distance={actual_stop_loss_distance:.2f} ({stop_loss_distance_percent*100:.2f}%), "
-                    f"final_stop_loss={stop_loss_price:.2f}"
-                )
             
             # Check drawdown protection before opening position
             can_trade, drawdown_reason = self._check_drawdown_protection()
@@ -2110,13 +1925,6 @@ class FiveMinuteStrategy:
             position_ratio = self._get_position_ratio(signal_strength)
             
             adjusted_quantity = quantity * position_ratio
-            logger.info(
-                f"Position size adjustment for {symbol}: "
-                f"signal_strength={signal_strength}, "
-                f"position_ratio={position_ratio}, "
-                f"original_quantity={quantity:.4f}, "
-                f"adjusted_quantity={adjusted_quantity:.4f}"
-            )
             quantity = adjusted_quantity
             
             # Execute order with retry logic
@@ -2158,8 +1966,6 @@ class FiveMinuteStrategy:
                     # Initialize partial take profit status
                     self.partial_take_profit_status[symbol] = {i: False for i in range(len(self.partial_take_profit_levels))}
                     
-                    logger.info(f"Long position opened successfully for {symbol}")
-                    
                     # Send trade notification with volume info, range info, stop loss and position calculation info
                     await self.telegram_client.send_trade_notification(
                         symbol=symbol,
@@ -2182,7 +1988,6 @@ class FiveMinuteStrategy:
                         import asyncio
                         await asyncio.to_thread(self.trading_executor.cancel_all_orders, symbol)
                         await asyncio.sleep(retry_delay)
-                        logger.info(f"Retrying to open long position for {symbol}...")
                     else:
                         # All retries failed
                         logger.error(f"All {max_retries} attempts failed to open long position for {symbol}")
@@ -2242,15 +2047,6 @@ class FiveMinuteStrategy:
                     if position:
                         position['stop_loss_price'] = stop_loss_price
                 
-                logger.info(
-                    f"Stop loss distance for {symbol}: "
-                    f"price={current_price:.2f}, "
-                    f"calculated_stop_loss={calculated_stop_loss_distance:.2f} ({calculated_stop_loss_distance/current_price*100:.2f}%), "
-                    f"min_distance={min_stop_loss_distance:.2f} ({self.stop_loss_min_distance_percent*100:.2f}%), "
-                    f"max_distance={max_stop_loss_distance:.2f} ({self.stop_loss_max_distance_percent*100:.2f}%), "
-                    f"actual_distance={actual_stop_loss_distance:.2f} ({stop_loss_distance_percent*100:.2f}%), "
-                    f"final_stop_loss={stop_loss_price:.2f}"
-                )
             
             # Check drawdown protection before opening position
             can_trade, drawdown_reason = self._check_drawdown_protection()
@@ -2277,13 +2073,6 @@ class FiveMinuteStrategy:
             position_ratio = self._get_position_ratio(signal_strength)
             
             adjusted_quantity = quantity * position_ratio
-            logger.info(
-                f"Position size adjustment for {symbol}: "
-                f"signal_strength={signal_strength}, "
-                f"position_ratio={position_ratio}, "
-                f"original_quantity={quantity:.4f}, "
-                f"adjusted_quantity={adjusted_quantity:.4f}"
-            )
             quantity = adjusted_quantity
             
             # Execute order with retry logic
@@ -2323,8 +2112,6 @@ class FiveMinuteStrategy:
                     # Initialize partial take profit status
                     self.partial_take_profit_status[symbol] = {i: False for i in range(len(self.partial_take_profit_levels))}
                     
-                    logger.info(f"Short position opened successfully for {symbol}")
-                    
                     # Send trade notification with volume info, range info, stop loss and position calculation info
                     await self.telegram_client.send_trade_notification(
                         symbol=symbol,
@@ -2347,7 +2134,6 @@ class FiveMinuteStrategy:
                         import asyncio
                         await asyncio.to_thread(self.trading_executor.cancel_all_orders, symbol)
                         await asyncio.sleep(retry_delay)
-                        logger.info(f"Retrying to open short position for {symbol}...")
                     else:
                         # All retries failed
                         logger.error(f"All {max_retries} attempts failed to open short position for {symbol}")
@@ -2531,7 +2317,6 @@ class FiveMinuteStrategy:
                     # Clear local position state to prevent duplicate notifications
                     self.position_manager.close_position(symbol, current_price if current_price else 0)
                     
-                    logger.info(f"Position closed due to engulfing stop loss for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to engulfing stop loss for {symbol}")
             else:

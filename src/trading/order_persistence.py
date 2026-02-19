@@ -68,8 +68,6 @@ class OrderPersistence:
             conn.commit()
             conn.close()
             
-            logger.info(f"Order persistence database initialized: {self.db_path}")
-            
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
             raise
@@ -109,8 +107,6 @@ class OrderPersistence:
             conn.commit()
             conn.close()
             
-            logger.debug(f"Order saved: {order_id} for {symbol}")
-            
         except Exception as e:
             logger.error(f"Error saving order {order_id}: {e}")
             raise
@@ -146,9 +142,6 @@ class OrderPersistence:
             
             conn.close()
             
-            total_orders = sum(len(orders[symbol]) for symbol in orders)
-            logger.info(f"Loaded {total_orders} pending orders for {len(orders)} symbols")
-            
             return orders
             
         except Exception as e:
@@ -178,11 +171,6 @@ class OrderPersistence:
             affected_rows = cursor.rowcount
             conn.close()
             
-            if affected_rows > 0:
-                logger.debug(f"Order status updated: {order_id} -> {status}")
-            else:
-                logger.warning(f"Order {order_id} not found for status update")
-            
         except Exception as e:
             logger.error(f"Error updating order status for {order_id}: {e}")
             raise
@@ -203,11 +191,6 @@ class OrderPersistence:
             conn.commit()
             affected_rows = cursor.rowcount
             conn.close()
-            
-            if affected_rows > 0:
-                logger.debug(f"Order deleted: {order_id}")
-            else:
-                logger.warning(f"Order {order_id} not found for deletion")
             
         except Exception as e:
             logger.error(f"Error deleting order {order_id}: {e}")
@@ -377,9 +360,6 @@ class OrderPersistence:
             deleted_count = cursor.rowcount
             conn.commit()
             conn.close()
-            
-            if deleted_count > 0:
-                logger.info(f"Cleaned up {deleted_count} old orders")
             
         except Exception as e:
             logger.error(f"Error cleaning up old orders: {e}")

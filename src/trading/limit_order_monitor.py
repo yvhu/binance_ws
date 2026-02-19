@@ -120,7 +120,6 @@ class LimitOrderMonitor:
             callback: 获取当前价格的回调函数，参数为symbol，返回价格
         """
         self.get_current_price_callback = callback
-        logger.info("Price callback function set")
     
     async def start_monitor(self, order_id: int, order_info: Dict):
         """
@@ -152,12 +151,6 @@ class LimitOrderMonitor:
         # 启动监控任务
         task = asyncio.create_task(self._monitor_order(order))
         self.monitor_tasks[order_id] = task
-        
-        logger.info(
-            f"Started monitoring order {order_id}: "
-            f"symbol={order.symbol}, side={order.side}, type={order.order_type}, "
-            f"limit_price={order.limit_price:.2f}, quantity={order.quantity:.6f}"
-        )
     
     async def _monitor_order(self, order: OrderInfo):
         """
@@ -192,10 +185,6 @@ class LimitOrderMonitor:
                 
                 # 订单已成交
                 if status == 'FILLED':
-                    logger.info(
-                        f"✓ Order {order.order_id} filled successfully: "
-                        f"executedQty={order_status.get('executedQty', 0)}"
-                    )
                     self.stop_monitor(order.order_id)
                     break
                 
@@ -253,21 +242,18 @@ class LimitOrderMonitor:
                     cancel_success = self.trading_executor.cancel_order(order.symbol, order.order_id)
                     
                     if cancel_success:
-                        logger.info(f"✓ Order {order.order_id} cancelled successfully")
-                        
                         # 转为市价单
                         await self._convert_to_market_order(order)
                         
                         self.stop_monitor(order.order_id)
                         break
                     else:
-                        logger.error(f"✗ Failed to cancel order {order.order_id}")
+                        logger.error(f"Failed to cancel order {order.order_id}")
                 
                 # 等待下一次检查
                 await asyncio.sleep(self.monitor_check_interval)
         
         except asyncio.CancelledError:
-            logger.info(f"Monitor task for order {order.order_id} cancelled")
             self.stop_monitor(order.order_id)
         except Exception as e:
             logger.error(f"Error monitoring order {order.order_id}: {e}")
@@ -374,11 +360,6 @@ class LimitOrderMonitor:
             order: 订单信息
         """
         try:
-            logger.info(
-                f"Converting order {order.order_id} to market order: "
-                f"symbol={order.symbol}, side={order.side}, quantity={order.quantity:.6f}"
-            )
-            
             if order.order_type == 'ENTRY':
                 # 开仓转为市价单
                 if order.side == 'BUY':
@@ -390,10 +371,8 @@ class LimitOrderMonitor:
                         order.symbol, order.original_quantity
                     )
                 
-                if result:
-                    logger.info(f"✓ Market order placed successfully for {order.order_id}")
-                else:
-                    logger.error(f"✗ Failed to place market order for {order.order_id}")
+                if not result:
+                    logger.error(f"Failed to place market order for {order.order_id}")
             
             elif order.order_type == 'TAKE_PROFIT':
                 # 止盈转为市价单
@@ -402,10 +381,8 @@ class LimitOrderMonitor:
                 else:  # SELL
                     result = self.trading_executor.close_long_position(order.symbol)
                 
-                if result:
-                    logger.info(f"✓ Market close order placed successfully for {order.order_id}")
-                else:
-                    logger.error(f"✗ Failed to place market close order for {order.order_id}")
+                if not result:
+                    logger.error(f"Failed to place market close order for {order.order_id}")
         
         except Exception as e:
             logger.error(f"Error converting order {order.order_id} to market order: {e}")
@@ -427,8 +404,6 @@ class LimitOrderMonitor:
         
         if order_id in self.active_orders:
             del self.active_orders[order_id]
-        
-        logger.info(f"Stopped monitoring order {order_id}")
     
     def get_active_orders(self) -> Dict[int, OrderInfo]:
         """
@@ -453,10 +428,6 @@ class LimitOrderMonitor:
     
     async def shutdown(self):
         """关闭监控器，停止所有监控任务"""
-        logger.info("Shutting down limit order monitor...")
-        
         # 取消所有监控任务
         for order_id in list(self.monitor_tasks.keys()):
             self.stop_monitor(order_id)
-        
-        logger.info("Limit order monitor shutdown complete")

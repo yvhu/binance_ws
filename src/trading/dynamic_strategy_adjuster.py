@@ -96,12 +96,6 @@ class DynamicStrategyAdjuster:
             if len(self.trade_history) >= self.min_trades_for_adjustment:
                 self._adjust_strategy()
             
-            logger.info(
-                f"Trade added: profit={trade_info.get('profit', 0):.2f}, "
-                f"consecutive_wins={self.consecutive_wins}, "
-                f"consecutive_losses={self.consecutive_losses}"
-            )
-            
         except Exception as e:
             logger.error(f"Error adding trade: {e}")
     
@@ -127,13 +121,6 @@ class DynamicStrategyAdjuster:
                 'last_update': datetime.now()
             }
             
-            logger.debug(
-                f"Market conditions updated: "
-                f"volatility={volatility:.4f}, "
-                f"trend_strength={trend_strength:.4f}, "
-                f"volume_ratio={volume_ratio:.2f}"
-            )
-            
         except Exception as e:
             logger.error(f"Error updating market conditions: {e}")
     
@@ -158,14 +145,6 @@ class DynamicStrategyAdjuster:
             total_profit = sum(profits)
             total_loss = sum(losses)
             self.profit_factor = total_profit / total_loss if total_loss > 0 else 0.0
-            
-            logger.debug(
-                f"Performance metrics updated: "
-                f"win_rate={self.win_rate:.2%}, "
-                f"profit_factor={self.profit_factor:.2f}, "
-                f"avg_win={self.avg_win:.2f}, "
-                f"avg_loss={self.avg_loss:.2f}"
-            )
             
         except Exception as e:
             logger.error(f"Error updating performance metrics: {e}")
@@ -254,13 +233,11 @@ class DynamicStrategyAdjuster:
                     self.adjusted_params['stop_loss_multiplier'] * 1.1,
                     1.5
                 )
-                logger.info("High volatility detected, increasing stop loss distance")
             elif volatility < 0.01:  # 低波动
                 self.adjusted_params['stop_loss_multiplier'] = max(
                     self.adjusted_params['stop_loss_multiplier'] * 0.9,
                     0.7
                 )
-                logger.info("Low volatility detected, decreasing stop loss distance")
             
             # 基于趋势强度调整止盈
             if trend_strength > 0.7:  # 强趋势
@@ -268,13 +245,11 @@ class DynamicStrategyAdjuster:
                     self.adjusted_params['take_profit_multiplier'] * 1.1,
                     1.5
                 )
-                logger.info("Strong trend detected, increasing take profit target")
             elif trend_strength < 0.3:  # 弱趋势
                 self.adjusted_params['take_profit_multiplier'] = max(
                     self.adjusted_params['take_profit_multiplier'] * 0.9,
                     0.7
                 )
-                logger.info("Weak trend detected, decreasing take profit target")
             
             # 基于成交量调整入场阈值
             if volume_ratio < 0.5:  # 低成交量
@@ -282,13 +257,11 @@ class DynamicStrategyAdjuster:
                     self.adjusted_params['entry_threshold'] + 0.01,
                     0.1
                 )
-                logger.info("Low volume detected, increasing entry threshold")
             elif volume_ratio > 1.5:  # 高成交量
                 self.adjusted_params['entry_threshold'] = max(
                     self.adjusted_params['entry_threshold'] - 0.005,
                     0.0
                 )
-                logger.info("High volume detected, decreasing entry threshold")
             
         except Exception as e:
             logger.error(f"Error adjusting based on market conditions: {e}")
@@ -399,4 +372,3 @@ class DynamicStrategyAdjuster:
             'entry_threshold': 0.0,
             'confidence_threshold': 0.0
         }
-        logger.info("Strategy adjustments reset to default")

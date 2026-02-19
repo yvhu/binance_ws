@@ -160,11 +160,6 @@ class OrderPriorityManager:
             # 增加计数器
             self.order_counter += 1
             
-            logger.info(
-                f"Order {order_id} added to priority queue: "
-                f"symbol={symbol}, type={order_type.value}, priority={priority.name}"
-            )
-            
             return True
             
         except Exception as e:
@@ -193,8 +188,6 @@ class OrderPriorityManager:
             # 注意：由于堆结构不支持直接删除，我们使用惰性删除
             # 在弹出时检查订单是否仍在映射中
             order_data['deleted'] = True
-            
-            logger.info(f"Order {order_id} removed from priority queue")
             
             return True
             
@@ -370,7 +363,6 @@ class OrderPriorityManager:
         """清空队列"""
         self.priority_queue.clear()
         self.orders.clear()
-        logger.info("Priority queue cleared")
     
     def get_queue_summary(self) -> str:
         """

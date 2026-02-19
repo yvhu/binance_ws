@@ -97,8 +97,6 @@ class EnhancedNotificationSystem:
             NotificationType.MARKET_UPDATE: False,
             NotificationType.STRATEGY_ADJUSTMENT: False
         }
-        
-        logger.info("EnhancedNotificationSystem initialized")
     
     def send_notification(
         self,
@@ -581,9 +579,7 @@ class EnhancedNotificationSystem:
     def enable_notification_type(self, notification_type: NotificationType) -> None:
         """启用指定类型的通知"""
         self.notification_types_enabled[notification_type] = True
-        logger.info(f"Notification type {notification_type.value} enabled")
     
     def disable_notification_type(self, notification_type: NotificationType) -> None:
         """禁用指定类型的通知"""
         self.notification_types_enabled[notification_type] = False
-        logger.info(f"Notification type {notification_type.value} disabled")

@@ -47,8 +47,6 @@ class PerformanceMonitor:
         # 时间窗口统计
         self.hourly_stats = deque(maxlen=24)  # 24小时统计
         self.daily_stats = deque(maxlen=30)   # 30天统计
-        
-        logger.info("PerformanceMonitor initialized")
     
     def record_order_execution(
         self,
@@ -113,11 +111,6 @@ class PerformanceMonitor:
             elif status == 'PARTIALLY_FILLED':
                 self.metrics['partial_fills'] += 1
             
-            logger.debug(
-                f"Order execution recorded: order_id={order_id}, "
-                f"status={status}, fill_time={fill_time}, slippage={slippage}"
-            )
-            
         except Exception as e:
             logger.error(f"Error recording order execution: {e}")
     
@@ -171,11 +164,6 @@ class PerformanceMonitor:
                 self.metrics['total_profit'] += profit
             else:
                 self.metrics['total_loss'] += abs(profit)
-            
-            logger.info(
-                f"Trade recorded: trade_id={trade_id}, "
-                f"profit={profit:.2f}, holding_time={holding_time:.0f}s"
-            )
             
         except Exception as e:
             logger.error(f"Error recording trade: {e}")
@@ -517,4 +505,3 @@ class PerformanceMonitor:
         }
         self.order_executions.clear()
         self.trades.clear()
-        logger.info("Performance metrics reset")

@@ -138,7 +138,6 @@ class OrderRiskControl:
         
         # 所有检查通过
         reason = "Order risk check passed"
-        logger.info(f"Order risk check passed for {symbol}: {reason}")
         return True, reason, risk_info
     
     def _check_price_deviation(

@@ -32,8 +32,6 @@ class OrderManagerAPI:
         self.persistence = OrderPersistence()
         self.priority_manager = OrderPriorityManager(config)
         self.performance_monitor = PerformanceMonitor(config)
-        
-        logger.info("OrderManagerAPI initialized")
     
     # ==================== 订单查询接口 ====================
     
@@ -197,8 +195,6 @@ class OrderManagerAPI:
                     price=0,
                     status='CANCELED'
                 )
-                
-                logger.info(f"Order {order_id} cancelled successfully")
             
             return success
             
@@ -227,7 +223,6 @@ class OrderManagerAPI:
                     if self.cancel_order(order_id, symbol):
                         cancelled_count += 1
             
-            logger.info(f"Cancelled {cancelled_count} orders for {symbol}")
             return cancelled_count > 0
             
         except Exception as e:
@@ -258,7 +253,6 @@ class OrderManagerAPI:
                     old_order['update_time'] = datetime.now().isoformat()
                     self.persistence.update_order_status(order_id, 'MODIFIED', modified_order)
                 
-                logger.info(f"Order {order_id} price modified to {new_price}")
                 return True
             
             return False
@@ -291,7 +285,6 @@ class OrderManagerAPI:
                     old_order['update_time'] = datetime.now().isoformat()
                     self.persistence.update_order_status(order_id, 'MODIFIED', modified_order)
                 
-                logger.info(f"Order {order_id} quantity modified to {new_quantity}")
                 return True
             
             return False
@@ -327,12 +320,6 @@ class OrderManagerAPI:
             success = self.priority_manager.add_order(
                 order_id, symbol, order_type, priority, order_info
             )
-            
-            if success:
-                logger.info(
-                    f"Order {order_id} added to priority queue: "
-                    f"priority={priority.name}"
-                )
             
             return success
             
@@ -426,7 +413,6 @@ class OrderManagerAPI:
         """
         try:
             count = self.persistence.cleanup_old_orders(days)
-            logger.info(f"Cleaned up {count} old orders (older than {days} days)")
             return count
             
         except Exception as e:
@@ -437,7 +423,6 @@ class OrderManagerAPI:
         """重置性能指标"""
         try:
             self.performance_monitor.reset_metrics()
-            logger.info("Performance metrics reset")
             
         except Exception as e:
             logger.error(f"Error resetting performance metrics: {e}")

@@ -301,7 +301,6 @@ class TradingExecutor:
                     elif asset_name == 'USDT' and available_balance > 0 and balance == 0:
                         balance = available_balance
             
-            logger.info(f"Available balance: {balance} USDC/USDT")
             return balance
         except BinanceAPIException as e:
             logger.error(f"Failed to get account balance: {e}")
@@ -442,11 +441,6 @@ class TradingExecutor:
             
             # Format to exact precision to avoid floating point representation issues
             rounded_price = float(f"{rounded_price:.{precision}f}")
-            
-            logger.info(
-                f"Price rounded: {price:.6f} -> {rounded_price:.6f} "
-                f"(tick: {tick_size:.6f}, precision: {precision})"
-            )
             
             return rounded_price
             
@@ -608,19 +602,6 @@ class TradingExecutor:
             # 检查是否充足
             is_sufficient = balance >= total_required
             
-            logger.info(
-                f"Margin check for {symbol}:\n"
-                f"  Quantity: {quantity:.6f}\n"
-                f"  Price: {price:.2f} USDC\n"
-                f"  Position value: {position_value:.2f} USDC\n"
-                f"  Required margin: {required_margin:.2f} USDC\n"
-                f"  Opening fee: {opening_fee:.4f} USDC\n"
-                f"  Safety margin: {safety_margin:.4f} USDC\n"
-                f"  Total required: {total_required:.2f} USDC\n"
-                f"  Available balance: {balance:.2f} USDC\n"
-                f"  Sufficient: {is_sufficient}"
-            )
-            
             return is_sufficient, required_margin, balance
             
         except Exception as e:
@@ -749,19 +730,6 @@ class TradingExecutor:
             # Check if balance is sufficient
             is_sufficient = balance >= total_required
             
-            logger.info(
-                f"Margin check for {symbol}:\n"
-                f"  Quantity: {quantity:.6f}\n"
-                f"  Current price: {current_price:.2f} USDC\n"
-                f"  Position value: {position_value:.2f} USDC\n"
-                f"  Required margin: {required_margin:.2f} USDC (leverage: {self.leverage}x)\n"
-                f"  Opening fee: {opening_fee:.4f} USDC\n"
-                f"  Safety margin: {safety_margin_amount:.4f} USDC\n"
-                f"  Total required: {total_required:.2f} USDC\n"
-                f"  Available balance: {balance:.2f} USDC\n"
-                f"  Margin sufficient: {is_sufficient}"
-            )
-            
             if not is_sufficient:
                 logger.warning(
                     f"⚠️ Insufficient margin for {symbol}: "
@@ -795,7 +763,6 @@ class TradingExecutor:
                 logger.error(f"Failed to get account balance before opening long position for {symbol}")
                 return None
             
-            logger.info(f"Re-verified balance before opening long position: {balance:.2f} USDC")
             
             # Ensure leverage is set (only if not already cached)
             if not self.ensure_leverage(symbol):
@@ -806,7 +773,6 @@ class TradingExecutor:
             try:
                 ticker = self.client.futures_symbol_ticker(symbol=symbol)
                 current_price = float(ticker['price'])
-                logger.info(f"Current price for {symbol}: {current_price:.2f} USDC")
             except Exception as e:
                 logger.error(f"Failed to get current price for {symbol}: {e}")
                 return None
@@ -818,7 +784,6 @@ class TradingExecutor:
                 return None
             
             # Use the recalculated quantity instead of the original one
-            logger.info(f"Using recalculated quantity: {recalculated_quantity:.6f} (original: {quantity:.6f})")
             quantity = recalculated_quantity
             
             # Check if margin is sufficient before placing order
@@ -874,7 +839,6 @@ class TradingExecutor:
                     self.cancel_all_orders(symbol)
                     return None
             
-            logger.info(f"Long position opened successfully for {symbol}")
             
             # Return both order and position calculation info
             return {
@@ -906,7 +870,6 @@ class TradingExecutor:
                 logger.error(f"Failed to get account balance before opening short position for {symbol}")
                 return None
             
-            logger.info(f"Re-verified balance before opening short position: {balance:.2f} USDC")
             
             # Ensure leverage is set (only if not already cached)
             if not self.ensure_leverage(symbol):
@@ -917,7 +880,6 @@ class TradingExecutor:
             try:
                 ticker = self.client.futures_symbol_ticker(symbol=symbol)
                 current_price = float(ticker['price'])
-                logger.info(f"Current price for {symbol}: {current_price:.2f} USDC")
             except Exception as e:
                 logger.error(f"Failed to get current price for {symbol}: {e}")
                 return None
@@ -929,7 +891,6 @@ class TradingExecutor:
                 return None
             
             # Use the recalculated quantity instead of the original one
-            logger.info(f"Using recalculated quantity: {recalculated_quantity:.6f} (original: {quantity:.6f})")
             quantity = recalculated_quantity
             
             # Check if margin is sufficient before placing order
@@ -985,7 +946,6 @@ class TradingExecutor:
                     self.cancel_all_orders(symbol)
                     return None
             
-            logger.info(f"Short position opened successfully for {symbol}")
             
             # Return both order and position calculation info
             return {
@@ -1024,7 +984,6 @@ class TradingExecutor:
                 logger.error(f"Failed to round quantity for closing long position {symbol}")
                 return None
             
-            logger.info(f"Closing long position: quantity={quantity:.6f} -> rounded={rounded_quantity:.6f}")
             
             # Place market order to close
             order = self.client.futures_create_order(
@@ -1035,7 +994,6 @@ class TradingExecutor:
                 reduceOnly=True
             )
             
-            logger.info(f"Long position close order placed for {symbol}: {order}")
             
             # Check if order is filled
             order_id = order.get('orderId')
@@ -1050,7 +1008,6 @@ class TradingExecutor:
                     self.cancel_all_orders(symbol)
                     return None
             
-            logger.info(f"Long position closed successfully for {symbol}")
             return order
             
         except BinanceAPIException as e:
@@ -1082,7 +1039,6 @@ class TradingExecutor:
                 logger.error(f"Failed to round quantity for closing short position {symbol}")
                 return None
             
-            logger.info(f"Closing short position: quantity={quantity:.6f} -> rounded={rounded_quantity:.6f}")
             
             # Place market order to close
             order = self.client.futures_create_order(
@@ -1093,7 +1049,6 @@ class TradingExecutor:
                 reduceOnly=True
             )
             
-            logger.info(f"Short position close order placed for {symbol}: {order}")
             
             # Check if order is filled
             order_id = order.get('orderId')
@@ -1108,7 +1063,6 @@ class TradingExecutor:
                     self.cancel_all_orders(symbol)
                     return None
             
-            logger.info(f"Short position closed successfully for {symbol}")
             return order
             
         except BinanceAPIException as e:
@@ -1167,13 +1121,6 @@ class TradingExecutor:
                 logger.error(f"Failed to round quantity for partial close of {symbol}")
                 return None
             
-            logger.info(
-                f"Closing partial position for {symbol}: "
-                f"side={position_side}, "
-                f"total_quantity={abs(position_amt):.6f}, "
-                f"close_ratio={close_ratio:.2f}, "
-                f"close_quantity={close_quantity:.6f} -> rounded={rounded_quantity:.6f}"
-            )
             
             # Place market order to close partial position
             if position_side == 'LONG':
@@ -1193,7 +1140,6 @@ class TradingExecutor:
                     reduceOnly=True
                 )
             
-            logger.info(f"Partial position close order placed for {symbol}: {order}")
             
             # Check if order is filled
             order_id = order.get('orderId')
@@ -1208,7 +1154,6 @@ class TradingExecutor:
                     self.cancel_all_orders(symbol)
                     return None
             
-            logger.info(f"Partial position closed successfully for {symbol}")
             return order
             
         except BinanceAPIException as e:
@@ -1229,7 +1174,6 @@ class TradingExecutor:
         try:
             position = await asyncio.to_thread(self.get_position, symbol)
             if not position:
-                logger.info(f"No positions to close for {symbol}")
                 return True
             
             position_amt = float(position['positionAmt'])
@@ -1241,7 +1185,6 @@ class TradingExecutor:
                 # Close short position asynchronously
                 await asyncio.to_thread(self.close_short_position, symbol)
             
-            logger.info(f"All positions closed for {symbol}")
             return True
             
         except Exception as e:
@@ -1305,7 +1248,6 @@ class TradingExecutor:
         try:
             # Use the batch cancellation API
             result = self.client.futures_cancel_all_open_orders(symbol=symbol)
-            logger.info(f"Cancelled all orders for {symbol}: {result}")
             return True
         except BinanceAPIException as e:
             logger.error(f"Failed to cancel all orders for {symbol}: {e}")
@@ -1350,11 +1292,6 @@ class TradingExecutor:
             status = order.get('status', '')
             is_filled = status == 'FILLED'
             
-            logger.info(
-                f"Order {order_id} status: {status}, filled: {is_filled}, "
-                f"executedQty: {order.get('executedQty', 0)}, origQty: {order.get('origQty', 0)}"
-            )
-            
             return is_filled
             
         except Exception as e:
@@ -1389,7 +1326,6 @@ class TradingExecutor:
             
             # 使用优化后的数量
             if optimized_quantity != quantity:
-                logger.info(f"Using optimized quantity: {optimized_quantity:.6f} (original: {quantity:.6f})")
                 quantity = optimized_quantity
             
             # 检查保证金是否充足
@@ -1428,11 +1364,6 @@ class TradingExecutor:
                 )
                 return None
             
-            logger.info(
-                f"Order risk check passed for {symbol}: {risk_reason}. "
-                f"Risk info: {self.risk_control.get_risk_summary(risk_info)}"
-            )
-            
             # 下达限价单
             logger.info(
                 f"[ORDER] Creating LIMIT order for {symbol}: "
@@ -1454,7 +1385,6 @@ class TradingExecutor:
                 f"price={order.get('price')}"
             )
             
-            logger.info(f"Long position limit order placed for {symbol}")
             
             return {
                 'order': order,
@@ -1492,7 +1422,6 @@ class TradingExecutor:
             
             # 使用优化后的数量
             if optimized_quantity != quantity:
-                logger.info(f"Using optimized quantity: {optimized_quantity:.6f} (original: {quantity:.6f})")
                 quantity = optimized_quantity
             
             # 检查保证金是否充足
@@ -1531,11 +1460,6 @@ class TradingExecutor:
                 )
                 return None
             
-            logger.info(
-                f"Order risk check passed for {symbol}: {risk_reason}. "
-                f"Risk info: {self.risk_control.get_risk_summary(risk_info)}"
-            )
-            
             # 下达限价单
             logger.info(
                 f"[ORDER] Creating LIMIT order for {symbol}: "
@@ -1557,7 +1481,6 @@ class TradingExecutor:
                 f"price={order.get('price')}"
             )
             
-            logger.info(f"Short position limit order placed for {symbol}")
             
             return {
                 'order': order,
@@ -1595,11 +1518,6 @@ class TradingExecutor:
                 logger.error(f"Failed to round quantity for closing long position {symbol}")
                 return None
             
-            logger.info(
-                f"Closing long position with limit order: "
-                f"quantity={quantity:.6f} -> rounded={rounded_quantity:.6f}, "
-                f"limit_price={limit_price:.2f}"
-            )
             
             # 下达限价单平仓
             order = self.client.futures_create_order(
@@ -1612,7 +1530,6 @@ class TradingExecutor:
                 timeInForce='GTC'
             )
             
-            logger.info(f"Long position limit close order placed for {symbol}: {order}")
             return order
             
         except BinanceAPIException as e:
@@ -1645,11 +1562,6 @@ class TradingExecutor:
                 logger.error(f"Failed to round quantity for closing short position {symbol}")
                 return None
             
-            logger.info(
-                f"Closing short position with limit order: "
-                f"quantity={quantity:.6f} -> rounded={rounded_quantity:.6f}, "
-                f"limit_price={limit_price:.2f}"
-            )
             
             # 下达限价单平仓
             order = self.client.futures_create_order(
@@ -1662,7 +1574,6 @@ class TradingExecutor:
                 timeInForce='GTC'
             )
             
-            logger.info(f"Short position limit close order placed for {symbol}: {order}")
             return order
             
         except BinanceAPIException as e:
@@ -1725,11 +1636,6 @@ class TradingExecutor:
                         # 做空：使用阻力位（取较大值）
                         limit_price = max(base_limit_price, support_resistance_price)
                     
-                    logger.info(
-                        f"Using support/resistance price for {side} entry: "
-                        f"base={base_limit_price:.2f}, sr={support_resistance_price:.2f}, "
-                        f"final={limit_price:.2f}"
-                    )
                 else:
                     limit_price = base_limit_price
             else:
@@ -1748,12 +1654,6 @@ class TradingExecutor:
             if rounded_price is None:
                 logger.error(f"Failed to round limit price for {symbol}")
                 return None
-            
-            logger.info(
-                f"Calculated entry limit price for {symbol} {side}: "
-                f"current={current_price:.2f}, limit={rounded_price:.2f}, "
-                f"offset={((rounded_price/current_price)-1)*100:.2f}%"
-            )
             
             return rounded_price
             
@@ -1801,12 +1701,6 @@ class TradingExecutor:
             if rounded_price is None:
                 logger.error(f"Failed to round take profit limit price for {symbol}")
                 return None
-            
-            logger.info(
-                f"Calculated take profit limit price for {symbol} {side}: "
-                f"entry={entry_price:.2f}, limit={rounded_price:.2f}, "
-                f"profit={take_profit_percent*100:.2f}%"
-            )
             
             return rounded_price
             
@@ -2013,7 +1907,6 @@ class TradingExecutor:
             
             # 如果新数量等于原数量，无需修改
             if rounded_quantity == orig_qty:
-                logger.info(f"Quantity unchanged, no modification needed")
                 return current_order
             
             # 取消原订单
