@@ -993,6 +993,84 @@ class TradingExecutor:
             logger.error(f"Failed to get position for {symbol}: {e}")
             return None
     
+    def close_partial_position(self, symbol: str, close_ratio: float) -> Optional[Dict]:
+        """
+        Close a partial position by ratio (for partial take profit)
+        
+        Args:
+            symbol: Trading pair symbol
+            close_ratio: Ratio of position to close (0.0 to 1.0)
+            
+        Returns:
+            Order result or None
+        """
+        try:
+            # Get current position
+            position = self.get_position(symbol)
+            if not position:
+                logger.warning(f"No position to close for {symbol}")
+                return None
+            
+            position_amt = float(position['positionAmt'])
+            position_side = 'LONG' if position_amt > 0 else 'SHORT'
+            
+            # Calculate quantity to close
+            close_quantity = abs(position_amt) * close_ratio
+            
+            # Round quantity to match symbol precision
+            rounded_quantity = self.round_quantity(close_quantity, symbol)
+            if rounded_quantity is None:
+                logger.error(f"Failed to round quantity for partial close of {symbol}")
+                return None
+            
+            logger.info(
+                f"Closing partial position for {symbol}: "
+                f"side={position_side}, "
+                f"total_quantity={abs(position_amt):.6f}, "
+                f"close_ratio={close_ratio:.2f}, "
+                f"close_quantity={close_quantity:.6f} -> rounded={rounded_quantity:.6f}"
+            )
+            
+            # Place market order to close partial position
+            if position_side == 'LONG':
+                order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=SIDE_SELL,
+                    type=ORDER_TYPE_MARKET,
+                    quantity=rounded_quantity,
+                    reduceOnly=True
+                )
+            else:  # SHORT
+                order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=SIDE_BUY,
+                    type=ORDER_TYPE_MARKET,
+                    quantity=rounded_quantity,
+                    reduceOnly=True
+                )
+            
+            logger.info(f"Partial position close order placed for {symbol}: {order}")
+            
+            # Check if order is filled
+            order_id = order.get('orderId')
+            if order_id:
+                import time
+                time.sleep(1)  # Wait a moment for order to be processed
+                
+                is_filled = self.check_order_filled(symbol, order_id)
+                if not is_filled:
+                    logger.error(f"Partial close order {order_id} for {symbol} was not filled!")
+                    # Cancel any remaining open orders
+                    self.cancel_all_orders(symbol)
+                    return None
+            
+            logger.info(f"Partial position closed successfully for {symbol}")
+            return order
+            
+        except BinanceAPIException as e:
+            logger.error(f"Failed to close partial position for {symbol}: {e}")
+            return None
+    
     async def close_all_positions(self, symbol: str) -> bool:
         """
         Close all positions for a symbol asynchronously

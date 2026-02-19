@@ -801,3 +801,289 @@ class TechnicalAnalyzer:
             return 'MEDIUM'
         else:
             return 'WEAK'
+    
+    def identify_market_environment(self, df: pd.DataFrame,
+                                    adx_trend_threshold: float = 25,
+                                    adx_strong_threshold: float = 40,
+                                    ma_period: int = 20,
+                                    volatility_window: int = 20) -> Dict:
+        """
+        Identify market environment (Trending vs Ranging) using multiple indicators
+        
+        Args:
+            df: DataFrame with OHLCV data
+            adx_trend_threshold: ADX threshold for trend market (default: 25)
+            adx_strong_threshold: ADX threshold for strong trend (default: 40)
+            ma_period: MA period for trend direction (default: 20)
+            volatility_window: Window for volatility calculation (default: 20)
+            
+        Returns:
+            Dictionary containing:
+            - market_type: 'TRENDING' or 'RANGING'
+            - trend_direction: 'UP', 'DOWN', or 'NEUTRAL'
+            - trend_strength: 'STRONG', 'MODERATE', or 'WEAK'
+            - adx_value: Current ADX value
+            - volatility: Current volatility (ATR as percentage)
+            - ma_alignment: Whether MAs are aligned
+            - confidence: Confidence level (0-100)
+            - description: Human-readable description
+        """
+        try:
+            if df.empty or len(df) < max(adx_trend_threshold, ma_period, volatility_window) + 10:
+                return {
+                    'market_type': 'UNKNOWN',
+                    'trend_direction': 'NEUTRAL',
+                    'trend_strength': 'WEAK',
+                    'adx_value': 0,
+                    'volatility': 0,
+                    'ma_alignment': False,
+                    'confidence': 0,
+                    'description': 'Not enough data for market environment analysis'
+                }
+            
+            # 1. Calculate ADX for trend strength
+            adx = self.calculate_adx(df, period=14)
+            if adx is None or len(adx) == 0:
+                adx_value = 0
+            else:
+                adx_value = float(adx[-1])
+            
+            # 2. Calculate ATR for volatility
+            atr = self.calculate_atr(df, period=14)
+            if atr is None or len(atr) == 0:
+                atr_value = 0
+            else:
+                atr_value = float(atr[-1])
+            
+            current_price = df['close'].iloc[-1]
+            volatility = (atr_value / current_price) * 100 if current_price > 0 else 0
+            
+            # 3. Calculate MA for trend direction
+            ma = self.calculate_ma(df['close'], ma_period)
+            if ma is None or len(ma) < 2:
+                ma_direction = 'NEUTRAL'
+                ma_alignment = False
+            else:
+                current_ma = ma[-1]
+                previous_ma = ma[-2]
+                ma_direction = 'UP' if current_ma > previous_ma else 'DOWN'
+                
+                # Check if price is aligned with MA direction
+                price_above_ma = current_price > current_ma
+                ma_alignment = (ma_direction == 'UP' and price_above_ma) or \
+                              (ma_direction == 'DOWN' and not price_above_ma)
+            
+            # 4. Calculate price volatility over window
+            if len(df) >= volatility_window:
+                price_returns = df['close'].pct_change().tail(volatility_window).dropna()
+                price_volatility = price_returns.std() * 100 if len(price_returns) > 0 else 0
+            else:
+                price_volatility = 0
+            
+            # 5. Determine market type based on ADX
+            if adx_value >= adx_trend_threshold:
+                market_type = 'TRENDING'
+                
+                # Determine trend strength
+                if adx_value >= adx_strong_threshold:
+                    trend_strength = 'STRONG'
+                elif adx_value >= 30:
+                    trend_strength = 'MODERATE'
+                else:
+                    trend_strength = 'WEAK'
+            else:
+                market_type = 'RANGING'
+                trend_strength = 'WEAK'
+            
+            # 6. Determine trend direction
+            if market_type == 'TRENDING':
+                trend_direction = ma_direction
+            else:
+                # In ranging market, check recent price movement
+                if len(df) >= 10:
+                    recent_change = (df['close'].iloc[-1] - df['close'].iloc[-10]) / df['close'].iloc[-10] * 100
+                    if recent_change > 0.5:
+                        trend_direction = 'UP'
+                    elif recent_change < -0.5:
+                        trend_direction = 'DOWN'
+                    else:
+                        trend_direction = 'NEUTRAL'
+                else:
+                    trend_direction = 'NEUTRAL'
+            
+            # 7. Calculate confidence score
+            confidence = 0
+            
+            # ADX contribution (0-40 points)
+            if adx_value >= adx_strong_threshold:
+                confidence += 40
+            elif adx_value >= adx_trend_threshold:
+                confidence += 30
+            elif adx_value >= 20:
+                confidence += 20
+            else:
+                confidence += 10
+            
+            # MA alignment contribution (0-30 points)
+            if ma_alignment:
+                confidence += 30
+            elif ma_direction != 'NEUTRAL':
+                confidence += 15
+            
+            # Volatility contribution (0-20 points)
+            if volatility > 2:
+                confidence += 20
+            elif volatility > 1:
+                confidence += 15
+            elif volatility > 0.5:
+                confidence += 10
+            else:
+                confidence += 5
+            
+            # Price volatility contribution (0-10 points)
+            if price_volatility > 1:
+                confidence += 10
+            elif price_volatility > 0.5:
+                confidence += 5
+            
+            # 8. Generate description
+            if market_type == 'TRENDING':
+                if trend_strength == 'STRONG':
+                    description = f"强趋势市场 - {trend_direction}趋势，ADX={adx_value:.2f}"
+                elif trend_strength == 'MODERATE':
+                    description = f"中等趋势市场 - {trend_direction}趋势，ADX={adx_value:.2f}"
+                else:
+                    description = f"弱趋势市场 - {trend_direction}趋势，ADX={adx_value:.2f}"
+            else:
+                if volatility > 1.5:
+                    description = f"高波动震荡市场 - ADX={adx_value:.2f}，波动率={volatility:.2f}%"
+                elif volatility > 0.8:
+                    description = f"中等波动震荡市场 - ADX={adx_value:.2f}，波动率={volatility:.2f}%"
+                else:
+                    description = f"低波动震荡市场 - ADX={adx_value:.2f}，波动率={volatility:.2f}%"
+            
+            result = {
+                'market_type': market_type,
+                'trend_direction': trend_direction,
+                'trend_strength': trend_strength,
+                'adx_value': adx_value,
+                'volatility': volatility,
+                'price_volatility': price_volatility,
+                'ma_alignment': ma_alignment,
+                'confidence': confidence,
+                'description': description
+            }
+            
+            logger.info(
+                f"Market Environment: {market_type}, "
+                f"Direction: {trend_direction}, "
+                f"Strength: {trend_strength}, "
+                f"ADX: {adx_value:.2f}, "
+                f"Volatility: {volatility:.2f}%, "
+                f"Confidence: {confidence}%"
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error identifying market environment: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {
+                'market_type': 'UNKNOWN',
+                'trend_direction': 'NEUTRAL',
+                'trend_strength': 'WEAK',
+                'adx_value': 0,
+                'volatility': 0,
+                'price_volatility': 0,
+                'ma_alignment': False,
+                'confidence': 0,
+                'description': f'Error: {str(e)}'
+            }
+    
+    def check_market_environment_filter(self, df: pd.DataFrame,
+                                        kline_direction: str,
+                                        allow_ranging: bool = True,
+                                        min_confidence: int = 50) -> Tuple[bool, Dict]:
+        """
+        Check if market environment is suitable for trading
+        
+        Args:
+            df: DataFrame with OHLCV data
+            kline_direction: 'UP' or 'DOWN'
+            allow_ranging: Whether to allow trading in ranging markets (default: True)
+            min_confidence: Minimum confidence score required (default: 50)
+            
+        Returns:
+            Tuple of (is_valid, env_info) where env_info contains:
+            - market_type: 'TRENDING' or 'RANGING'
+            - trend_direction: 'UP', 'DOWN', or 'NEUTRAL'
+            - trend_strength: 'STRONG', 'MODERATE', or 'WEAK'
+            - confidence: Confidence score (0-100)
+            - condition: Condition description
+            - is_valid: Whether the environment is suitable
+        """
+        try:
+            # Get market environment
+            env = self.identify_market_environment(df)
+            
+            market_type = env['market_type']
+            trend_direction = env['trend_direction']
+            trend_strength = env['trend_strength']
+            confidence = env['confidence']
+            
+            is_valid = False
+            condition = ""
+            
+            # Check if confidence is sufficient
+            if confidence < min_confidence:
+                condition = f"市场环境信心不足 ({confidence}% < {min_confidence}%)"
+                is_valid = False
+            elif market_type == 'TRENDING':
+                # In trending market, check if direction aligns
+                if kline_direction == trend_direction:
+                    condition = f"趋势市场 - 方向一致 ({trend_direction}), 强度={trend_strength}"
+                    is_valid = True
+                else:
+                    condition = f"趋势市场 - 方向不一致 (K线={kline_direction}, 趋势={trend_direction})"
+                    is_valid = False
+            elif market_type == 'RANGING':
+                if allow_ranging:
+                    # In ranging market, allow trading but with caution
+                    condition = f"震荡市场 - 允许交易, 波动率={env['volatility']:.2f}%"
+                    is_valid = True
+                else:
+                    condition = f"震荡市场 - 不允许交易"
+                    is_valid = False
+            else:
+                condition = f"未知市场环境"
+                is_valid = False
+            
+            env_info = {
+                'market_type': market_type,
+                'trend_direction': trend_direction,
+                'trend_strength': trend_strength,
+                'confidence': confidence,
+                'volatility': env['volatility'],
+                'condition': condition,
+                'is_valid': is_valid,
+                'description': env['description']
+            }
+            
+            logger.info(
+                f"Market Environment Filter: "
+                f"type={market_type}, "
+                f"direction={trend_direction}, "
+                f"strength={trend_strength}, "
+                f"confidence={confidence}%, "
+                f"condition={condition}, "
+                f"valid={is_valid}"
+            )
+            
+            return is_valid, env_info
+            
+        except Exception as e:
+            logger.error(f"Error checking market environment filter: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, {'error': str(e)}

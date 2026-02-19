@@ -342,6 +342,10 @@ class TelegramClient:
                                        rsi_info: Optional[Dict] = None,
                                        macd_info: Optional[Dict] = None,
                                        adx_info: Optional[Dict] = None,
+                                       market_env_info: Optional[Dict] = None,
+                                       multi_timeframe_info: Optional[Dict] = None,
+                                       sentiment_info: Optional[Dict] = None,
+                                       ml_info: Optional[Dict] = None,
                                        signal_strength: str = 'MEDIUM',
                                        kline_time: Optional[int] = None) -> bool:
         """
@@ -359,6 +363,14 @@ class TelegramClient:
             range_info: Range information dictionary (optional)
             body_info: Body ratio information dictionary (optional)
             trend_info: Trend filter information dictionary (optional)
+            rsi_info: RSI filter information dictionary (optional)
+            macd_info: MACD filter information dictionary (optional)
+            adx_info: ADX filter information dictionary (optional)
+            market_env_info: Market environment information dictionary (optional)
+            multi_timeframe_info: Multi-timeframe analysis information dictionary (optional)
+            sentiment_info: Sentiment filter information dictionary (optional)
+            ml_info: ML filter information dictionary (optional)
+            signal_strength: Signal strength (STRONG/MEDIUM/WEAK)
             kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
@@ -367,7 +379,7 @@ class TelegramClient:
         message = self.formatter.format_indicator_analysis(
             symbol, sar_direction, direction_3m, direction_5m,
             sar_value, current_price, decision, volume_info, range_info, body_info, trend_info,
-            rsi_info, macd_info, adx_info, signal_strength, kline_time
+            rsi_info, macd_info, adx_info, market_env_info, multi_timeframe_info, sentiment_info, ml_info, signal_strength, kline_time
         )
         return await self.send_message(message, parse_mode='HTML')
     

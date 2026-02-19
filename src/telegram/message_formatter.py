@@ -428,6 +428,10 @@ class MessageFormatter:
                                    rsi_info: Optional[Dict] = None,
                                    macd_info: Optional[Dict] = None,
                                    adx_info: Optional[Dict] = None,
+                                   market_env_info: Optional[Dict] = None,
+                                   multi_timeframe_info: Optional[Dict] = None,
+                                   sentiment_info: Optional[Dict] = None,
+                                   ml_info: Optional[Dict] = None,
                                    signal_strength: str = 'MEDIUM',
                                    kline_time: Optional[int] = None) -> str:
         """
@@ -448,6 +452,10 @@ class MessageFormatter:
             rsi_info: RSI filter information dictionary (optional)
             macd_info: MACD filter information dictionary (optional)
             adx_info: ADX filter information dictionary (optional)
+            market_env_info: Market environment information dictionary (optional)
+            multi_timeframe_info: Multi-timeframe analysis information dictionary (optional)
+            sentiment_info: Sentiment filter information dictionary (optional)
+            ml_info: ML filter information dictionary (optional)
             signal_strength: Signal strength (STRONG/MEDIUM/WEAK)
             kline_time: K-line timestamp in milliseconds (optional)
             
@@ -545,6 +553,34 @@ class MessageFormatter:
             adx_value = adx_info.get('adx_value', 0)
             conditions.append(f"ADX {adx_value:.0f} {'✅' if adx_valid else '❌'}")
         
+        # Market environment condition
+        if market_env_info:
+            market_type = market_env_info.get('market_type', 'UNKNOWN')
+            confidence = market_env_info.get('confidence', 0)
+            env_valid = market_env_info.get('env_valid', False)
+            conditions.append(f"市场 {market_type[:2]} {confidence:.0f}% {'✅' if env_valid else '❌'}")
+        
+        # Multi-timeframe condition
+        if multi_timeframe_info:
+            aligned_count = multi_timeframe_info.get('aligned_count', 0)
+            total_count = multi_timeframe_info.get('total_count', 0)
+            mt_valid = aligned_count >= 2  # Assuming min aligned is 2
+            conditions.append(f"多周期 {aligned_count}/{total_count} {'✅' if mt_valid else '❌'}")
+        
+        # Sentiment condition
+        if sentiment_info:
+            fear_greed_value = sentiment_info.get('fear_greed_value', 0)
+            fear_greed_classification = sentiment_info.get('fear_greed_classification', 'N/A')
+            sentiment_valid = sentiment_info.get('sentiment_valid', False)
+            conditions.append(f"情绪 {fear_greed_value} ({fear_greed_classification[:2]}) {'✅' if sentiment_valid else '❌'}")
+        
+        # ML condition
+        if ml_info:
+            prediction = ml_info.get('prediction', 'N/A')
+            confidence = ml_info.get('confidence', 0)
+            ml_valid = ml_info.get('ml_valid', False)
+            conditions.append(f"ML {prediction[:2]} {confidence:.0%} {'✅' if ml_valid else '❌'}")
+        
         # Display conditions in compact format (2 per line)
         message += "<b>条件检查:</b>\n"
         for i in range(0, len(conditions), 2):
@@ -589,6 +625,19 @@ class MessageFormatter:
                 ma_direction = trend_info.get('ma_direction', 'UNKNOWN')
                 ma_direction_emoji = '📈' if ma_direction == 'UP' else '📉'
                 message += f"  📈 MA20: ${ma_value:,.2f} {ma_direction_emoji}\n"
+            
+            # Sentiment details
+            if sentiment_info:
+                fear_greed_value = sentiment_info.get('fear_greed_value', 0)
+                fear_greed_classification = sentiment_info.get('fear_greed_classification', 'N/A')
+                message += f"  😊 恐惧贪婪指数: {fear_greed_value} ({fear_greed_classification})\n"
+            
+            # ML details
+            if ml_info:
+                prediction = ml_info.get('prediction', 'N/A')
+                confidence = ml_info.get('confidence', 0)
+                score = ml_info.get('score', 0)
+                message += f"  🤖 ML预测: {prediction} (置信度: {confidence:.0%}, 得分: {score:.3f})\n"
         
         message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
