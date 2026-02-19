@@ -112,7 +112,6 @@ class BinanceWSClient:
                 timeout=30.0
             )
             self.is_connected = True
-            logger.info("✓ Successfully connected to Binance Futures WebSocket")
         except asyncio.TimeoutError:
             logger.error("✗ WebSocket connection timeout after 30 seconds")
             self.is_connected = False
@@ -383,8 +382,6 @@ class BinanceWSClient:
         try:
             async for message in self.websocket:
                 message_count += 1
-                if message_count % 100 == 0:
-                   logger.info(f"[WS] Received {message_count} messages so far...")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
             logger.error(f"[WS] ✗ Binance Futures WebSocket connection closed: {e}")

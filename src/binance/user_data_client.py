@@ -107,7 +107,6 @@ class UserDataClient:
                 timeout=30.0
             )
             self.is_connected = True
-            logger.info("✓ Successfully connected to user data stream")
             
             # Start keep-alive task
             self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
@@ -118,7 +117,6 @@ class UserDataClient:
                     self.trading_executor.get_account_balance
                 )
                 self.account_balance = balance
-                logger.info(f"[USER_WS] ✓ Initial balance: {balance:.2f} USDC")
             except Exception as e:
                 logger.error(f"[USER_WS] ✗ Failed to fetch initial balance: {e}")
                 import traceback
@@ -161,7 +159,7 @@ class UserDataClient:
                         self.listen_key
                     )
                     if success:
-                        logger.info("[USER_WS] ✓ Listen key kept alive")
+                        pass
                     else:
                         logger.error("[USER_WS] ✗ Failed to keep listen key alive")
                         # May need to reconnect
@@ -227,8 +225,6 @@ class UserDataClient:
                     available_balance = float(balance.get('cw', 0))
                     self.account_balance = available_balance
                     
-                    logger.info(f"[USER_WS] ✓ Account balance updated: {available_balance:.2f} USDC")
-
                     # Trigger callback
                     if self.callbacks['account_update']:
                         try:
@@ -362,7 +358,7 @@ class UserDataClient:
             data: Account config update data from Binance
         """
         try:
-            logger.info(f"Account config update: {data}")
+            pass
         except Exception as e:
             logger.error(f"Error processing account config update: {e}")
     
@@ -414,11 +410,6 @@ class UserDataClient:
             algo_id = algo_order.get('i', 0)
             algo_status = algo_order.get('X', '')
             order_type = algo_order.get('o', '')
-            
-            logger.info(
-                f"[USER_WS] Algo order update: {symbol} "
-                f"algoId={algo_id} status={algo_status} type={order_type}"
-            )
             
         except Exception as e:
             logger.error(f"[USER_WS] Error processing algo update event: {e}")

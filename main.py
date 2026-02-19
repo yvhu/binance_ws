@@ -39,8 +39,6 @@ class BinanceTelegramBot:
             format_string=log_config.get('format')
         )
         
-        self.logger.info("Initializing Binance Futures Telegram Bot...")
-        
         # Initialize components for futures trading
         self.data_handler = BinanceDataHandler()
         self.binance_client = BinanceWSClient(self.config)
@@ -237,7 +235,6 @@ class BinanceTelegramBot:
                 
                 # Only process closed klines for opening positions
                 if is_closed:
-                    self.logger.info(f"[KLINE] Calling on_5m_kline_close for {symbol}")
                     await self.strategy.on_5m_kline_close(kline_info)
             
         except Exception as e:
@@ -290,8 +287,6 @@ class BinanceTelegramBot:
                 price=current_price
             )
             
-            self.logger.info(f"Sent {signal_type} signal for {symbol}")
-            
         except Exception as e:
             self.logger.error(f"Error sending signal notification: {e}")
     
@@ -326,8 +321,6 @@ class BinanceTelegramBot:
             symbol = force_order_info.get('symbol', 'UNKNOWN')
             side = force_order_info.get('side', 'UNKNOWN')
             order_type = force_order_info.get('order_type', 'UNKNOWN')
-            
-            self.logger.info(f"Force order for {symbol}: {side} {order_type}")
             
             # Send liquidation alert to Telegram
             await self.telegram_client.send_error_message(
@@ -369,7 +362,6 @@ class BinanceTelegramBot:
                 if b.get('a') == 'USDC':  # 或 'USDT'，根据实际账户稳定币调整
                     balance = float(b.get('cw', 0))
                     self.user_data_client.account_balance = balance
-                    self.logger.info(f"Account balance updated via WebSocket: {balance:.2f} USDC")
                     break
             else:
                 self.logger.warning("USDC balance not found in ACCOUNT_UPDATE message")
@@ -390,8 +382,6 @@ class BinanceTelegramBot:
             side = order_info.get('side', 'UNKNOWN')
             executed_qty = order_info.get('executed_quantity', 0)
             avg_price = order_info.get('avg_price', 0)
-            
-            self.logger.info(f"Order update for {symbol}: {status} {order_type} {side}")
             
             # Check if this is a stop loss order that was filled
             if order_type == 'STOP_MARKET' and status == 'FILLED':
@@ -421,7 +411,6 @@ class BinanceTelegramBot:
                     # Update position manager
                     self.position_manager.close_position(symbol, avg_price)
                     
-                    self.logger.info(f"Stop loss triggered for {symbol}, position closed")
         except Exception as e:
             self.logger.error(f"Error processing order update: {e}")
     
@@ -436,7 +425,6 @@ class BinanceTelegramBot:
             symbol = position_info.get('symbol', 'UNKNOWN')
             amount = position_info.get('amount', 0)
             unrealized_pnl = position_info.get('unrealized_pnl', 0)
-            self.logger.info(f"Position update for {symbol}: {amount}, PnL: {unrealized_pnl:.2f}")
         except Exception as e:
             self.logger.error(f"Error processing position update: {e}")
     
@@ -638,11 +626,7 @@ class BinanceTelegramBot:
                     classification = sentiment_data.get('classification', 'N/A')
                     timestamp = sentiment_data.get('timestamp', 0)
                     
-                    self.logger.info(
-                        f"[SENTIMENT] Fear and Greed Index updated: "
-                        f"value={value}, classification={classification}, "
-                        f"timestamp={timestamp}"
-                    )
+                    pass
                 else:
                     self.logger.warning("[SENTIMENT] Failed to fetch Fear and Greed Index")
                 
@@ -689,10 +673,9 @@ class BinanceTelegramBot:
                 success = await asyncio.to_thread(self.ml_predictor.train_model, df)
                 
                 if success:
-                    self.logger.info(f"✓ ML model trained successfully for {symbol}")
                     return True
                 else:
-                    self.logger.warning(f"✗ Failed to train ML model for {symbol}")
+                    pass
             
             self.logger.warning("Failed to train ML model for any symbol")
             return False
@@ -711,7 +694,6 @@ class BinanceTelegramBot:
                 await asyncio.sleep(interval_hours * 3600)  # Convert hours to seconds
                 
                 # Retrain model
-                self.logger.info("Retraining ML model...")
                 await self._train_ml_model()
                 
             except asyncio.CancelledError:
