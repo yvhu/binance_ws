@@ -107,8 +107,15 @@ class TechnicalAnalyzer:
         """
         try:
             ma_array = talib.SMA(prices.values, timeperiod=period)
+            # Check if result is valid (not None and not all NaN)
+            if ma_array is None:
+                return None
             # Convert numpy array to pandas Series to support .iloc indexing
-            return pd.Series(ma_array, index=prices.index)
+            ma_series = pd.Series(ma_array, index=prices.index)
+            # Check if series is empty or all NaN
+            if ma_series.isna().all():
+                return None
+            return ma_series
         except Exception as e:
             logger.error(f"Error calculating MA{period}: {e}")
             return None
@@ -126,8 +133,15 @@ class TechnicalAnalyzer:
         """
         try:
             ema_array = talib.EMA(prices.values, timeperiod=period)
+            # Check if result is valid
+            if ema_array is None:
+                return None
             # Convert numpy array to pandas Series to support .iloc indexing
-            return pd.Series(ema_array, index=prices.index)
+            ema_series = pd.Series(ema_array, index=prices.index)
+            # Check if series is empty or all NaN
+            if ema_series.isna().all():
+                return None
+            return ema_series
         except Exception as e:
             logger.error(f"Error calculating EMA{period}: {e}")
             return None
@@ -144,8 +158,15 @@ class TechnicalAnalyzer:
         """
         try:
             rsi_array = talib.RSI(prices.values, timeperiod=self.rsi_period)
+            # Check if result is valid
+            if rsi_array is None:
+                return None
             # Convert numpy array to pandas Series to support .iloc indexing
-            return pd.Series(rsi_array, index=prices.index)
+            rsi_series = pd.Series(rsi_array, index=prices.index)
+            # Check if series is empty or all NaN
+            if rsi_series.isna().all():
+                return None
+            return rsi_series
         except Exception as e:
             logger.error(f"Error calculating RSI: {e}")
             return None
@@ -167,8 +188,17 @@ class TechnicalAnalyzer:
                 slowperiod=self.macd_slow,
                 signalperiod=self.macd_signal
             )
+            # Check if results are valid
+            if macd is None or signal is None or hist is None:
+                return None, None, None
             # Convert numpy arrays to pandas Series to support .iloc indexing
-            return pd.Series(macd, index=prices.index), pd.Series(signal, index=prices.index), pd.Series(hist, index=prices.index)
+            macd_series = pd.Series(macd, index=prices.index)
+            signal_series = pd.Series(signal, index=prices.index)
+            hist_series = pd.Series(hist, index=prices.index)
+            # Check if any series is empty or all NaN
+            if macd_series.isna().all() or signal_series.isna().all() or hist_series.isna().all():
+                return None, None, None
+            return macd_series, signal_series, hist_series
         except Exception as e:
             logger.error(f"Error calculating MACD: {e}")
             return None, None, None
@@ -190,8 +220,17 @@ class TechnicalAnalyzer:
                 nbdevup=self.bb_std,
                 nbdevdn=self.bb_std
             )
+            # Check if results are valid
+            if upper is None or middle is None or lower is None:
+                return None, None, None
             # Convert numpy arrays to pandas Series to support .iloc indexing
-            return pd.Series(upper, index=prices.index), pd.Series(middle, index=prices.index), pd.Series(lower, index=prices.index)
+            upper_series = pd.Series(upper, index=prices.index)
+            middle_series = pd.Series(middle, index=prices.index)
+            lower_series = pd.Series(lower, index=prices.index)
+            # Check if any series is empty or all NaN
+            if upper_series.isna().all() or middle_series.isna().all() or lower_series.isna().all():
+                return None, None, None
+            return upper_series, middle_series, lower_series
         except Exception as e:
             logger.error(f"Error calculating Bollinger Bands: {e}")
             return None, None, None
@@ -212,8 +251,15 @@ class TechnicalAnalyzer:
             low = df['low'].values
             close = df['close'].values
             atr_array = talib.ATR(high, low, close, timeperiod=period)
+            # Check if result is valid
+            if atr_array is None:
+                return None
             # Convert numpy array to pandas Series to support .iloc indexing
-            return pd.Series(atr_array, index=df.index)
+            atr_series = pd.Series(atr_array, index=df.index)
+            # Check if series is empty or all NaN
+            if atr_series.isna().all():
+                return None
+            return atr_series
         except Exception as e:
             logger.error(f"Error calculating ATR: {e}")
             return None
@@ -234,8 +280,15 @@ class TechnicalAnalyzer:
             low = df['low'].values
             close = df['close'].values
             adx_array = talib.ADX(high, low, close, timeperiod=period)
+            # Check if result is valid
+            if adx_array is None:
+                return None
             # Convert numpy array to pandas Series to support .iloc indexing
-            return pd.Series(adx_array, index=df.index)
+            adx_series = pd.Series(adx_array, index=df.index)
+            # Check if series is empty or all NaN
+            if adx_series.isna().all():
+                return None
+            return adx_series
         except Exception as e:
             logger.error(f"Error calculating ADX: {e}")
             return None
@@ -255,8 +308,16 @@ class TechnicalAnalyzer:
             low = df['low'].values
             close = df['close'].values
             slowk, slowd = talib.STOCH(high, low, close, fastk_period=14, slowk_period=3, slowd_period=3)
+            # Check if results are valid
+            if slowk is None or slowd is None:
+                return None, None
             # Convert numpy arrays to pandas Series to support .iloc indexing
-            return pd.Series(slowk, index=df.index), pd.Series(slowd, index=df.index)
+            slowk_series = pd.Series(slowk, index=df.index)
+            slowd_series = pd.Series(slowd, index=df.index)
+            # Check if any series is empty or all NaN
+            if slowk_series.isna().all() or slowd_series.isna().all():
+                return None, None
+            return slowk_series, slowd_series
         except Exception as e:
             logger.error(f"Error calculating Stochastic: {e}")
             return None, None
