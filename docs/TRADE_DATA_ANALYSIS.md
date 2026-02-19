@@ -95,26 +95,20 @@ docker-compose up -d
 python main.py
 ```
 
-### 2. 提取日志文件（Docker部署）
+### 2. 查看日志文件
 
-如果使用Docker部署，可以使用提取脚本将日志文件从容器中提取到本地：
+**重要**：Docker部署时，日志文件会**自动保存到本地**，无需手动提取。
 
-```bash
-# 提取日志文件到本地
-python extract_logs.py
+[`docker-compose.yml`](../docker-compose.yml:18) 已配置日志持久化：
 
-# 指定容器名称
-python extract_logs.py --container binance-telegram-bot
-
-# 指定本地保存目录
-python extract_logs.py --local-dir ./my_logs
+```yaml
+volumes:
+  - ./logs:/app/logs
 ```
 
-日志文件会被提取到 `./logs/temp_extract/` 目录，然后可以用于分析。
+容器内的 `/app/logs` 目录会自动映射到宿主机的 `./logs` 目录，所有日志文件都会实时保存到本地。
 
-### 3. 查看日志文件
-
-日志文件保存在 `./logs/trades/` 目录下（或提取后的目录）：
+日志文件保存在 `./logs/trades/` 目录下：
 
 ```bash
 # 查看交易数据
@@ -141,8 +135,8 @@ python analyze_trades.py
 # 分析最近7天的数据
 python analyze_trades.py --days 7
 
-# 使用提取后的数据目录
-python analyze_trades.py --data-dir ./logs/temp_extract/trades
+# 指定数据目录
+python analyze_trades.py --data-dir ./logs/trades
 
 # 指定输出文件
 python analyze_trades.py --output ./logs/trades/analysis_report.md
@@ -151,14 +145,16 @@ python analyze_trades.py --output ./logs/trades/analysis_report.md
 **完整流程示例：**
 
 ```bash
-# 1. 从Docker容器提取日志
-python extract_logs.py
+# 1. 启动交易机器人（日志会自动保存到 ./logs/trades/）
+docker-compose up -d
 
-# 2. 分析提取的数据
-python analyze_trades.py --data-dir ./logs/temp_extract/trades --days 30
+# 2. 等待一段时间收集数据（建议至少1-2周）
 
-# 3. 查看分析报告
-cat ./logs/temp_extract/trades/analysis_report.md
+# 3. 分析本地日志数据
+python analyze_trades.py --days 30
+
+# 4. 查看分析报告
+cat ./logs/trades/analysis_report.md
 ```
 
 ### 5. 查看分析报告
@@ -174,9 +170,11 @@ cat ./logs/temp_extract/trades/analysis_report.md
 
 ## Docker部署
 
-### 日志持久化配置
+### 日志自动保存
 
-`docker-compose.yml` 已配置日志持久化：
+**重要**：Docker部署时，日志文件会**自动实时保存到本地**，无需任何手动操作。
+
+[`docker-compose.yml`](../docker-compose.yml:18) 已配置日志持久化：
 
 ```yaml
 volumes:
@@ -184,7 +182,7 @@ volumes:
   - ./logs:/app/logs
 ```
 
-这会将容器内的 `/app/logs` 目录映射到宿主机的 `./logs` 目录。
+这个配置将容器内的 `/app/logs` 目录映射到宿主机的 `./logs` 目录，所有日志文件都会实时同步到本地。
 
 ### 访问日志文件
 
@@ -200,6 +198,20 @@ cat ./logs/trades/trades/trades_2026-02-19.csv
 # 查看分析报告
 cat ./logs/trades/analysis_report.md
 ```
+
+### 日志提取脚本（可选）
+
+虽然日志会自动保存，但如果需要将日志提取到其他目录，可以使用提取脚本：
+
+```bash
+# 提取日志到指定目录
+python extract_logs.py --local-dir ./my_logs
+```
+
+这个脚本主要用于：
+- 将日志备份到其他位置
+- 在没有Docker的环境中分析数据
+- 将日志分享给其他人
 
 ### 在容器内分析数据
 

@@ -17,6 +17,7 @@ from ..trading.position_manager import PositionManager
 from ..trading.trading_executor import TradingExecutor
 from ..binance.data_handler import BinanceDataHandler
 from ..telegram.telegram_client import TelegramClient
+from ..data.trade_logger import TradeLogger
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,9 @@ class FiveMinuteStrategy:
         self.telegram_client = telegram_client
         self.sentiment_analyzer = sentiment_analyzer or SentimentAnalyzer()
         self.ml_predictor = ml_predictor or MLPredictor()
+        
+        # Initialize trade logger
+        self.trade_logger = TradeLogger()
         
         # Strategy configuration
         self.check_interval = config.get_config("strategy", "check_interval", default="5m")
@@ -186,6 +190,10 @@ class FiveMinuteStrategy:
         
         # Track position entry time for time-based stop loss
         self.position_entry_times: Dict[str, int] = {}  # symbol -> entry timestamp (milliseconds)
+        
+        
+        # Track trade data for logging
+        self.active_trades: Dict[str, Dict] = {}  # symbol -> trade data
         
         # Track partial take profit status for each position
         self.partial_take_profit_status: Dict[str, Dict] = {}  # symbol -> {level_index: bool}
@@ -1388,6 +1396,7 @@ class FiveMinuteStrategy:
                     )
                     
                     # Send notification
+            
                     import asyncio
                     asyncio.create_task(self.telegram_client.send_message(
                         f"🛑 日亏损限制触发\n\n"
@@ -1620,6 +1629,7 @@ class FiveMinuteStrategy:
                     stop_loss_price = self._calculate_stop_loss_price(
                         symbol,
                         kline_5m,
+                    
                         direction_5m,
                         range_info.get('current_range', 0)
                     )
@@ -1666,6 +1676,7 @@ class FiveMinuteStrategy:
                     sentiment_info=sentiment_info,
                     ml_info=ml_info,
                     signal_strength=signal_strength,
+            
                     kline_time=kline_5m.get('close_time')
                 )
             
@@ -2042,10 +2053,12 @@ class FiveMinuteStrategy:
                         position['stop_loss_price'] = stop_loss_price
                     
                     # Initialize peak price tracking for take profit
+                    
                     self.position_peak_prices[symbol] = final_price
                     
                     # Record entry time for time-based stop loss
                     self.position_entry_times[symbol] = kline_time if kline_time else int(datetime.now().timestamp() * 1000)
+                    
                     
                     # Initialize partial take profit status
                     self.partial_take_profit_status[symbol] = {i: False for i in range(len(self.partial_take_profit_levels))}
@@ -2386,9 +2399,11 @@ class FiveMinuteStrategy:
                     await self.telegram_client.send_close_notification(
                         symbol=symbol,
                         side=position_side,
+                    
                         entry_price=entry_price,
                         exit_price=current_price if current_price else 0,
                         quantity=quantity,
+                    
                         pnl=pnl,
                         close_reason=f"反向吞没止损触发\n"
                                    f"上一根K线方向: {previous_direction}\n"
@@ -2401,6 +2416,9 @@ class FiveMinuteStrategy:
                     
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
+                    
+                    # Log trade data
+                    self._log_trade(symbol, position, current_price if current_price else 0, "Engulfing Stop Loss")
                     
                     # Clear local position state to prevent duplicate notifications
                     self.position_manager.close_position(symbol, current_price if current_price else 0)
@@ -2545,6 +2563,9 @@ class FiveMinuteStrategy:
                     
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
+                    
+                    # Log trade data
+                    self._log_trade(symbol, position, current_price if current_price else 0, "Realtime Engulfing Stop Loss")
                     
                     # 清除本地持仓状态
                     self.position_manager.close_position(symbol, current_price if current_price else 0)
@@ -2845,6 +2866,9 @@ class FiveMinuteStrategy:
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
                     
+                    # Log trade data
+                    self._log_trade(symbol, position, current_price, "Price Stop Loss")
+                    
                     # Clear local position state to prevent duplicate notifications
                     self.position_manager.close_position(symbol, current_price)
                     
@@ -3025,6 +3049,9 @@ class FiveMinuteStrategy:
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
                     
+                    # Log trade data
+                    self._log_trade(symbol, position, current_price, "Take Profit")
+                    
                     # Clear local position state
                     self.position_manager.close_position(symbol, current_price)
                     
@@ -3198,6 +3225,9 @@ class FiveMinuteStrategy:
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
                     
+                    # Log trade data
+                    self._log_trade(symbol, position, current_price, "Time Stop Loss")
+                    
                     # Clear local position state
                     self.position_manager.close_position(symbol, current_price)
                     
@@ -3339,3 +3369,157 @@ class FiveMinuteStrategy:
             import traceback
             logger.error(traceback.format_exc())
             return False
+    
+    def _log_trade(self, symbol: str, position: Dict, exit_price: float, close_reason: str) -> None:
+        """
+        Log trade data to CSV file
+        
+        Args:
+            symbol: Trading pair symbol
+            position: Position information
+            exit_price: Exit price
+            close_reason: Reason for closing position
+        """
+        try:
+            entry_price = position.get('entry_price', 0)
+            quantity = position.get('quantity', 0)
+            side = position.get('side', 'UNKNOWN')
+            
+            # Calculate PnL
+            pnl = 0.0
+            if exit_price and entry_price > 0:
+                if side == 'LONG':
+                    pnl = (exit_price - entry_price) * quantity
+                else:  # SHORT
+                    pnl = (entry_price - exit_price) * quantity
+            
+            # Calculate PnL percentage
+            pnl_percent = 0.0
+            if entry_price > 0 and quantity > 0:
+                pnl_percent = (pnl / (entry_price * quantity)) * 100
+            
+            # Calculate holding time
+            entry_time = position.get('entry_time', 0)
+            holding_time_minutes = 0
+            if entry_time > 0:
+                import time
+                current_time = int(time.time() * 1000)
+                holding_time_minutes = (current_time - entry_time) / 60000  # Convert to minutes
+            
+            # Log trade
+            self.trade_logger.log_trade(
+                trade_id=f"{symbol}_{int(datetime.now().timestamp())}",
+                timestamp=datetime.now(),
+                side=side,
+                entry_price=entry_price,
+                entry_time=datetime.fromtimestamp(entry_time / 1000) if entry_time > 0 else datetime.now(),
+                entry_reason='Strategy Signal',
+                exit_price=exit_price,
+                exit_time=datetime.now(),
+                close_reason=close_reason,
+                pnl=pnl,
+                pnl_percent=pnl_percent,
+                holding_time_minutes=holding_time_minutes,
+                signal_strength='MEDIUM',
+                market_type='UNKNOWN',
+                rsi=0,
+                adx=0,
+                macd=0,
+                macd_signal=0,
+                macd_hist=0,
+                atr=0,
+                volume_ratio=0,
+                body_ratio=0,
+                shadow_ratio=0,
+                ema_20=0,
+                ema_50=0,
+                ema_200=0,
+                higher_trend='SIDEWAYS',
+                lower_trend='5m',
+                sentiment_score=50,
+                sentiment_label='NEUTRAL',
+                ml_prediction='NEUTRAL',
+                ml_confidence=0
+            )
+            
+            logger.info(f"Trade logged for {symbol}: {side} PnL=${pnl:.2f}")
+            
+        except Exception as e:
+            logger.error(f"Error logging trade for {symbol}: {e}")
+    
+    def _log_trade(self, symbol: str, position: Dict, exit_price: float, close_reason: str) -> None:
+        """
+        Log trade data to CSV file
+        
+        Args:
+            symbol: Trading pair symbol
+            position: Position information
+            exit_price: Exit price
+            close_reason: Reason for closing position
+        """
+        try:
+            entry_price = position.get('entry_price', 0)
+            quantity = position.get('quantity', 0)
+            side = position.get('side', 'UNKNOWN')
+            
+            # Calculate PnL
+            pnl = 0.0
+            if exit_price and entry_price > 0:
+                if side == 'LONG':
+                    pnl = (exit_price - entry_price) * quantity
+                else:  # SHORT
+                    pnl = (entry_price - exit_price) * quantity
+            
+            # Calculate PnL percentage
+            pnl_percent = 0.0
+            if entry_price > 0 and quantity > 0:
+                pnl_percent = (pnl / (entry_price * quantity)) * 100
+            
+            # Calculate holding time
+            entry_time = position.get('entry_time', 0)
+            holding_time_minutes = 0
+            if entry_time > 0:
+                import time
+                current_time = int(time.time() * 1000)
+                holding_time_minutes = (current_time - entry_time) / 60000  # Convert to minutes
+            
+            # Log trade
+            self.trade_logger.log_trade(
+                trade_id=f"{symbol}_{int(datetime.now().timestamp())}",
+                timestamp=datetime.now(),
+                side=side,
+                entry_price=entry_price,
+                entry_time=datetime.fromtimestamp(entry_time / 1000) if entry_time > 0 else datetime.now(),
+                entry_reason='Strategy Signal',
+                exit_price=exit_price,
+                exit_time=datetime.now(),
+                close_reason=close_reason,
+                pnl=pnl,
+                pnl_percent=pnl_percent,
+                holding_time_minutes=holding_time_minutes,
+                signal_strength='MEDIUM',
+                market_type='UNKNOWN',
+                rsi=0,
+                adx=0,
+                macd=0,
+                macd_signal=0,
+                macd_hist=0,
+                atr=0,
+                volume_ratio=0,
+                body_ratio=0,
+                shadow_ratio=0,
+                ema_20=0,
+                ema_50=0,
+                ema_200=0,
+                higher_trend='SIDEWAYS',
+                lower_trend='5m',
+                sentiment_score=50,
+                sentiment_label='NEUTRAL',
+                ml_prediction='NEUTRAL',
+                ml_confidence=0
+            )
+            
+            logger.info(f"Trade logged for {symbol}: {side} PnL=${pnl:.2f}")
+            
+        except Exception as e:
+            logger.error(f"Error logging trade for {symbol}: {e}")
