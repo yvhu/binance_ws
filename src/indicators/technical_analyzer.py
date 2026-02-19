@@ -337,7 +337,7 @@ class TechnicalAnalyzer:
         
         for name, series in indicators.items():
             if series is not None and len(series) > 0:
-                latest[name] = float(series[-1])
+                latest[name] = float(series.iloc[-1])
         
         return latest
     
@@ -365,8 +365,8 @@ class TechnicalAnalyzer:
         ma_long = f'MA{sorted_periods[1]}'
         
         if ma_short in indicators and ma_long in indicators:
-            short_ma = indicators[ma_short][-1]
-            long_ma = indicators[ma_long][-1]
+            short_ma = indicators[ma_short].iloc[-1]
+            long_ma = indicators[ma_long].iloc[-1]
             
             if short_ma > long_ma:
                 return "UPTREND"
@@ -390,7 +390,7 @@ class TechnicalAnalyzer:
         if 'RSI' not in indicators:
             return None
         
-        rsi = indicators['RSI'][-1]
+        rsi = indicators['RSI'].iloc[-1]
         
         if rsi >= self.rsi_overbought:
             return "OVERBOUGHT"
@@ -421,8 +421,8 @@ class TechnicalAnalyzer:
             return None
         
         # Check for crossover
-        prev_macd_above = macd[-2] > signal[-2]
-        curr_macd_above = macd[-1] > signal[-1]
+        prev_macd_above = macd.iloc[-2] > signal.iloc[-2]
+        curr_macd_above = macd.iloc[-1] > signal.iloc[-1]
         
         if not prev_macd_above and curr_macd_above:
             return "BULLISH_CROSS"
@@ -481,8 +481,8 @@ class TechnicalAnalyzer:
         # Price vs Bollinger Bands
         if 'BB_Upper' in indicators and 'BB_Lower' in indicators:
             current_price = df['close'].iloc[-1]
-            bb_upper = indicators['BB_Upper'][-1]
-            bb_lower = indicators['BB_Lower'][-1]
+            bb_upper = indicators['BB_Upper'].iloc[-1]
+            bb_lower = indicators['BB_Lower'].iloc[-1]
             
             if current_price < bb_lower:
                 score += 1
@@ -579,8 +579,8 @@ class TechnicalAnalyzer:
             
             # Get current price and MA values
             current_price = df['close'].iloc[-1]
-            current_ma = ma[-1]
-            previous_ma = ma[-2]
+            current_ma = ma.iloc[-1]
+            previous_ma = ma.iloc[-2]
             
             # Determine MA direction (slope)
             ma_direction = 'UP' if current_ma > previous_ma else 'DOWN'
@@ -642,7 +642,7 @@ class TechnicalAnalyzer:
             if rsi is None or len(rsi) == 0:
                 return False, {'error': 'Failed to calculate RSI'}
             
-            rsi_value = float(rsi[-1])
+            rsi_value = float(rsi.iloc[-1])
             is_valid = False
             condition = ""
             
@@ -694,13 +694,13 @@ class TechnicalAnalyzer:
             if macd is None or len(macd) < 2:
                 return False, {'error': 'Failed to calculate MACD'}
             
-            macd_value = float(macd[-1])
-            signal_value = float(signal[-1])
-            histogram = float(hist[-1])
+            macd_value = float(macd.iloc[-1])
+            signal_value = float(signal.iloc[-1])
+            histogram = float(hist.iloc[-1])
             
             # Check for crossover
-            prev_macd_above = macd[-2] > signal[-2]
-            curr_macd_above = macd[-1] > signal[-1]
+            prev_macd_above = macd.iloc[-2] > signal.iloc[-2]
+            curr_macd_above = macd.iloc[-1] > signal.iloc[-1]
             
             crossover = None
             if not prev_macd_above and curr_macd_above:
@@ -773,7 +773,7 @@ class TechnicalAnalyzer:
             if adx is None or len(adx) == 0:
                 return False, {'error': 'Failed to calculate ADX'}
             
-            adx_value = float(adx[-1])
+            adx_value = float(adx.iloc[-1])
             
             # Determine market type and trend strength
             if adx_value >= adx_min_trend:
@@ -887,14 +887,14 @@ class TechnicalAnalyzer:
             if adx is None or len(adx) == 0:
                 adx_value = 0
             else:
-                adx_value = float(adx[-1])
+                adx_value = float(adx.iloc[-1])
             
             # 2. Calculate ATR for volatility
             atr = self.calculate_atr(df, period=14)
             if atr is None or len(atr) == 0:
                 atr_value = 0
             else:
-                atr_value = float(atr[-1])
+                atr_value = float(atr.iloc[-1])
             
             current_price = df['close'].iloc[-1]
             volatility = (atr_value / current_price) * 100 if current_price > 0 else 0
@@ -905,8 +905,8 @@ class TechnicalAnalyzer:
                 ma_direction = 'NEUTRAL'
                 ma_alignment = False
             else:
-                current_ma = ma[-1]
-                previous_ma = ma[-2]
+                current_ma = ma.iloc[-1]
+                previous_ma = ma.iloc[-2]
                 ma_direction = 'UP' if current_ma > previous_ma else 'DOWN'
                 
                 # Check if price is aligned with MA direction
