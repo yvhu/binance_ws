@@ -42,48 +42,32 @@ class BinanceTelegramBot:
         self.logger.info("Initializing Binance Futures Telegram Bot...")
         
         # Initialize components for futures trading
-        self.logger.info("Initializing data handler...")
         self.data_handler = BinanceDataHandler()
-        
-        self.logger.info("Initializing Binance WebSocket client...")
         self.binance_client = BinanceWSClient(self.config)
-        
-        self.logger.info("Initializing Telegram client...")
         self.telegram_client = TelegramClient(self.config)
         
         # User data client will be initialized after trading executor
         self.user_data_client: Optional[UserDataClient] = None
         
-        self.logger.info("Initializing technical analyzer...")
         self.technical_analyzer = TechnicalAnalyzer(self.config.indicators_config)
         
         # Initialize trading components
-        self.logger.info("Initializing trading executor (this may take a moment)...")
         try:
             self.trading_executor = TradingExecutor(self.config)
-            self.logger.info("✓ Trading executor initialized successfully")
         except Exception as e:
             self.logger.error(f"✗ Failed to initialize trading executor: {e}")
             raise
         
-        self.logger.info("Initializing position manager...")
         self.position_manager = PositionManager(
             trading_executor=self.trading_executor,
             config=self.config,
             data_handler=self.data_handler
         )
         
-        self.logger.info("Initializing user data stream client...")
         self.user_data_client = UserDataClient(self.config, self.trading_executor)
-        self.logger.info("✓ User data stream client initialized")
-        
-        self.logger.info("Initializing sentiment analyzer...")
         self.sentiment_analyzer = SentimentAnalyzer()
-        
-        self.logger.info("Initializing ML predictor...")
         self.ml_predictor = MLPredictor()
         
-        self.logger.info("Initializing 5-minute strategy...")
         self.strategy = FiveMinuteStrategy(
             self.config,
             self.technical_analyzer,
@@ -94,8 +78,6 @@ class BinanceTelegramBot:
             self.sentiment_analyzer,
             self.ml_predictor
         )
-        
-        self.logger.info("All components initialized successfully")
         
         # Bot state
         self.is_running = False
@@ -119,36 +101,24 @@ class BinanceTelegramBot:
     async def initialize(self) -> None:
         """Initialize all components for futures trading"""
         try:
-            self.logger.info("Initializing Telegram bot...")
             # Initialize Telegram client
             await self.telegram_client.initialize()
             await self.telegram_client.start_bot()
-            self.logger.info("Telegram bot initialized successfully")
             
-            self.logger.info("Setting trading executor for data handler...")
             # Set trading executor for data handler to fetch historical data
             self.data_handler.set_trading_executor(self.trading_executor)
             
-            self.logger.info("⚠️ Syncing positions from exchange to ensure state persistence...")
             # Sync positions from Binance exchange to avoid "logic empty but real has position" risk
             await self.position_manager.sync_from_exchange(self.config.binance_symbols)
-            self.logger.info("✓ Position sync completed")
             
-            self.logger.info("Loading historical kline data...")
             # Load historical klines for all configured symbols and intervals
             await self._load_historical_data()
             
-            self.logger.info("Registering WebSocket callbacks...")
             # Register Binance Futures WebSocket callbacks
             self._register_callbacks()
-            self.logger.info("WebSocket callbacks registered successfully")
             
-            self.logger.info("Registering user data stream callbacks...")
             # Register user data stream callbacks
             self._register_user_data_callbacks()
-            self.logger.info("User data stream callbacks registered successfully")
-            
-            self.logger.info("All components initialized successfully for futures trading")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize components: {e}")
@@ -201,12 +171,8 @@ class BinanceTelegramBot:
                         limit=100
                     )
                     
-                    if success:
-                        self.logger.info(f"✓ Loaded historical data for {symbol} {interval}")
-                    else:
+                    if not success:
                         self.logger.warning(f"✗ Failed to load historical data for {symbol} {interval}")
-            
-            self.logger.info("Historical data loading completed")
             
         except Exception as e:
             self.logger.error(f"Error loading historical data: {e}")
@@ -534,23 +500,18 @@ class BinanceTelegramBot:
         self.is_running = True
 
         try:
-            self.logger.info("Starting bot initialization...")
             await self.initialize()
-
-            self.logger.info("Starting WebSocket services...")
 
             # --- 关键改动：后台启动 WebSocket，不阻塞主协程 ---
             self.user_data_task = asyncio.create_task(self.user_data_client.start())
             self.market_data_task = asyncio.create_task(self.binance_client.start())
             
             # 实时止损检查已集成到ticker回调中，无需单独任务
-            self.logger.info("✓ Real-time stop loss checking enabled (via WebSocket ticker)")
             
             # 等待一小段时间让任务开始执行
             await asyncio.sleep(0.1)
             
             # 等待WebSocket连接并获取价格数据 (最多 10 秒)
-            self.logger.info("Waiting for WebSocket connection and price data...")
             for i in range(10):
                 await asyncio.sleep(1)
                 # 检查是否有持仓需要更新止损价格
@@ -559,18 +520,14 @@ class BinanceTelegramBot:
                     first_symbol = list(self.position_manager.positions.keys())[0]
                     test_price = self.data_handler.get_current_price(first_symbol)
                     if test_price is not None:
-                        self.logger.info(f"✓ Price data received for {first_symbol}: {test_price:.2f}")
                         break
                 else:
                     # 没有持仓，直接退出等待
-                    self.logger.info("No positions to monitor, skipping price data wait")
                     break
             
             # 更新所有持仓的止损价格
             if self.position_manager.positions:
-                self.logger.info("Updating stop loss prices for existing positions...")
                 await self.position_manager.update_stop_loss_prices()
-                self.logger.info("✓ Stop loss prices updated")
             
             # 检查任务状态
             if self.user_data_task.done():
@@ -588,47 +545,33 @@ class BinanceTelegramBot:
                 await asyncio.sleep(1)
                 balance = self.user_data_client.get_account_balance()
                 if balance is not None and balance > 0:
-                    self.logger.info(f"✓ Account balance received: {balance:.2f} USDC")
                     break
 
             # 如果还是没有余额，用 REST API 主动获取
             if balance is None or balance == 0:
-                self.logger.warning(
-                    "WebSocket balance not available, fetching via REST..."
-                )
                 balance = await asyncio.to_thread(self.trading_executor.get_account_balance)
                 self.user_data_client.account_balance = balance
-                self.logger.info(f"✓ Account balance fetched via REST: {balance:.2f} USDC")
 
             # 发送启动通知
             await self.send_startup_notification()
 
-            self.logger.info("Bot started successfully")
-
             # --- 启动情绪指标更新任务 ---
             if self.config.get_config("strategy", "sentiment_filter_enabled", default=False):
-                self.logger.info("Starting sentiment update task...")
                 self.sentiment_update_task = asyncio.create_task(self._update_sentiment_periodically())
-                self.logger.info("✓ Sentiment update task started")
 
             # --- 启动ML模型训练任务 ---
             if self.config.get_config("strategy", "ml_filter_enabled", default=False):
-                self.logger.info("Starting ML model training...")
                 await self._train_ml_model()
                 
                 # 启动定期重新训练任务
                 retrain_interval = self.config.get_config("strategy", "ml_retrain_interval", default=24)
-                self.logger.info(f"Starting ML retrain task (every {retrain_interval} hours)...")
                 self.ml_retrain_task = asyncio.create_task(self._retrain_ml_periodically(retrain_interval))
-                self.logger.info("✓ ML retrain task started")
 
             # --- 主协程可以继续做其他任务，WebSocket 永远在后台运行 ---
-            self.logger.info("Entering main event loop...")
             loop_count = 0
             while self.is_running:
                 loop_count += 1
                 if loop_count % 60 == 0:  # 每分钟记录一次
-                    self.logger.info(f"Main loop running... (iteration {loop_count})")
                     # 检查 WebSocket 任务状态
                     if self.user_data_task:
                         if self.user_data_task.done():
@@ -638,8 +581,6 @@ class BinanceTelegramBot:
                                 self.logger.warning(f"User data task result: {result}")
                             except Exception as e:
                                 self.logger.error(f"User data task exception: {e}")
-                        # else:
-                            self.logger.info("User data task is still running")
                     else:
                         self.logger.warning("User data task is None!")
                     
@@ -651,8 +592,6 @@ class BinanceTelegramBot:
                                 self.logger.warning(f"Market data task result: {result}")
                             except Exception as e:
                                 self.logger.error(f"Market data task exception: {e}")
-                        # else:
-                        #     self.logger.info("Market data task is still running")
                     else:
                         self.logger.warning("Market data task is None!")
                     
@@ -675,14 +614,7 @@ class BinanceTelegramBot:
                                 self.logger.warning(f"ML retrain task result: {result}")
                             except Exception as e:
                                 self.logger.error(f"ML retrain task exception: {e}")
-                    
-                    # 检查 WebSocket 连接状态
-                    if self.binance_client:
-                        self.logger.info(f"Binance WS connected: {self.binance_client.is_connected}")
-                    if self.user_data_client:
-                        self.logger.info(f"User data WS connected: {self.user_data_client.is_connected}")
                 await asyncio.sleep(1)
-            self.logger.info("Main event loop exited")
 
         except asyncio.CancelledError:
             self.logger.info("Bot cancelled")

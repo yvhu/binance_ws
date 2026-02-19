@@ -133,7 +133,7 @@ class SentimentAnalyzer:
                     reason = f"Sentiment too greedy ({value} > {max_greed}) for LONG entry"
                     logger.warning(f"[SENTIMENT] {reason}")
                 else:
-                    logger.info(f"[SENTIMENT] Sentiment {value} ({classification}) is suitable for LONG entry")
+                    pass
             else:  # DOWN
                 # For SHORT entry: sentiment should not be too fearful
                 # Allow entry when sentiment is in greed or neutral range
@@ -142,7 +142,7 @@ class SentimentAnalyzer:
                     reason = f"Sentiment too fearful ({value} < {min_greed}) for SHORT entry"
                     logger.warning(f"[SENTIMENT] {reason}")
                 else:
-                    logger.info(f"[SENTIMENT] Sentiment {value} ({classification}) is suitable for SHORT entry")
+                    pass
             
             sentiment_info = {
                 'value': value,

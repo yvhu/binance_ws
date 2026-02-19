@@ -535,15 +535,6 @@ class TechnicalAnalyzer:
                 'ma_period': ma_period
             }
             
-            logger.info(
-                f"Trend filter check: "
-                f"direction={kline_direction}, "
-                f"price={current_price:.2f}, "
-                f"MA{ma_period}={current_ma:.2f}, "
-                f"MA_direction={ma_direction}, "
-                f"price_vs_MA={price_vs_ma}, "
-                f"trend_aligned={trend_aligned}"
-            )
             
             return trend_aligned, trend_info
             
@@ -596,13 +587,6 @@ class TechnicalAnalyzer:
                 'is_valid': is_valid
             }
             
-            logger.info(
-                f"RSI filter check: "
-                f"direction={kline_direction}, "
-                f"RSI={rsi_value:.2f}, "
-                f"condition={condition}, "
-                f"valid={is_valid}"
-            )
             
             return is_valid, rsi_info
             
@@ -681,16 +665,6 @@ class TechnicalAnalyzer:
                 'is_valid': is_valid
             }
             
-            logger.info(
-                f"MACD filter check: "
-                f"direction={kline_direction}, "
-                f"MACD={macd_value:.4f}, "
-                f"Signal={signal_value:.4f}, "
-                f"Histogram={histogram:.4f}, "
-                f"Crossover={crossover}, "
-                f"condition={condition}, "
-                f"valid={is_valid}"
-            )
             
             return is_valid, macd_info
             
@@ -753,13 +727,6 @@ class TechnicalAnalyzer:
                 'is_valid': is_valid
             }
             
-            logger.info(
-                f"ADX filter check: "
-                f"ADX={adx_value:.2f}, "
-                f"market_type={market_type}, "
-                f"trend_strength={trend_strength}, "
-                f"valid={is_valid}"
-            )
             
             return is_valid, adx_info
             
@@ -974,14 +941,6 @@ class TechnicalAnalyzer:
                 'description': description
             }
             
-            logger.info(
-                f"Market Environment: {market_type}, "
-                f"Direction: {trend_direction}, "
-                f"Strength: {trend_strength}, "
-                f"ADX: {adx_value:.2f}, "
-                f"Volatility: {volatility:.2f}%, "
-                f"Confidence: {confidence}%"
-            )
             
             return result
             
@@ -1070,15 +1029,6 @@ class TechnicalAnalyzer:
                 'description': env['description']
             }
             
-            logger.info(
-                f"Market Environment Filter: "
-                f"type={market_type}, "
-                f"direction={trend_direction}, "
-                f"strength={trend_strength}, "
-                f"confidence={confidence}%, "
-                f"condition={condition}, "
-                f"valid={is_valid}"
-            )
             
             return is_valid, env_info
             

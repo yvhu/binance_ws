@@ -61,7 +61,6 @@ class BinanceWSClient:
         """
         if message_type in self.callbacks:
             self.callbacks[message_type].append(callback)
-            logger.info(f"Registered callback for {message_type}")
     
     def _build_stream_url(self) -> str:
         """
@@ -98,13 +97,10 @@ class BinanceWSClient:
     
     async def connect(self) -> None:
         """Connect to Binance WebSocket"""
-        logger.info("[WS] Starting connection process...")
         url = self._build_stream_url()
-        logger.info(f"[WS] Connecting to URL: {url}")
         
         try:
             # Set timeout to avoid hanging
-            logger.info("[WS] Attempting WebSocket connection with 30s timeout...")
             self.websocket = await asyncio.wait_for(
                 websockets.connect(
                     url,
@@ -117,7 +113,6 @@ class BinanceWSClient:
             )
             self.is_connected = True
             logger.info("✓ Successfully connected to Binance Futures WebSocket")
-            logger.info(f"[WS] Connection state: is_connected={self.is_connected}")
         except asyncio.TimeoutError:
             logger.error("✗ WebSocket connection timeout after 30 seconds")
             self.is_connected = False
@@ -131,13 +126,9 @@ class BinanceWSClient:
     
     async def disconnect(self) -> None:
         """Disconnect from Binance WebSocket"""
-        logger.info("[WS] Disconnecting from Binance WebSocket...")
         if self.websocket:
             await self.websocket.close()
             self.is_connected = False
-            logger.info("Disconnected from Binance Futures WebSocket")
-        else:
-            logger.warning("[WS] No active WebSocket connection to disconnect")
     
     async def _handle_message(self, message: str) -> None:
         """
@@ -147,21 +138,16 @@ class BinanceWSClient:
             message: JSON message string
         """
         try:
-            # logger.debug(f"[WS] Raw message received (length: {len(message)} bytes)")
             data = json.loads(message)
             
             # For combined streams, message has 'stream' and 'data' fields
             if 'stream' in data and 'data' in data:
-                stream_name = data['stream']
                 event_data = data['data']
-                logger.info(f"[WS] ✓ Received message from stream: {stream_name}")
             else:
                 event_data = data
-                logger.info(f"[WS] ✓ Received message without stream field")
             
             if 'e' in event_data:
                 event_type = event_data['e']
-                logger.info(f"[WS] ✓ Event type: {event_type}")
                 
                 if event_type == '24hrTicker':
                     # logger.debug(f"[WS] Processing ticker event...")
@@ -204,7 +190,6 @@ class BinanceWSClient:
             data: Ticker data from Binance
         """
         symbol = data.get('s', 'UNKNOWN')
-        logger.info(f"[WS] Processing ticker for {symbol}")
         self.latest_data[f"{symbol}_ticker"] = data
         
         ticker_info = {
@@ -217,11 +202,6 @@ class BinanceWSClient:
             'volume': float(data.get('v', 0)),
             'timestamp': data.get('E', 0)
         }
-        
-        logger.info(f"[WS] Ticker info: {symbol} price={ticker_info['current_price']}")
-        
-        callback_count = len(self.callbacks['ticker'])
-        logger.info(f"[WS] Calling {callback_count} ticker callback(s)...")
         
         for idx, callback in enumerate(self.callbacks['ticker']):
             try:
@@ -238,8 +218,6 @@ class BinanceWSClient:
                 logger.error(f"[WS] ✗ Error in ticker callback {idx+1}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-        
-        logger.info(f"[WS] All ticker callbacks completed")
     
     def _process_kline(self, data: Dict) -> None:
         """
@@ -252,12 +230,6 @@ class BinanceWSClient:
         symbol = data.get('s', 'UNKNOWN')
         interval = kline.get('i', '1m')
         is_closed = kline.get('x', False)
-        
-        # Log all kline events, especially 15m
-        # if interval == '15m':
-        #     logger.info(f"[WS] ✓ Processing 15m kline: {symbol} closed={is_closed}")
-        # else:
-        #     logger.debug(f"[WS] ✓ Processing kline: {symbol} {interval} closed={is_closed}")
         
         self.latest_data[f"{symbol}_kline_{interval}"] = data
         
@@ -275,11 +247,6 @@ class BinanceWSClient:
             'number_of_trades': kline.get('n', 0)
         }
         
-        logger.info(f"[WS] Kline info: {symbol} {interval} O={kline_info['open']} H={kline_info['high']} L={kline_info['low']} C={kline_info['close']}")
-        
-        callback_count = len(self.callbacks['kline'])
-        logger.info(f"[WS] Calling {callback_count} kline callback(s)...")
-        
         for idx, callback in enumerate(self.callbacks['kline']):
             try:
                 # logger.debug(f"[WS] Calling kline callback {idx+1}/{callback_count}...")
@@ -295,20 +262,6 @@ class BinanceWSClient:
                 logger.error(f"[WS] ✗ Error in kline callback {idx+1}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-        
-        logger.info(f"[WS] All kline callbacks completed")
-        
-        # Add explicit logging for 5m kline close to help debug strategy callback
-        if interval == '5m' and is_closed:
-            logger.info(f"[WS] 5m kline closed for {symbol}, triggering strategy callbacks if any")
-            for callback in self.callbacks['kline']:
-                # Check if callback is coroutine function and named on_5m_kline_close or similar
-                if hasattr(callback, '__name__') and callback.__name__ == 'on_5m_kline_close':
-                    logger.info(f"[WS] Calling on_5m_kline_close callback for {symbol}")
-                    if asyncio.iscoroutinefunction(callback):
-                        asyncio.create_task(callback(kline_info))
-                    else:
-                        callback(kline_info)
     
     def _process_trade(self, data: Dict) -> None:
         """
@@ -318,7 +271,6 @@ class BinanceWSClient:
             data: Trade data from Binance
         """
         symbol = data.get('s', 'UNKNOWN')
-        logger.info(f"[WS] Processing trade for {symbol}")
         
         trade_info = {
             'symbol': symbol,
@@ -328,9 +280,6 @@ class BinanceWSClient:
             'time': data.get('T', 0),
             'is_buyer_maker': data.get('m', False)
         }
-        
-        callback_count = len(self.callbacks['trade'])
-        logger.info(f"[WS] Calling {callback_count} trade callback(s)...")
         
         for idx, callback in enumerate(self.callbacks['trade']):
             try:
@@ -347,8 +296,6 @@ class BinanceWSClient:
                 logger.error(f"[WS] ✗ Error in trade callback {idx+1}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-        
-        logger.info(f"[WS] All trade callbacks completed")
     
     def _process_mark_price(self, data: Dict) -> None:
         """
@@ -358,7 +305,6 @@ class BinanceWSClient:
             data: Mark price data from Binance Futures
         """
         symbol = data.get('s', 'UNKNOWN')
-        logger.info(f"[WS] Processing mark price for {symbol}")
         
         mark_price_info = {
             'symbol': symbol,
@@ -369,9 +315,6 @@ class BinanceWSClient:
             'next_funding_time': data.get('T', 0),
             'timestamp': data.get('E', 0)
         }
-        
-        callback_count = len(self.callbacks.get('mark_price', []))
-        logger.info(f"[WS] Calling {callback_count} mark price callback(s)...")
         
         for idx, callback in enumerate(self.callbacks.get('mark_price', [])):
             try:
@@ -388,8 +331,6 @@ class BinanceWSClient:
                 logger.error(f"[WS] ✗ Error in mark price callback {idx+1}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-        
-        logger.info(f"[WS] All mark price callbacks completed")
     
     def _process_force_order(self, data: Dict) -> None:
         """
@@ -400,7 +341,6 @@ class BinanceWSClient:
         """
         order = data.get('o', {})
         symbol = data.get('s', 'UNKNOWN')
-        logger.info(f"[WS] Processing force order for {symbol}")
         
         force_order_info = {
             'symbol': symbol,
@@ -415,9 +355,6 @@ class BinanceWSClient:
             'total_filled_quantity': float(order.get('Z', 0)),
             'timestamp': data.get('E', 0)
         }
-        
-        callback_count = len(self.callbacks.get('force_order', []))
-        logger.info(f"[WS] Calling {callback_count} force order callback(s)...")
         
         for idx, callback in enumerate(self.callbacks.get('force_order', [])):
             try:
@@ -434,17 +371,13 @@ class BinanceWSClient:
                 logger.error(f"[WS] ✗ Error in force order callback {idx+1}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-        
-        logger.info(f"[WS] All force order callbacks completed")
     
     async def listen(self) -> None:
         """Listen for incoming messages from WebSocket"""
-        logger.info("[WS] Starting listen loop...")
         if not self.is_connected or not self.websocket:
             logger.error("[WS] ✗ Cannot listen: WebSocket is not connected")
             raise RuntimeError("WebSocket is not connected")
         
-        logger.info("[WS] ✓ WebSocket is connected, starting to receive messages...")
         message_count = 0
         
         try:
@@ -472,13 +405,10 @@ class BinanceWSClient:
     async def start(self) -> None:
         """Start WebSocket connection and listening with continuous reconnection"""
         attempt = 0
-        logger.info(f"Starting BinanceWSClient with continuous reconnection")
         
         while True:  # Continuous reconnection loop
             try:
-                logger.info(f"Connection attempt {attempt + 1}")
                 await self.connect()
-                logger.info("Starting to listen for messages...")
                 await self.listen()
                 logger.warning("Listen loop ended unexpectedly")
                 

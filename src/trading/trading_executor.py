@@ -51,11 +51,6 @@ class TradingExecutor:
         # Cache for leverage settings
         self.leverage_cache = set()  # Track symbols with leverage already set
         
-        logger.info(
-            f"Trading executor initialized with {self.leverage}x leverage, "
-            f"max_loss_per_trade={self.max_loss_per_trade_percent*100:.1f}%, "
-            f"fee_rate={self.fee_rate:.4f}, safety_margin={self.safety_margin:.4f}"
-        )
         
         # Initialize leverage for all configured symbols
         # 延迟杠杆初始化，等待WebSocket连接后再执行
@@ -71,17 +66,12 @@ class TradingExecutor:
         """Initialize leverage for all configured symbols"""
         symbols = self.config.binance_symbols
         
-        logger.info(f"Initializing leverage for {len(symbols)} symbol(s)...")
-        logger.info(f"Symbols to configure: {symbols}")
-        
         for symbol in symbols:
-            logger.info(f"Processing symbol: {symbol}")
             try:
                 import time
                 
                 # Cancel all open orders before setting leverage
                 # This prevents "Position side cannot be changed if there exists open orders" error
-                logger.info(f"Cancelling all orders for {symbol} before setting leverage...")
                 self.cancel_all_orders(symbol)
                 
                 # Wait for cancellations to be processed
@@ -96,7 +86,6 @@ class TradingExecutor:
                     total_orders = len(orders) if orders else 0
                     
                     if total_orders == 0:
-                        logger.info(f"✓ All orders cancelled for {symbol} (attempt {attempt + 1})")
                         break
                     
                     logger.warning(
@@ -136,7 +125,6 @@ class TradingExecutor:
                 success = self.set_leverage(symbol)
                 if success:
                     self.leverage_cache.add(symbol)
-                    logger.info(f"✓ Leverage {self.leverage}x set for {symbol}")
                 else:
                     logger.error(f"✗ Failed to set leverage for {symbol}")
             except Exception as e:
@@ -144,13 +132,11 @@ class TradingExecutor:
                 import traceback
                 logger.error(traceback.format_exc())
         
-        logger.info(f"Leverage initialization complete. Set for {len(self.leverage_cache)}/{len(symbols)} symbols")
     
     def _cleanup_stale_orders(self) -> None:
         """Cancel all open orders on startup to clean up any stale orders"""
         symbols = self.config.binance_symbols
         
-        logger.info(f"Cleaning up stale orders for {len(symbols)} symbol(s)...")
         
         for symbol in symbols:
             try:
@@ -158,16 +144,11 @@ class TradingExecutor:
                 if orders:
                     logger.warning(f"Found {len(orders)} stale order(s) for {symbol}, cancelling...")
                     success = self.cancel_all_orders(symbol)
-                    if success:
-                        logger.info(f"✓ Cleaned up stale orders for {symbol}")
-                    else:
+                    if not success:
                         logger.error(f"✗ Failed to clean up stale orders for {symbol}")
-                else:
-                    logger.info(f"No stale orders found for {symbol}")
             except Exception as e:
                 logger.error(f"Error cleaning up stale orders for {symbol}: {e}")
         
-        logger.info("Stale order cleanup complete")
     
     def set_margin_type(self, symbol: str, margin_type: str = 'CROSSED') -> bool:
         """
@@ -185,7 +166,6 @@ class TradingExecutor:
                 marginType=margin_type,
                 symbol=symbol
             )
-            logger.info(f"Margin type set to {margin_type} for {symbol}")
             return True
         except BinanceAPIException as e:
             # If margin type is already set, it's not an error
@@ -216,7 +196,6 @@ class TradingExecutor:
                 leverage=self.leverage,
                 symbol=symbol
             )
-            logger.info(f"Leverage set to {self.leverage}x for {symbol}")
             return True
         except BinanceAPIException as e:
             logger.error(f"Failed to set leverage for {symbol}: {e}")
@@ -252,7 +231,6 @@ class TradingExecutor:
         try:
             # futures_stream_get_listen_key returns the listen key string directly
             listen_key = self.client.futures_stream_get_listen_key()
-            logger.info(f"✓ Listen key obtained: {listen_key}")
             return listen_key
         except BinanceAPIException as e:
             logger.error(f"Failed to get listen key: {e}")
@@ -386,10 +364,6 @@ class TradingExecutor:
                 )
                 return None
             
-            logger.info(
-                f"Quantity rounded: {quantity:.6f} -> {rounded_qty:.6f} "
-                f"(step: {step_size:.6f}, min: {min_qty:.6f}, max: {max_qty:.6f}, precision: {precision})"
-            )
             
             return rounded_qty
             
@@ -497,26 +471,10 @@ class TradingExecutor:
             # Use the smaller of the two limits
             actual_position_value = min(max_position_value_by_risk, max_position_value_by_leverage)
             
-            logger.info(
-                f"Risk-based position sizing:\n"
-                f"  Balance: {balance:.2f} USDC\n"
-                f"  Max loss per trade: {self.max_loss_per_trade_percent*100:.1f}%\n"
-                f"  Stop loss distance: {stop_loss_distance_percent*100:.2f}%\n"
-                f"  Max position by risk: {max_position_value_by_risk:.2f} USDC\n"
-                f"  Max position by leverage: {max_position_value_by_leverage:.2f} USDC\n"
-                f"  Actual position value: {actual_position_value:.2f} USDC\n"
-                f"  Effective leverage: {actual_position_value/balance:.2f}x"
-            )
         else:
             # No stop loss distance provided, use full leverage (old behavior)
             actual_position_value = max_position_value_by_leverage
             
-            logger.info(
-                f"Full leverage position sizing (no stop loss distance provided):\n"
-                f"  Balance: {balance:.2f} USDC\n"
-                f"  Leverage: {self.leverage}x\n"
-                f"  Position value: {actual_position_value:.2f} USDC"
-            )
         
         # Calculate opening fee based on position value
         opening_fee = actual_position_value * self.fee_rate
@@ -536,16 +494,6 @@ class TradingExecutor:
         # Calculate required margin
         required_margin = available_position_value / self.leverage
         
-        logger.info(
-            f"Position size calculation details:\n"
-            f"  Opening fee: {opening_fee:.4f} USDC ({self.fee_rate*100:.2f}%)\n"
-            f"  Safety margin: {safety_margin_amount:.4f} USDC ({self.safety_margin*100:.1f}%)\n"
-            f"  Available position value: {available_position_value:.2f} USDC\n"
-            f"  Required margin: {required_margin:.2f} USDC\n"
-            f"  Closing fee (est): {closing_fee:.4f} USDC\n"
-            f"  Raw quantity: {quantity:.6f}\n"
-            f"  Current price: {current_price:.2f} USDC"
-        )
         
         # Validate that required margin doesn't exceed balance
         if required_margin > balance:
@@ -561,7 +509,6 @@ class TradingExecutor:
             logger.error(f"Failed to round quantity for {symbol}")
             return None
         
-        logger.info(f"Final quantity after rounding: {rounded_quantity:.6f}")
         
         return rounded_quantity
     
@@ -635,7 +582,6 @@ class TradingExecutor:
             
             if is_sufficient:
                 # 保证金充足，使用期望数量
-                logger.info(f"Margin sufficient for {symbol}, using desired quantity: {desired_quantity:.6f}")
                 return desired_quantity
             
             # 保证金不足，计算最大可用数量
@@ -662,14 +608,6 @@ class TradingExecutor:
                 logger.error(f"Failed to round optimized quantity for {symbol}")
                 return None
             
-            logger.info(
-                f"Optimized quantity for {symbol}:\n"
-                f"  Desired: {desired_quantity:.6f}\n"
-                f"  Optimized: {rounded_quantity:.6f}\n"
-                f"  Available balance: {available_balance:.2f} USDC\n"
-                f"  Available value: {available_value:.2f} USDC\n"
-                f"  Effective leverage: {effective_leverage:.2f}x"
-            )
             
             # 再次验证优化后的数量
             is_sufficient, _, _ = self.check_available_margin(symbol, rounded_quantity, current_price)
@@ -815,7 +753,6 @@ class TradingExecutor:
             }
             
             # Place market order
-            logger.info(f"[ORDER] Creating MARKET order for {symbol}: side=BUY, quantity={quantity:.6f}")
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=SIDE_BUY,
@@ -823,8 +760,6 @@ class TradingExecutor:
                 quantity=quantity
             )
             
-            logger.info(f"[ORDER] MARKET order created: orderId={order.get('orderId')}, status={order.get('status')}, type={order.get('type')}")
-            logger.info(f"[ORDER] Order details: {order}")
             
             # Check if order is filled
             order_id = order.get('orderId')
@@ -922,7 +857,6 @@ class TradingExecutor:
             }
             
             # Place market order
-            logger.info(f"[ORDER] Creating MARKET order for {symbol}: side=SELL, quantity={quantity:.6f}")
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=SIDE_SELL,
@@ -930,8 +864,6 @@ class TradingExecutor:
                 quantity=quantity
             )
             
-            logger.info(f"[ORDER] MARKET order created: orderId={order.get('orderId')}, status={order.get('status')}, type={order.get('type')}")
-            logger.info(f"[ORDER] Order details: {order}")
             
             # Check if order is filled
             order_id = order.get('orderId')
@@ -1224,9 +1156,7 @@ class TradingExecutor:
             True if successful
         """
         try:
-            logger.info(f"[CANCEL_ORDER] Attempting to cancel order {order_id} for {symbol}")
             result = self.client.futures_cancel_order(symbol=symbol, orderId=order_id)
-            logger.info(f"[CANCEL_ORDER] ✓ Order {order_id} cancelled successfully for {symbol}: {result}")
             return True
         except BinanceAPIException as e:
             logger.error(f"[CANCEL_ORDER] ✗ Failed to cancel order {order_id} for {symbol}: {e}")
@@ -1365,10 +1295,6 @@ class TradingExecutor:
                 return None
             
             # 下达限价单
-            logger.info(
-                f"[ORDER] Creating LIMIT order for {symbol}: "
-                f"side=BUY, quantity={quantity:.6f}, price={limit_price:.2f}"
-            )
             
             order = self.client.futures_create_order(
                 symbol=symbol,
@@ -1379,11 +1305,6 @@ class TradingExecutor:
                 timeInForce='GTC'  # Good Till Cancel
             )
             
-            logger.info(
-                f"[ORDER] LIMIT order created: orderId={order.get('orderId')}, "
-                f"status={order.get('status')}, type={order.get('type')}, "
-                f"price={order.get('price')}"
-            )
             
             
             return {
@@ -1461,10 +1382,6 @@ class TradingExecutor:
                 return None
             
             # 下达限价单
-            logger.info(
-                f"[ORDER] Creating LIMIT order for {symbol}: "
-                f"side=SELL, quantity={quantity:.6f}, price={limit_price:.2f}"
-            )
             
             order = self.client.futures_create_order(
                 symbol=symbol,
@@ -1475,11 +1392,6 @@ class TradingExecutor:
                 timeInForce='GTC'  # Good Till Cancel
             )
             
-            logger.info(
-                f"[ORDER] LIMIT order created: orderId={order.get('orderId')}, "
-                f"status={order.get('status')}, type={order.get('type')}, "
-                f"price={order.get('price')}"
-            )
             
             
             return {
@@ -1796,11 +1708,6 @@ class TradingExecutor:
                 logger.error(f"Failed to round new price for {symbol}")
                 return None
             
-            logger.info(
-                f"[MODIFY_ORDER] Modifying order {order_id} for {symbol}: "
-                f"old_price={current_order.get('price')}, new_price={rounded_price}, "
-                f"side={side}, quantity={orig_qty}"
-            )
             
             # 取消原订单
             cancel_success = self.cancel_order(symbol, order_id)
@@ -1832,10 +1739,6 @@ class TradingExecutor:
                     timeInForce='GTC'
                 )
             
-            logger.info(
-                f"[MODIFY_ORDER] ✓ Order modified successfully: "
-                f"old_order_id={order_id}, new_order_id={new_order.get('orderId')}"
-            )
             
             return new_order
             
@@ -1899,11 +1802,6 @@ class TradingExecutor:
                 logger.error(f"Failed to round new quantity for {symbol}")
                 return None
             
-            logger.info(
-                f"[MODIFY_ORDER] Modifying order {order_id} quantity for {symbol}: "
-                f"old_qty={orig_qty}, new_qty={rounded_quantity}, "
-                f"executed_qty={executed_qty}, additional_qty={additional_qty}"
-            )
             
             # 如果新数量等于原数量，无需修改
             if rounded_quantity == orig_qty:
@@ -1942,10 +1840,6 @@ class TradingExecutor:
                     timeInForce='GTC'
                 )
             
-            logger.info(
-                f"[MODIFY_ORDER] ✓ Order quantity modified successfully: "
-                f"old_order_id={order_id}, new_order_id={new_order.get('orderId')}"
-            )
             
             return new_order
             
@@ -2003,10 +1897,6 @@ class TradingExecutor:
             
             # 如果价格偏差在合理范围内，无需调整
             if price_deviation <= price_away_threshold:
-                logger.info(
-                    f"Order {order_id} price is within threshold: "
-                    f"deviation={price_deviation*100:.2f}% (max: {price_away_threshold*100:.2f}%)"
-                )
                 return current_order
             
             # 计算新的限价单价格
@@ -2020,14 +1910,8 @@ class TradingExecutor:
             
             # 如果新价格与当前价格相同，无需调整
             if abs(new_limit_price - current_order_price) < 0.0001:
-                logger.info(f"New price is same as current price, no adjustment needed")
                 return current_order
             
-            logger.info(
-                f"[SMART_ADJUST] Adjusting order {order_id} price for {symbol}: "
-                f"old_price={current_order_price}, new_price={new_limit_price}, "
-                f"current_price={current_price}, deviation={price_deviation*100:.2f}%"
-            )
             
             # 修改订单价格
             modified_order = self.modify_limit_order_price(symbol, order_id, new_limit_price)

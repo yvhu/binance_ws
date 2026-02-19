@@ -70,7 +70,6 @@ class TradeLogger:
             "trades_by_symbol": {}
         }
         
-        logger.info(f"TradeLogger initialized with log directory: {self.log_dir}")
     
     def _init_csv_files(self):
         """初始化CSV文件并写入表头"""
@@ -116,7 +115,6 @@ class TradeLogger:
                 with open(file_path, 'w', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)
                     writer.writerow(headers)
-                logger.info(f"Created CSV file: {file_path}")
     
     def log_trade(self, trade_data: Dict):
         """
@@ -172,7 +170,6 @@ class TradeLogger:
             # 更新性能统计
             self._update_performance_stats(trade_data)
             
-            logger.info(f"Trade logged: {trade_data.get('symbol')} {trade_data.get('side')} PnL=${trade_data.get('pnl', 0):.2f}")
             
         except Exception as e:
             logger.error(f"Error logging trade: {e}")
@@ -357,7 +354,6 @@ class TradeLogger:
     
     def _rotate_logs(self, new_date: str):
         """日志轮转"""
-        logger.info(f"Rotating logs from {self.current_date} to {new_date}")
         self.current_date = new_date
         
         # 更新文件路径

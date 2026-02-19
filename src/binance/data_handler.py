@@ -43,7 +43,6 @@ class BinanceDataHandler:
         """
         symbol = ticker_info['symbol']
         self.ticker_data[symbol] = ticker_info
-        logger.debug(f"Updated ticker data for {symbol}")
     
     def process_kline(self, kline_info: Dict) -> None:
         """
@@ -62,21 +61,17 @@ class BinanceDataHandler:
         # Only add closed klines or update the last one if not closed
         if kline_info['is_closed']:
             self.kline_data[key].append(kline_info)
-            logger.debug(f"Added closed kline for {symbol} {interval}, total count: {len(self.kline_data[key])}")
         elif self.kline_data[key]:
             # Update the last kline if it's the same one
             last_kline = self.kline_data[key][-1]
             if last_kline['open_time'] == kline_info['open_time']:
                 self.kline_data[key][-1] = kline_info
-                logger.debug(f"Updated unclosed kline for {symbol} {interval}")
             else:
                 # New unclosed kline, add it
                 self.kline_data[key].append(kline_info)
-                logger.debug(f"Added new unclosed kline for {symbol} {interval}, total count: {len(self.kline_data[key])}")
         else:
             # First kline (unclosed), add it
             self.kline_data[key].append(kline_info)
-            logger.debug(f"Added first unclosed kline for {symbol} {interval}, total count: {len(self.kline_data[key])}")
     
     def process_trade(self, trade_info: Dict) -> None:
         """
@@ -91,7 +86,6 @@ class BinanceDataHandler:
             self.trade_data[symbol] = deque(maxlen=self.max_history)
         
         self.trade_data[symbol].append(trade_info)
-        logger.debug(f"Added trade data for {symbol}")
     
     def process_mark_price(self, mark_price_info: Dict) -> None:
         """
@@ -102,7 +96,6 @@ class BinanceDataHandler:
         """
         symbol = mark_price_info['symbol']
         self.mark_price_data[symbol] = mark_price_info
-        logger.debug(f"Updated mark price data for {symbol}")
     
     def get_ticker(self, symbol: str) -> Optional[Dict]:
         """
@@ -253,7 +246,6 @@ class BinanceDataHandler:
             self.trade_data.clear()
             self.mark_price_data.clear()
         
-        logger.info(f"Cleared data for {symbol if symbol else 'all symbols'}")
     
     def set_trading_executor(self, trading_executor) -> None:
         """
@@ -263,7 +255,6 @@ class BinanceDataHandler:
             trading_executor: Trading executor instance
         """
         self.trading_executor = trading_executor
-        logger.info("Trading executor set for data handler")
     
     def load_historical_klines(self, symbol: str, interval: str, limit: int = 100) -> bool:
         """
@@ -282,7 +273,6 @@ class BinanceDataHandler:
             return False
         
         try:
-            logger.info(f"Fetching {limit} historical klines for {symbol} {interval}...")
             
             # Fetch historical klines from Binance API
             klines = self.trading_executor.client.futures_klines(
@@ -318,7 +308,6 @@ class BinanceDataHandler:
                 
                 self.kline_data[key].append(kline_info)
             
-            logger.info(f"✓ Loaded {len(klines)} historical klines for {symbol} {interval}")
             return True
             
         except Exception as e:

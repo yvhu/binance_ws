@@ -54,7 +54,6 @@ class TelegramClient:
             
             # Test connection
             await self.bot.get_me()
-            logger.info("Telegram bot initialized successfully")
             
         except TelegramError as e:
             logger.error(f"Failed to initialize Telegram bot: {e}")
@@ -64,7 +63,6 @@ class TelegramClient:
         """Shutdown Telegram bot"""
         if self.application:
             await self.application.shutdown()
-            logger.info("Telegram bot shutdown complete")
     
     def _check_rate_limit(self) -> bool:
         """
@@ -117,7 +115,6 @@ class TelegramClient:
                 parse_mode=parse_mode,
                 disable_web_page_preview=True
             )
-            logger.debug(f"Message sent to Telegram: {message[:50]}...")
             return True
             
         except TimedOut:
@@ -226,7 +223,6 @@ class TelegramClient:
         # Start the bot
         await self.application.initialize()
         await self.application.start()
-        logger.info("Telegram bot started with command handlers")
     
     async def _start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command"""

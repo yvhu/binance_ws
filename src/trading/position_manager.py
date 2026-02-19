@@ -77,7 +77,6 @@ class PositionManager:
         
         self.positions[symbol] = position
         
-        logger.info(f"Opened {side} position for {symbol} at {entry_price}, quantity: {quantity}")
         
         return position
     
@@ -109,7 +108,6 @@ class PositionManager:
         
         position['pnl'] = pnl
         
-        logger.info(f"Closed {position['side']} position for {symbol} at {exit_price}, PnL: {pnl}")
         
         # Remove from active positions
         del self.positions[symbol]
@@ -148,7 +146,6 @@ class PositionManager:
             logger.warning("Trading executor not provided, cannot sync positions from exchange")
             return
         
-        logger.info(f"Syncing positions from exchange for {len(symbols)} symbol(s)...")
         
         import asyncio
         
@@ -194,12 +191,6 @@ class PositionManager:
                                     else:  # SHORT
                                         stop_loss_price = current_price + final_stop_loss_distance
                                     
-                                    logger.info(
-                                        f"Calculated stop loss for synced position {symbol}: "
-                                        f"current_price={current_price:.2f}, "
-                                        f"range={current_range:.2f}, "
-                                        f"stop_loss_price={stop_loss_price:.2f}"
-                                    )
                             except Exception as e:
                                 logger.error(f"Error calculating stop loss for synced position {symbol}: {e}")
                         
@@ -229,12 +220,10 @@ class PositionManager:
                     else:
                         # No position on exchange, ensure local state is also empty
                         if symbol in self.positions:
-                            logger.info(f"Removing local position for {symbol} (no position on exchange)")
                             del self.positions[symbol]
                 else:
                     # No position on exchange, ensure local state is also empty
                     if symbol in self.positions:
-                        logger.info(f"Removing local position for {symbol} (no position on exchange)")
                         del self.positions[symbol]
                         
             except Exception as e:
@@ -242,7 +231,6 @@ class PositionManager:
                 import traceback
                 logger.error(traceback.format_exc())
         
-        logger.info(f"Position sync completed. Current positions: {list(self.positions.keys())}")
     
     async def update_stop_loss_prices(self) -> None:
         """
@@ -250,14 +238,12 @@ class PositionManager:
         This should be called after WebSocket is connected to ensure current price is available
         """
         if not self.positions:
-            logger.info("No positions to update stop loss prices")
             return
         
         if not self.data_handler or not self.config:
             logger.warning("Data handler or config not available, cannot update stop loss prices")
             return
         
-        logger.info(f"Updating stop loss prices for {len(self.positions)} position(s)...")
         
         import asyncio
         
@@ -301,18 +287,10 @@ class PositionManager:
                 # Update stop loss price in position
                 position['stop_loss_price'] = stop_loss_price
                 
-                logger.info(
-                    f"✓ Updated stop loss for {symbol}: "
-                    f"side={position_side}, "
-                    f"current_price={current_price:.2f}, "
-                    f"range={current_range:.2f}, "
-                    f"stop_loss_price={stop_loss_price:.2f}"
-                )
                 
             except Exception as e:
                 logger.error(f"Error updating stop loss for {symbol}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
         
-        logger.info("Stop loss price update completed")
     

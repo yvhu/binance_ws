@@ -27,7 +27,6 @@ class MLPredictor:
         self.min_samples = 50  # Minimum samples required for training
         self.prediction_window = 5  # Predict price direction for next 5 candles
         
-        logger.info("ML predictor initialized")
     
     def prepare_features(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
         """
@@ -145,7 +144,6 @@ class MLPredictor:
             True if training successful, False otherwise
         """
         try:
-            logger.info("Starting ML model training...")
             
             # Prepare features
             features = self.prepare_features(df)
@@ -182,7 +180,6 @@ class MLPredictor:
             self._calculate_feature_importance(features, labels)
             
             self.is_trained = True
-            logger.info("ML model trained successfully")
             
             return True
             
@@ -217,7 +214,6 @@ class MLPredictor:
                     if col in self.model['weights']:
                         self.model['weights'][col] = importance[col] / total
             
-            logger.info(f"Feature importance: {self.model['weights']}")
             
         except Exception as e:
             logger.error(f"Error calculating feature importance: {e}")
@@ -321,11 +317,6 @@ class MLPredictor:
                 'threshold': threshold
             }
             
-            logger.info(
-                f"[ML_PREDICTION] prediction={prediction}, "
-                f"score={normalized_score:.3f}, "
-                f"confidence={prediction_info['confidence']:.3f}"
-            )
             
             return prediction, prediction_info
             
@@ -358,14 +349,10 @@ class MLPredictor:
             
             # Check if confidence meets minimum requirement
             if confidence < min_confidence:
-                logger.info(
-                    f"[ML_FILTER] Confidence too low: {confidence:.3f} < {min_confidence:.3f}, skipping"
-                )
                 return True, None  # Don't filter, just skip
             
             # Check if prediction aligns with kline direction
             if prediction == 'NEUTRAL':
-                logger.info("[ML_FILTER] Prediction is NEUTRAL, skipping")
                 return True, None
             
             is_aligned = prediction == kline_direction
@@ -379,13 +366,6 @@ class MLPredictor:
                 'ml_valid': is_aligned
             }
             
-            logger.info(
-                f"[ML_FILTER] prediction={prediction}, "
-                f"direction={kline_direction}, "
-                f"aligned={is_aligned}, "
-                f"confidence={confidence:.3f}, "
-                f"valid={is_aligned}"
-            )
             
             return is_aligned, ml_info
             

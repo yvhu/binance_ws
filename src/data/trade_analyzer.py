@@ -28,8 +28,6 @@ class TradeAnalyzer:
         self.signals_dir = self.data_dir / "signals"
         self.indicators_dir = self.data_dir / "indicators"
         self.performance_dir = self.data_dir / "performance"
-        
-        logger.info(f"TradeAnalyzer initialized with data directory: {self.data_dir}")
     
     def load_trades(self, days: int = 30) -> pd.DataFrame:
         """

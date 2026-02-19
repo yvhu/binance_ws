@@ -58,7 +58,6 @@ class UserDataClient:
             callback: Callback function to handle account updates
         """
         self.callbacks['account_update'] = callback
-        logger.info("Registered callback for account updates")
     
     def on_order_update(self, callback: Callable) -> None:
         """
@@ -68,7 +67,6 @@ class UserDataClient:
             callback: Callback function to handle order updates
         """
         self.callbacks['order_update'] = callback
-        logger.info("Registered callback for order updates")
     
     def on_position_update(self, callback: Callable) -> None:
         """
@@ -78,7 +76,6 @@ class UserDataClient:
             callback: Callback function to handle position updates
         """
         self.callbacks['position_update'] = callback
-        logger.info("Registered callback for position updates")
     
     def on_error(self, callback: Callable) -> None:
         """
@@ -88,14 +85,10 @@ class UserDataClient:
             callback: Callback function to handle errors
         """
         self.callbacks['error'] = callback
-        logger.info("Registered callback for errors")
     
     async def connect(self) -> None:
         """Connect to Binance user data stream"""
-        logger.info("[USER_WS] Starting connection process...")
-        
         # Get listen key
-        logger.info("[USER_WS] Fetching listen key from Binance API...")
         self.listen_key = await asyncio.to_thread(
             self.trading_executor.get_listen_key
         )
@@ -104,30 +97,22 @@ class UserDataClient:
             logger.error("[USER_WS] ✗ Failed to get listen key: listen_key is None or empty")
             raise RuntimeError("Failed to get listen key")
         
-        logger.info(f"[USER_WS] ✓ Listen key obtained: {self.listen_key[:20]}...")
-        
         # Build WebSocket URL per Binance docs: wss://fstream.binance.com/ws/<listenKey>
         url = f"wss://fstream.binance.com/ws/{self.listen_key}"
-        logger.info(f"[USER_WS] Connecting to URL: wss://fstream.binance.com/ws/{self.listen_key[:20]}...")
         
         try:
             # Set timeout to avoid hanging
-            logger.info("[USER_WS] Attempting WebSocket connection with 30s timeout...")
             self.websocket = await asyncio.wait_for(
                 websockets.connect(url),
                 timeout=30.0
             )
             self.is_connected = True
             logger.info("✓ Successfully connected to user data stream")
-            logger.info(f"[USER_WS] Connection state: is_connected={self.is_connected}")
             
             # Start keep-alive task
-            logger.info("[USER_WS] Starting keep-alive task...")
             self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
-            logger.info("[USER_WS] ✓ Keep-alive task started")
             
             # 主动用 REST 获取一次余额（否则可能永远收不到）
-            logger.info("[USER_WS] Fetching initial balance via REST API...")
             try:
                 balance = await asyncio.to_thread(
                     self.trading_executor.get_account_balance
@@ -151,37 +136,26 @@ class UserDataClient:
     
     async def disconnect(self) -> None:
         """Disconnect from user data stream"""
-        logger.info("[USER_WS] Disconnecting from user data stream...")
-        
         if self.keep_alive_task:
-            logger.info("[USER_WS] Cancelling keep-alive task...")
             self.keep_alive_task.cancel()
             try:
                 await self.keep_alive_task
-                logger.info("[USER_WS] ✓ Keep-alive task cancelled")
             except asyncio.CancelledError:
-                logger.info("[USER_WS] Keep-alive task cancelled (expected)")
+                pass
         
         if self.websocket:
-            logger.info("[USER_WS] Closing WebSocket connection...")
             await self.websocket.close()
             self.is_connected = False
-            logger.info("Disconnected from user data stream")
-        else:
-            logger.warning("[USER_WS] No active WebSocket connection to disconnect")
     
     async def _keep_alive_loop(self) -> None:
         """Keep the listen key alive (every 30 minutes)"""
-        logger.info("[USER_WS] Keep-alive loop started")
         while self.is_connected:
             try:
                 # Wait 30 minutes
-                logger.info("[USER_WS] Waiting 30 minutes before next keep-alive...")
                 await asyncio.sleep(30 * 60)
                 
                 # Keep alive
                 if self.listen_key:
-                    logger.info("[USER_WS] Sending keep-alive request...")
                     success = await asyncio.to_thread(
                         self.trading_executor.keep_alive_listen_key,
                         self.listen_key
@@ -193,13 +167,11 @@ class UserDataClient:
                         # May need to reconnect
                         break
             except asyncio.CancelledError:
-                logger.info("[USER_WS] Keep-alive loop cancelled")
                 break
             except Exception as e:
                 logger.error(f"[USER_WS] ✗ Error in keep-alive loop: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-        logger.info("[USER_WS] Keep-alive loop exited")
     
     async def _handle_message(self, message: str) -> None:
         """
@@ -209,38 +181,24 @@ class UserDataClient:
             message: JSON message string
         """
         try:
-            logger.debug(f"[USER_WS] Raw message received (length: {len(message)} bytes)")
             data = json.loads(message)
             
             # Determine message type
             if 'e' in data:
                 event_type = data['e']
-                logger.info(f"[USER_WS] ✓ Received event: {event_type}")
                 
                 if event_type == 'ACCOUNT_UPDATE':
-                    logger.debug("[USER_WS] Processing ACCOUNT_UPDATE...")
                     self._process_account_update(data)
-                    logger.debug("[USER_WS] ACCOUNT_UPDATE processed")
                 elif event_type == 'ORDER_TRADE_UPDATE':
-                    logger.debug("[USER_WS] Processing ORDER_TRADE_UPDATE...")
                     self._process_order_update(data)
-                    logger.debug("[USER_WS] ORDER_TRADE_UPDATE processed")
                 elif event_type == 'ACCOUNT_CONFIG_UPDATE':
-                    logger.debug("[USER_WS] Processing ACCOUNT_CONFIG_UPDATE...")
                     self._process_account_config_update(data)
-                    logger.debug("[USER_WS] ACCOUNT_CONFIG_UPDATE processed")
                 elif event_type == 'TRADE_LITE':
-                    logger.debug("[USER_WS] Processing TRADE_LITE...")
                     self._process_trade_lite(data)
-                    logger.debug("[USER_WS] TRADE_LITE processed")
                 elif event_type == 'ALGO_UPDATE':
-                    logger.debug("[USER_WS] Processing ALGO_UPDATE...")
                     self._process_algo_update(data)
-                    logger.debug("[USER_WS] ALGO_UPDATE processed")
                 else:
                     logger.warning(f"[USER_WS] Unknown user data event type: {event_type}")
-            else:
-                logger.warning(f"[USER_WS] Message has no event type field")
             
         except json.JSONDecodeError as e:
             logger.error(f"[USER_WS] ✗ Failed to parse user data message: {e}")
@@ -258,11 +216,8 @@ class UserDataClient:
             data: Account update data from Binance
         """
         try:
-            logger.info("[USER_WS] Processing account update...")
             account_data = data.get('a', {})
             balances = account_data.get('B', [])
-            
-            logger.info(f"[USER_WS] Found {len(balances)} balance(s)")
             
             # Find USDC balance (Binance USDC-M Futures uses USDC)
             for balance in balances:
@@ -277,7 +232,6 @@ class UserDataClient:
                     # Trigger callback
                     if self.callbacks['account_update']:
                         try:
-                            logger.info("[USER_WS] Calling account_update callback...")
                             payload = {
                                 'balance': available_balance,
                                 'timestamp': data.get('E', 0)
@@ -289,8 +243,6 @@ class UserDataClient:
                                 )
                             else:
                                 self.callbacks['account_update'](payload)
-                            
-                            logger.info("[USER_WS] ✓ Account_update callback completed")
 
                         except Exception as e:
                             logger.error(f"[USER_WS] ✗ Error in account update callback: {e}")
@@ -301,7 +253,6 @@ class UserDataClient:
 
             # Update positions
             positions = account_data.get('P', [])
-            logger.info(f"[USER_WS] Found {len(positions)} position(s)")
             
             for position in positions:
                 symbol = position.get('s', '')
@@ -316,12 +267,9 @@ class UserDataClient:
                         'mark_price': float(position.get('mp', 0))
                     }
                     
-                    logger.info(f"[USER_WS] Position updated: {symbol} amt={position_amt} pnl={unrealized_pnl:.2f}")
-                    
                     # Trigger callback
                     if self.callbacks['position_update']:
                         try:
-                            logger.info(f"[USER_WS] Calling position_update callback for {symbol}...")
                             if asyncio.iscoroutinefunction(self.callbacks['position_update']):
                                 asyncio.create_task(self.callbacks['position_update']({
                                     'symbol': symbol,
@@ -338,7 +286,6 @@ class UserDataClient:
                                     'entry_price': float(position.get('ep', 0)),
                                     'mark_price': float(position.get('mp', 0))
                                 })
-                            logger.info(f"[USER_WS] ✓ Position_update callback completed for {symbol}")
                         except Exception as e:
                             logger.error(f"[USER_WS] ✗ Error in position update callback: {e}")
                             import traceback
@@ -346,9 +293,6 @@ class UserDataClient:
                 elif symbol in self.positions:
                     # Position closed
                     del self.positions[symbol]
-                    logger.info(f"[USER_WS] Position closed for {symbol}")
-            
-            logger.info("[USER_WS] Account update processing completed")
         
         except Exception as e:
             logger.error(f"[USER_WS] ✗ Error processing account update: {e}")
@@ -363,17 +307,13 @@ class UserDataClient:
             data: Order update data from Binance
         """
         try:
-            logger.info("[USER_WS] Processing order update...")
             order = data.get('o', {})
             symbol = order.get('s', '')
             order_status = order.get('X', '')
             
-            logger.info(f"[USER_WS] Order update for {symbol}: {order_status}")
-            
             # Trigger callback
             if self.callbacks['order_update']:
                 try:
-                    logger.info(f"[USER_WS] Calling order_update callback for {symbol}...")
                     if asyncio.iscoroutinefunction(self.callbacks['order_update']):
                         asyncio.create_task(self.callbacks['order_update']({
                             'symbol': symbol,
@@ -404,13 +344,10 @@ class UserDataClient:
                             'avg_price': float(order.get('ap', 0)),
                             'timestamp': data.get('E', 0)
                         })
-                    logger.info(f"[USER_WS] ✓ Order_update callback completed for {symbol}")
                 except Exception as e:
                     logger.error(f"[USER_WS] ✗ Error in order update callback: {e}")
                     import traceback
                     logger.error(traceback.format_exc())
-            
-            logger.info("[USER_WS] Order update processing completed")
         
         except Exception as e:
             logger.error(f"[USER_WS] ✗ Error processing order update: {e}")
@@ -483,9 +420,6 @@ class UserDataClient:
                 f"algoId={algo_id} status={algo_status} type={order_type}"
             )
             
-            # Log detailed information for debugging
-            logger.debug(f"[USER_WS] Algo order details: {algo_order}")
-            
         except Exception as e:
             logger.error(f"[USER_WS] Error processing algo update event: {e}")
             import traceback
@@ -493,19 +427,15 @@ class UserDataClient:
     
     async def listen(self) -> None:
         """Listen for incoming messages from user data stream"""
-        logger.info("[USER_WS] Starting listen loop...")
         if not self.is_connected or not self.websocket:
             logger.error("[USER_WS] ✗ Cannot listen: User data stream is not connected")
             raise RuntimeError("User data stream is not connected")
         
-        logger.info("[USER_WS] ✓ User data stream is connected, starting to receive messages...")
         message_count = 0
         
         try:
             async for message in self.websocket:
                 message_count += 1
-                # if message_count % 10 == 0:
-                #     logger.info(f"[USER_WS] Received {message_count} messages so far...")
                 await self._handle_message(message)
         except ConnectionClosedError as e:
             logger.error(f"[USER_WS] ✗ User data stream connection closed: {e}")
@@ -525,15 +455,12 @@ class UserDataClient:
     
     async def start(self) -> None:
         """Start user data stream connection and listening with continuous reconnection"""
-        logger.info("Starting UserDataClient...")
         attempt = 0
         max_delay = 60  # Maximum delay between reconnection attempts
         
         while True:
             try:
-                logger.info(f"Attempting to connect to user data stream (attempt {attempt + 1})...")
                 await self.connect()
-                logger.info("Starting to listen for user data messages...")
                 await self.listen()
                 logger.warning("User data listen loop ended unexpectedly")
                 

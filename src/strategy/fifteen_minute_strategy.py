@@ -243,8 +243,6 @@ class FiveMinuteStrategy:
         
         # Sync orders with exchange on startup
         asyncio.create_task(self._sync_orders_with_exchange())
-        
-        logger.info("5-minute strategy initialized")
     
     async def on_5m_kline_update(self, kline_info: Dict) -> None:
         """
@@ -2208,7 +2206,6 @@ class FiveMinuteStrategy:
             
             # Check if directions are opposite (engulfing pattern)
             if current_direction == previous_direction:
-                logger.debug(f"Current kline direction {current_direction} is same as previous direction {previous_direction}, no engulfing")
                 return
             
             # Calculate body lengths
@@ -2242,12 +2239,6 @@ class FiveMinuteStrategy:
                 )
             
             if not is_true_engulfing:
-                logger.debug(
-                    f"Engulfing ratio {engulfing_ratio:.2f} meets threshold but not a true engulfing pattern: "
-                    f"current_direction={current_direction}, previous_direction={previous_direction}, "
-                    f"current_open={current_kline['open']:.2f}, current_close={current_kline['close']:.2f}, "
-                    f"previous_open={previous_kline['open']:.2f}, previous_close={previous_kline['close']:.2f}"
-                )
                 return
             
             # Check if engulfing ratio meets threshold
@@ -2320,9 +2311,7 @@ class FiveMinuteStrategy:
                 else:
                     logger.error(f"Failed to close position due to engulfing stop loss for {symbol}")
             else:
-                logger.debug(
-                    f"Engulfing ratio {engulfing_ratio:.2f} below threshold {self.engulfing_body_ratio_threshold}, no stop loss"
-                )
+                pass
                 
         except Exception as e:
             logger.error(f"Error checking engulfing stop loss for {symbol}: {e}")
@@ -2354,7 +2343,6 @@ class FiveMinuteStrategy:
             # 获取上一根已关闭的K线
             closed_klines = [k for k in all_klines if k.get('is_closed', False)]
             if len(closed_klines) < 1:
-                logger.debug(f"No closed klines for {symbol}, skipping realtime engulfing check")
                 return
             
             previous_kline = closed_klines[-1]
@@ -2371,7 +2359,6 @@ class FiveMinuteStrategy:
             
             # 检查是否形成反向吞没
             if current_direction == previous_direction:
-                logger.debug(f"Current kline direction {current_direction} is same as previous direction {previous_direction}, no engulfing")
                 return
             
             # 计算实体比例
@@ -2402,12 +2389,6 @@ class FiveMinuteStrategy:
                 )
             
             if not is_true_engulfing:
-                logger.debug(
-                    f"Engulfing ratio {engulfing_ratio:.2f} meets threshold but not a true engulfing pattern: "
-                    f"current_direction={current_direction}, previous_direction={previous_direction}, "
-                    f"current_open={current_kline['open']:.2f}, current_close={current_kline['close']:.2f}, "
-                    f"previous_open={previous_kline['open']:.2f}, previous_close={previous_kline['close']:.2f}"
-                )
                 return
             
             # 如果满足条件，立即平仓
@@ -2483,14 +2464,10 @@ class FiveMinuteStrategy:
                         del self.position_entry_times[symbol]
                     if symbol in self.partial_take_profit_status:
                         del self.partial_take_profit_status[symbol]
-                    
-                    logger.info(f"Position closed due to realtime engulfing stop loss for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to realtime engulfing stop loss for {symbol}")
             else:
-                logger.debug(
-                    f"Engulfing ratio {engulfing_ratio:.2f} below threshold {self.engulfing_body_ratio_threshold}, no stop loss"
-                )
+                pass
                 
         except Exception as e:
             logger.error(f"Error checking realtime engulfing stop loss for {symbol}: {e}")
@@ -2520,7 +2497,6 @@ class FiveMinuteStrategy:
             
             # If no stop loss price is set, skip update
             if current_stop_loss is None:
-                logger.debug(f"No stop loss price set for {symbol}, skipping trailing stop update")
                 return
             
             # Get all 5m K-lines
@@ -2571,11 +2547,6 @@ class FiveMinuteStrategy:
                 
                 # Stop loss can only move up (favorable direction)
                 if new_stop_loss <= current_stop_loss:
-                    logger.debug(
-                        f"Trailing stop for {symbol} (LONG): "
-                        f"new_stop={new_stop_loss:.2f} <= current_stop={current_stop_loss:.2f}, "
-                        f"no update needed"
-                    )
                     return
                 
                 logger.info(
@@ -2592,11 +2563,6 @@ class FiveMinuteStrategy:
                 
                 # Stop loss can only move down (favorable direction)
                 if new_stop_loss >= current_stop_loss:
-                    logger.debug(
-                        f"Trailing stop for {symbol} (SHORT): "
-                        f"new_stop={new_stop_loss:.2f} >= current_stop={current_stop_loss:.2f}, "
-                        f"no update needed"
-                    )
                     return
                 
                 logger.info(
@@ -2680,7 +2646,6 @@ class FiveMinuteStrategy:
             
             # If no stop loss price is set, skip check
             if stop_loss_price is None:
-                logger.debug(f"No stop loss price set for {symbol}")
                 return
             
             # Calculate price buffer to avoid false triggers from minor fluctuations
@@ -2727,10 +2692,7 @@ class FiveMinuteStrategy:
                 
                 if time_since_first_trigger < self.stop_loss_time_threshold:
                     # Not enough time has passed, continue waiting
-                    logger.debug(
-                        f"[STOP_LOSS_WAITING] {symbol}: "
-                        f"waiting {self.stop_loss_time_threshold - time_since_first_trigger:.1f}s more..."
-                    )
+                    pass
                     return
                 
                 # Time threshold passed, confirm stop loss trigger
@@ -2802,8 +2764,6 @@ class FiveMinuteStrategy:
                     # Clear partial take profit status
                     if symbol in self.partial_take_profit_status:
                         del self.partial_take_profit_status[symbol]
-                    
-                    logger.info(f"Position closed due to stop loss for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to stop loss for {symbol}")
             else:
@@ -2990,7 +2950,6 @@ class FiveMinuteStrategy:
                                     is_take_profit=True
                                 )
                             )
-                            logger.info(f"Limit order placed for take profit and monitoring started for {symbol}")
                             return
                         else:
                             logger.warning(f"Failed to place limit order for take profit on {symbol}, falling back to market order")
@@ -3057,8 +3016,6 @@ class FiveMinuteStrategy:
                     # Clear partial take profit status
                     if symbol in self.partial_take_profit_status:
                         del self.partial_take_profit_status[symbol]
-                    
-                    logger.info(f"Position closed due to take profit for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to take profit for {symbol}")
             
@@ -3123,12 +3080,8 @@ class FiveMinuteStrategy:
                 trailing_percent = 0.015  # 1.5%
                 volatility_level = "低波动"
             
-            logger.debug(
-                f"[DYNAMIC_TRAILING] {symbol}: "
-                f"ATR={latest_atr:.2f} ({atr_percent:.2f}%, {volatility_level}), "
-                f"trailing_percent={trailing_percent*100:.2f}%"
-            )
-            
+            pass
+
             return trailing_percent
             
         except Exception as e:
@@ -3246,17 +3199,10 @@ class FiveMinuteStrategy:
                     # Clear peak price tracking
                     if symbol in self.position_peak_prices:
                         del self.position_peak_prices[symbol]
-                    
-                    logger.info(f"Position closed due to time stop loss for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to time stop loss for {symbol}")
             else:
-                logger.debug(
-                    f"[TIME_STOP_LOSS_CHECK] {symbol}: "
-                    f"elapsed_klines={elapsed_klines:.1f}, "
-                    f"threshold={self.time_stop_loss_klines}, "
-                    f"remaining={self.time_stop_loss_klines - elapsed_klines:.1f} klines"
-                )
+                pass
                 
         except Exception as e:
             logger.error(f"Error checking time stop loss for {symbol}: {e}")
@@ -3360,7 +3306,6 @@ class FiveMinuteStrategy:
                         # Mark this level as executed
                         self.partial_take_profit_status[symbol][i] = True
                         
-                        logger.info(f"Partial take profit executed for {symbol} at level {i+1}")
                         return True
                     else:
                         logger.error(f"Failed to execute partial take profit for {symbol} at level {i+1}")
@@ -3446,8 +3391,6 @@ class FiveMinuteStrategy:
                 ml_confidence=0
             )
             
-            logger.info(f"Trade logged for {symbol}: {side} PnL=${pnl:.2f}")
-            
         except Exception as e:
             logger.error(f"Error logging trade for {symbol}: {e}")
     
@@ -3522,8 +3465,6 @@ class FiveMinuteStrategy:
                 ml_prediction='NEUTRAL',
                 ml_confidence=0
             )
-            
-            logger.info(f"Trade logged for {symbol}: {side} PnL=${pnl:.2f}")
             
         except Exception as e:
             logger.error(f"Error logging trade for {symbol}: {e}")
@@ -3653,8 +3594,6 @@ class FiveMinuteStrategy:
                 ml_prediction=ml_prediction,
                 ml_confidence=ml_confidence
             )
-            
-            logger.info(f"Signal logged for {symbol}: {signal_type} {direction} strength={signal_strength}")
             
         except Exception as e:
             logger.error(f"Error logging signal for {symbol}: {e}")
@@ -3837,8 +3776,6 @@ class FiveMinuteStrategy:
                         signal_strength=signal_strength
                     )
                 )
-                
-                logger.info(f"Limit order placed and monitoring started for {symbol}")
             else:
                 logger.error(f"Failed to place limit order for {symbol}, falling back to market order")
                 await self._open_long_position(symbol, volume_info, range_info, stop_loss_price, entry_kline,
@@ -4011,8 +3948,6 @@ class FiveMinuteStrategy:
                         signal_strength=signal_strength
                     )
                 )
-                
-                logger.info(f"Limit order placed and monitoring started for {symbol}")
             else:
                 logger.error(f"Failed to place limit order for {symbol}, falling back to market order")
                 await self._open_short_position(symbol, volume_info, range_info, stop_loss_price, entry_kline,
@@ -4096,7 +4031,6 @@ class FiveMinuteStrategy:
                 if symbol in self.stop_loss_first_trigger_time:
                     del self.stop_loss_first_trigger_time[symbol]
                 
-                logger.info(f"Emergency close completed for {symbol}")
                 return True
             else:
                 logger.error(f"Failed to emergency close position for {symbol}")
@@ -4124,7 +4058,7 @@ class FiveMinuteStrategy:
             if not pending_orders:
                 return
             
-            logger.info(f"[CANCEL_PENDING_ORDERS] {symbol}: {reason}")
+            pass
             
             # Cancel all pending orders
             import asyncio
@@ -4217,7 +4151,7 @@ class FiveMinuteStrategy:
             True if successful, False otherwise
         """
         try:
-            logger.info(f"[CONVERT_TO_MARKET] {symbol}: order_id={order_id}, reason={reason}")
+            pass
             
             # Cancel the limit order
             import asyncio
@@ -4254,7 +4188,7 @@ class FiveMinuteStrategy:
                     f"数量: {quantity:.4f}"
                 )
                 
-                logger.info(f"Successfully converted limit order to market order for {symbol}")
+                pass
                 return True
             else:
                 logger.error(f"Failed to execute market order for {symbol}")
@@ -4269,7 +4203,7 @@ class FiveMinuteStrategy:
     async def _sync_orders_with_exchange(self):
         """与交易所同步订单状态"""
         try:
-            logger.info("Starting order synchronization with exchange...")
+            pass
             
             for symbol in list(self.pending_limit_orders.keys()):
                 try:
@@ -4288,7 +4222,7 @@ class FiveMinuteStrategy:
                     
                     # 处理本地有但交易所没有的订单（可能已成交或取消）
                     for order_id in local_order_ids - exchange_order_ids:
-                        logger.info(f"Order {order_id} not found in exchange, checking status...")
+                        pass
                         
                         # 尝试获取订单状态
                         order_status = await asyncio.to_thread(
@@ -4298,11 +4232,9 @@ class FiveMinuteStrategy:
                         )
                         
                         if order_status == 'FILLED':
-                            logger.info(f"Order {order_id} was filled, updating status")
                             self.order_persistence.update_order_status(order_id, 'FILLED')
                             del self.pending_limit_orders[symbol][order_id]
                         elif order_status == 'CANCELED':
-                            logger.info(f"Order {order_id} was cancelled, updating status")
                             self.order_persistence.update_order_status(order_id, 'CANCELLED')
                             del self.pending_limit_orders[symbol][order_id]
                         else:
@@ -4312,7 +4244,7 @@ class FiveMinuteStrategy:
                     
                     # 处理交易所有但本地没有的订单（程序重启前创建的）
                     for order_id in exchange_order_ids - local_order_ids:
-                        logger.info(f"Found new order {order_id} in exchange, adding to tracking")
+                        pass
                         
                         # 从交易所获取订单详情
                         order_detail = await asyncio.to_thread(
@@ -4324,14 +4256,14 @@ class FiveMinuteStrategy:
                         if order_detail:
                             self._add_order_to_tracking(symbol, order_detail)
                     
-                    logger.info(f"Order synchronization completed for {symbol}")
+                    pass
                     
                 except Exception as e:
                     logger.error(f"Error syncing orders for {symbol}: {e}")
                     import traceback
                     logger.error(traceback.format_exc())
             
-            logger.info("Order synchronization with exchange completed")
+            pass
             
         except Exception as e:
             logger.error(f"Error in order synchronization: {e}")
@@ -4367,7 +4299,7 @@ class FiveMinuteStrategy:
             # 保存到持久化
             self.order_persistence.save_order(order_id, symbol, order_info)
             
-            logger.info(f"Order {order_id} added to tracking for {symbol}")
+            pass
             
         except Exception as e:
             logger.error(f"Error adding order to tracking: {e}")
@@ -4426,11 +4358,7 @@ class FiveMinuteStrategy:
                 f"平均价: ${order['avg_fill_price']:.2f}"
             )
             
-            logger.info(
-                f"Partial fill for {symbol} order {order_id}: "
-                f"filled={fill_qty:.4f}, total_filled={order['filled_quantity']:.4f}, "
-                f"remaining={order['remaining_quantity']:.4f}"
-            )
+            pass
             
             # 如果完全成交，处理持仓
             if order['remaining_quantity'] <= 0.0001:  # 考虑精度
@@ -4491,7 +4419,7 @@ class FiveMinuteStrategy:
             # 清理订单跟踪
             del self.pending_limit_orders[symbol][order_id]
             
-            logger.info(f"Order {order_id} fully filled for {symbol}")
+            pass
             
         except Exception as e:
             logger.error(f"Error handling fully filled order: {e}")
