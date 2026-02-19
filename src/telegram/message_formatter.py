@@ -157,7 +157,7 @@ class MessageFormatter:
     @staticmethod
     def format_error_message(error: str, context: Optional[str] = None) -> str:
         """
-        Format error message
+        Format error message - Optimized for readability
         
         Args:
             error: Error message
@@ -166,20 +166,21 @@ class MessageFormatter:
         Returns:
             Formatted error message string
         """
-        message = f"⚠️ <b>错误提醒</b>\n\n"
+        message = f"⚠️ <b>错误提醒</b>\n"
+        message += f"{'─' * 30}\n"
         
         if context:
             message += f"📍 上下文: {MessageFormatter._escape_html(context)}\n"
         
         message += f"❌ 错误: {MessageFormatter._escape_html(error)}\n"
-        message += f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
     
     @staticmethod
     def format_system_status(status: str, details: Optional[Dict] = None) -> str:
         """
-        Format system status message
+        Format system status message - Optimized for readability
         
         Args:
             status: System status (STARTED, STOPPED, ERROR, etc.)
@@ -199,7 +200,8 @@ class MessageFormatter:
         
         emoji = emoji_map.get(status, 'ℹ️')
         
-        message = f"{emoji} <b>系统状态: {status}</b>\n\n"
+        message = f"{emoji} <b>系统状态: {status}</b>\n"
+        message += f"{'─' * 30}\n"
         
         if details:
             for key, value in details.items():
@@ -207,7 +209,7 @@ class MessageFormatter:
                 value_escaped = MessageFormatter._escape_html(str(value))
                 message += f"  • {key_escaped}: {value_escaped}\n"
         
-        message += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
     
@@ -253,7 +255,7 @@ class MessageFormatter:
                                    position_calc_info: Optional[Dict] = None,
                                    kline_time: Optional[int] = None) -> str:
         """
-        Format trade notification message
+        Format trade notification message - Optimized for readability
         
         Args:
             symbol: Trading pair symbol
@@ -275,76 +277,52 @@ class MessageFormatter:
         position_value = price * quantity
         symbol_escaped = MessageFormatter._escape_html(symbol)
         
-        message = (
-            f"{emoji} <b>仓位已开仓</b>\n\n"
-            f"📊 交易对: {symbol_escaped}\n"
-            f"📈 方向: {side_cn}\n"
-            f"💰 开仓价格: ${price:,.2f}\n"
-            f"📦 数量: {quantity:.4f}\n"
-            f"💵 仓位价值: ${position_value:,.2f}\n"
-            f"⚡ 杠杆: {leverage}倍\n"
-        )
+        message = f"{emoji} <b>仓位已开仓</b>\n"
+        message += f"{'─' * 30}\n"
+        message += f"📊 交易对: {symbol_escaped}\n"
+        message += f"📈 方向: {side_cn}\n"
+        message += f"💰 开仓价格: ${price:,.2f}\n"
+        message += f"📦 数量: {quantity:.4f}\n"
+        message += f"💵 仓位价值: ${position_value:,.2f}\n"
+        message += f"⚡ 杠杆: {leverage}倍\n"
         
         # Add stop loss price if available
         if stop_loss_price is not None:
             stop_loss_distance = abs(stop_loss_price - price)
             stop_loss_percent = (stop_loss_distance / price) * 100
-            message += f"🛡️ 止损价格: ${stop_loss_price:,.2f} (距离: {stop_loss_distance:.2f}, {MessageFormatter._format_percentage(stop_loss_percent)})\n"
+            message += f"🛡️ 止损价格: ${stop_loss_price:,.2f} ({stop_loss_percent:.2f}%)\n"
         
         # Add K-line time information
         if kline_time is not None:
             kline_end = datetime.fromtimestamp(kline_time / 1000)
             kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
             kline_end_rounded = kline_start + timedelta(minutes=5)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
+            message += f"⏰ K线时间: {kline_start.strftime('%H:%M')}-{kline_end_rounded.strftime('%H:%M')}\n"
         
         # Add position calculation information if available
         if position_calc_info:
             balance = position_calc_info.get('balance', 0)
-            max_position_value = position_calc_info.get('max_position_value', 0)
-            opening_fee = position_calc_info.get('opening_fee', 0)
-            safety_margin = position_calc_info.get('safety_margin', 0)
-            available_position_value = position_calc_info.get('available_position_value', 0)
             required_margin = position_calc_info.get('required_margin', 0)
+            opening_fee = position_calc_info.get('opening_fee', 0)
             
-            message += (
-                f"\n"
-                f"💰 <b>仓位计算详情:</b>\n"
-                f"  • 账户余额: ${balance:.2f}\n"
-                f"  • 最大仓位价值: ${max_position_value:.2f}\n"
-                f"  • 开仓手续费: ${opening_fee:.4f}\n"
-                f"  • 安全边际: ${safety_margin:.4f}\n"
-                f"  • 可用仓位价值: ${available_position_value:.2f}\n"
-                f"  • 所需保证金: ${required_margin:.2f}\n"
-            )
+            message += f"\n<b>💰 资金信息</b>\n"
+            message += f"  账户余额: ${balance:.2f}\n"
+            message += f"  所需保证金: ${required_margin:.2f}\n"
+            message += f"  开仓手续费: ${opening_fee:.4f}\n"
         
-        # Add volume information if available
-        if volume_info:
-            current_volume = volume_info.get('current_volume', 0)
-            avg_volume_5 = volume_info.get('avg_volume_5', 0)
-            ratio_5 = volume_info.get('ratio_5', 0)
-            
-            message += (
-                f"\n"
-                f"📦 <b>5m K线成交量 (基于已关闭K线):</b>\n"
-                f"  • 当前5m成交量: {current_volume:,.2f}\n"
-                f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
-            )
+        # Add volume and range information if available
+        if volume_info or range_info:
+            message += f"\n<b>📊 市场数据</b>\n"
+            if volume_info:
+                current_volume = volume_info.get('current_volume', 0)
+                ratio_5 = volume_info.get('ratio_5', 0)
+                message += f"  成交量: {current_volume:,.0f} ({ratio_5:.2f}x)\n"
+            if range_info:
+                current_range = range_info.get('current_range', 0)
+                ratio_5 = range_info.get('ratio_5', 0)
+                message += f"  振幅: ${current_range:.2f} ({ratio_5:.2f}x)\n"
         
-        # Add range information if available
-        if range_info:
-            current_range = range_info.get('current_range', 0)
-            avg_range_5 = range_info.get('avg_range_5', 0)
-            ratio_5 = range_info.get('ratio_5', 0)
-            
-            message += (
-                f"\n"
-                f"📊 <b>5m K线振幅 (基于已关闭K线):</b>\n"
-                f"  • 当前5m振幅: {current_range:.2f}\n"
-                f"  • 近5根平均: {avg_range_5:.2f} (比例: {ratio_5:.2f}x)\n"
-            )
-        
-        message += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
     
@@ -352,7 +330,7 @@ class MessageFormatter:
     def format_close_notification(symbol: str, side: str, entry_price: float, exit_price: float, quantity: float, pnl: float,
                                    close_reason: str = "止损触发") -> str:
         """
-        Format position close notification message
+        Format position close notification message - Optimized for readability
         
         Args:
             symbol: Trading pair symbol
@@ -371,24 +349,31 @@ class MessageFormatter:
         pnl_percent = (pnl / (entry_price * quantity)) * 100
         symbol_escaped = MessageFormatter._escape_html(symbol)
         
-        message = (
-            f"{emoji} <b>仓位已平仓</b>\n\n"
-            f"📊 交易对: {symbol_escaped}\n"
-            f"📈 方向: {side_cn}\n"
-            f"💰 开仓价格: ${entry_price:,.2f}\n"
-            f"💰 平仓价格: ${exit_price:,.2f}\n"
-            f"📦 数量: {quantity:.4f}\n"
-            f"💵 盈亏: ${pnl:+,.2f} ({pnl_percent:+.2f}%)\n"
-            f"📋 平仓原因: {MessageFormatter._escape_html(close_reason)}\n"
-            f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+        message = f"{emoji} <b>仓位已平仓</b>\n"
+        message += f"{'─' * 30}\n"
+        message += f"📊 交易对: {symbol_escaped}\n"
+        message += f"📈 方向: {side_cn}\n"
+        message += f"💰 开仓价格: ${entry_price:,.2f}\n"
+        message += f"💰 平仓价格: ${exit_price:,.2f}\n"
+        message += f"📦 数量: {quantity:.4f}\n"
+        message += f"💵 盈亏: ${pnl:+,.2f} ({pnl_percent:+.2f}%)\n"
+        
+        # Format close reason more cleanly
+        if close_reason:
+            message += f"\n<b>📋 平仓原因</b>\n"
+            # Split multi-line reasons
+            for line in close_reason.split('\n'):
+                if line.strip():
+                    message += f"  {line.strip()}\n"
+        
+        message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
     
     @staticmethod
     def format_no_trade_notification(symbol: str, reason: str, kline_time: Optional[int] = None) -> str:
         """
-        Format no trade notification message
+        Format no trade notification message - Optimized for readability
         
         Args:
             symbol: Trading pair symbol
@@ -399,21 +384,26 @@ class MessageFormatter:
             Formatted message string
         """
         symbol_escaped = MessageFormatter._escape_html(symbol)
-        reason_escaped = MessageFormatter._escape_html(reason)
         
-        message = (
-            f"⏭️ <b>未交易 - {symbol_escaped}</b>\n\n"
-            f"📋 原因: {reason_escaped}\n"
-        )
+        message = f"⏭️ <b>未交易 - {symbol_escaped}</b>\n"
+        message += f"{'─' * 30}\n"
+        
+        # Format reason more cleanly
+        if reason:
+            message += f"<b>📋 原因</b>\n"
+            # Split multi-line reasons
+            for line in reason.split('\n'):
+                if line.strip():
+                    message += f"  {line.strip()}\n"
         
         # Add K-line time information
         if kline_time is not None:
             kline_end = datetime.fromtimestamp(kline_time / 1000)
             kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
             kline_end_rounded = kline_start + timedelta(minutes=5)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n"
+            message += f"\n⏰ K线时间: {kline_start.strftime('%H:%M')}-{kline_end_rounded.strftime('%H:%M')}\n"
         
-        message += f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
     
@@ -435,7 +425,7 @@ class MessageFormatter:
                                    signal_strength: str = 'MEDIUM',
                                    kline_time: Optional[int] = None) -> str:
         """
-        Format indicator analysis message - Optimized version
+        Format indicator analysis message - Optimized version with better readability
         
         Args:
             symbol: Trading pair symbol
@@ -486,7 +476,8 @@ class MessageFormatter:
         
         # Build header with decision
         header_emoji = decision_emoji.get(decision, '📊') if decision else '📊'
-        message = f"{header_emoji} <b>{symbol_escaped} 5m K线分析</b>\n\n"
+        message = f"{header_emoji} <b>{symbol_escaped} 5m K线分析</b>\n"
+        message += f"{'─' * 30}\n"
         
         # Add K-line time and price in one line
         if kline_time is not None:
@@ -501,24 +492,23 @@ class MessageFormatter:
         direction_str = direction_emoji.get(direction_5m, direction_5m)
         message += f"⏰ {time_str} | 💰 {price_str} | {direction_str}\n\n"
         
-        # Build condition summary - compact format
-        conditions = []
+        # Build condition summary - organized by category
+        message += "<b>📊 条件检查</b>\n"
         
-        # Volume condition
+        # Basic conditions (Volume, Range, Body)
+        basic_conditions = []
         if volume_info:
             ratio_5 = volume_info.get('ratio_5', 0)
             threshold = volume_info.get('threshold', 0)
             volume_valid = ratio_5 >= threshold
-            conditions.append(f"成交量 {ratio_5:.2f}x {'✅' if volume_valid else '❌'}")
+            basic_conditions.append(f"成交量 {ratio_5:.2f}x {'✅' if volume_valid else '❌'}")
         
-        # Range condition
         if range_info:
             ratio_5 = range_info.get('ratio_5', 0)
             threshold = range_info.get('threshold', 0)
             range_valid = ratio_5 >= threshold
-            conditions.append(f"振幅 {ratio_5:.2f}x {'✅' if range_valid else '❌'}")
+            basic_conditions.append(f"振幅 {ratio_5:.2f}x {'✅' if range_valid else '❌'}")
         
-        # Body condition
         if body_info:
             body_ratio = body_info.get('body_ratio', 0)
             threshold = body_info.get('threshold', 0)
@@ -527,77 +517,75 @@ class MessageFormatter:
             shadow_ratio_threshold = body_info.get('shadow_ratio_threshold', 0.5)
             body_valid = body_ratio >= threshold
             shadow_valid = upper_shadow_ratio < shadow_ratio_threshold and lower_shadow_ratio < shadow_ratio_threshold
-            conditions.append(f"实体 {body_ratio*100:.0f}% {'✅' if (body_valid and shadow_valid) else '❌'}")
+            basic_conditions.append(f"实体 {body_ratio*100:.0f}% {'✅' if (body_valid and shadow_valid) else '❌'}")
         
-        # Trend condition
+        if basic_conditions:
+            message += "  基础: " + " | ".join(basic_conditions) + "\n"
+        
+        # Technical indicators (Trend, RSI, MACD, ADX)
+        tech_conditions = []
         if trend_info:
             trend_aligned = trend_info.get('trend_aligned', False)
             ma_period = trend_info.get('ma_period', 20)
-            conditions.append(f"MA{ma_period} {'✅' if trend_aligned else '❌'}")
+            tech_conditions.append(f"MA{ma_period} {'✅' if trend_aligned else '❌'}")
         
-        # RSI condition
         if rsi_info:
             rsi_valid = rsi_info.get('rsi_valid', False)
             rsi_value = rsi_info.get('rsi_value', 0)
-            conditions.append(f"RSI {rsi_value:.0f} {'✅' if rsi_valid else '❌'}")
+            tech_conditions.append(f"RSI {rsi_value:.0f} {'✅' if rsi_valid else '❌'}")
         
-        # MACD condition
         if macd_info:
             macd_valid = macd_info.get('is_valid', False)
             macd_histogram = macd_info.get('histogram', 0)
-            conditions.append(f"MACD {macd_histogram:.4f} {'✅' if macd_valid else '❌'}")
+            tech_conditions.append(f"MACD {macd_histogram:.4f} {'✅' if macd_valid else '❌'}")
         
-        # ADX condition
         if adx_info:
             adx_valid = adx_info.get('adx_valid', False)
             adx_value = adx_info.get('adx_value', 0)
-            conditions.append(f"ADX {adx_value:.0f} {'✅' if adx_valid else '❌'}")
+            tech_conditions.append(f"ADX {adx_value:.0f} {'✅' if adx_valid else '❌'}")
         
-        # Market environment condition
+        if tech_conditions:
+            message += "  技术: " + " | ".join(tech_conditions) + "\n"
+        
+        # Advanced conditions (Market, Multi-timeframe, Sentiment, ML)
+        advanced_conditions = []
         if market_env_info:
             market_type = market_env_info.get('market_type', 'UNKNOWN')
             confidence = market_env_info.get('confidence', 0)
             env_valid = market_env_info.get('is_valid', False)
-            conditions.append(f"市场 {market_type[:2]} {confidence:.0f}% {'✅' if env_valid else '❌'}")
+            advanced_conditions.append(f"市场 {market_type[:2]} {confidence:.0f}% {'✅' if env_valid else '❌'}")
         
-        # Multi-timeframe condition
         if multi_timeframe_info:
             aligned_count = multi_timeframe_info.get('aligned_count', 0)
             total_count = multi_timeframe_info.get('total_count', 0)
-            mt_valid = aligned_count >= 2  # Assuming min aligned is 2
-            conditions.append(f"多周期 {aligned_count}/{total_count} {'✅' if mt_valid else '❌'}")
+            mt_valid = aligned_count >= 2
+            advanced_conditions.append(f"多周期 {aligned_count}/{total_count} {'✅' if mt_valid else '❌'}")
         
-        # Sentiment condition
         if sentiment_info:
             fear_greed_value = sentiment_info.get('value', 0)
             fear_greed_classification = sentiment_info.get('classification', 'N/A')
             sentiment_valid = sentiment_info.get('is_valid', False)
-            conditions.append(f"情绪 {fear_greed_value} ({fear_greed_classification[:2]}) {'✅' if sentiment_valid else '❌'}")
+            advanced_conditions.append(f"情绪 {fear_greed_value} ({fear_greed_classification[:2]}) {'✅' if sentiment_valid else '❌'}")
         
-        # ML condition
         if ml_info:
             prediction = ml_info.get('prediction', 'N/A')
             confidence = ml_info.get('confidence', 0)
             ml_valid = ml_info.get('ml_valid', False)
-            conditions.append(f"ML {prediction[:2]} {confidence:.0%} {'✅' if ml_valid else '❌'}")
+            advanced_conditions.append(f"ML {prediction[:2]} {confidence:.0%} {'✅' if ml_valid else '❌'}")
         
-        # Display conditions in compact format (2 per line)
-        message += "<b>条件检查:</b>\n"
-        for i in range(0, len(conditions), 2):
-            if i + 1 < len(conditions):
-                message += f"  {conditions[i]}  |  {conditions[i+1]}\n"
-            else:
-                message += f"  {conditions[i]}\n"
+        if advanced_conditions:
+            message += "  高级: " + " | ".join(advanced_conditions) + "\n"
         
         # Add signal strength and decision
-        message += f"\n<b>信号强度:</b> {strength_emoji.get(signal_strength, signal_strength)} {signal_strength}\n"
+        message += f"\n<b>💪 信号强度:</b> {strength_emoji.get(signal_strength, signal_strength)} {signal_strength}\n"
         
         if decision:
-            message += f"<b>交易决策:</b> {decision_emoji.get(decision, decision)}\n"
+            message += f"<b>🎯 交易决策:</b> {decision_emoji.get(decision, decision)}\n"
         
-        # Add detailed info only for trade decisions or when requested
+        # Add detailed info only for trade decisions
         if decision and decision != 'NO_TRADE':
-            message += "\n<b>详细信息:</b>\n"
+            message += f"\n{'─' * 30}\n"
+            message += "<b>📋 详细信息</b>\n"
             
             # Volume details
             if volume_info:
@@ -630,14 +618,14 @@ class MessageFormatter:
             if sentiment_info:
                 fear_greed_value = sentiment_info.get('value', 0)
                 fear_greed_classification = sentiment_info.get('classification', 'N/A')
-                message += f"  😊 恐惧贪婪指数: {fear_greed_value} ({fear_greed_classification})\n"
+                message += f"  😊 恐惧贪婪: {fear_greed_value} ({fear_greed_classification})\n"
             
             # ML details
             if ml_info:
                 prediction = ml_info.get('prediction', 'N/A')
                 confidence = ml_info.get('confidence', 0)
                 score = ml_info.get('score', 0)
-                message += f"  🤖 ML预测: {prediction} (置信度: {confidence:.0%}, 得分: {score:.3f})\n"
+                message += f"  🤖 ML预测: {prediction} (置信度: {confidence:.0%})\n"
         
         message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
