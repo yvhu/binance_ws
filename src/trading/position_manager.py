@@ -218,10 +218,13 @@ class PositionManager:
                         
                         self.positions[symbol] = position_info
                         
+                        entry_price_str = f"{entry_price:.2f}" if entry_price is not None else "N/A"
+                        stop_loss_str = f"{stop_loss_price:.2f}" if stop_loss_price is not None else "N/A"
+                        
                         logger.warning(
                             f"⚠️ Position synced from exchange: {symbol} {side} "
-                            f"qty={quantity} entry_price={entry_price:.2f if entry_price is not None else 'N/A'} "
-                            f"stop_loss={stop_loss_price:.2f if stop_loss_price is not None else 'N/A'}"
+                            f"qty={quantity} entry_price={entry_price_str} "
+                            f"stop_loss={stop_loss_str}"
                         )
                     else:
                         # No position on exchange, ensure local state is also empty
