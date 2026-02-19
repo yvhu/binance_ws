@@ -658,6 +658,116 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 - 5分钟K线周期交易
 - 追求平衡风险和收益的交易者
 
+### 2026-02-19：修复止损距离过大问题
+
+**问题描述：**
+- 系统重启前有一笔仓位亏损达到6%但没有平仓
+- 原因：止损距离计算逻辑错误，使用了 `max()` 而不是 `min()`
+- 当K线振幅较大时（如8%），止损距离 = 8% × 0.8 = 6.4%，导致需要亏损6.4%才触发止损
+
+**问题示例：**
+```
+假设BTC价格：
+- 开仓价格：$100,000
+- K线振幅：8%（$8,000）
+- 配置的 stop_loss_min_distance_percent = 0.025（2.5%）
+
+计算过程：
+1. 止损距离 = 8% × 0.8 = 6.4%（$6,400）
+2. 最小止损距离 = 2.5%（$2,500）
+3. 实际止损距离 = max(6.4%, 2.5%) = 6.4%  ❌ 错误！
+4. 止损价格 = $100,000 - $6,400 = $93,600
+
+结果：价格需要下跌到$93,600（亏损6.4%）才会触发止损！
+```
+
+**修复方案：**
+1. 修改止损计算逻辑，添加最大止损距离限制（3%）
+2. 止损距离 = min(计算出的止损距离, 最大止损距离)
+3. 确保止损距离在合理范围内：2.5% - 3%
+
+**修复后的逻辑：**
+```python
+# 计算止损距离
+calculated_stop_loss_distance = current_range * 0.8
+
+# 确保最小止损距离
+min_stop_loss_distance = current_price * 0.025  # 2.5%
+
+# 限制最大止损距离
+max_stop_loss_distance = current_price * 0.03  # 3%
+
+# 实际止损距离 = max(计算值, 最小值)，然后 min(结果, 最大值)
+actual_stop_loss_distance = min(
+    max(calculated_stop_loss_distance, min_stop_loss_distance),
+    max_stop_loss_distance
+)
+```
+
+**配置参数：**
+- `stop_loss_min_distance_percent = 0.025` (2.5%)
+- `stop_loss_max_distance_percent = 0.03` (3%)
+
+**修复后的效果：**
+```
+假设BTC价格：
+- 开仓价格：$100,000
+- K线振幅：8%（$8,000）
+
+计算过程：
+1. 止损距离 = 8% × 0.8 = 6.4%（$6,400）
+2. 最小止损距离 = 2.5%（$2,500）
+3. 最大止损距离 = 3%（$3,000）
+4. 实际止损距离 = min(max(6.4%, 2.5%), 3%) = 3%  ✅ 正确！
+5. 止损价格 = $100,000 - $3,000 = $97,000
+
+结果：价格下跌到$97,000（亏损3%）就会触发止损！
+```
+
+**代码变更：**
+
+1. **修改做多止损计算**（[`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py:590-620)）：
+   - 添加最大止损距离限制
+   - 重新计算止损价格如果被限制
+   - 更新持仓中的止损价格
+   - 添加详细的日志输出
+
+2. **修改做空止损计算**（[`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py:730-760)）：
+   - 添加最大止损距离限制
+   - 重新计算止损价格如果被限制
+   - 更新持仓中的止损价格
+   - 添加详细的日志输出
+
+3. **添加配置参数**（[`../config.toml`](../config.toml:61)）：
+   - 添加 `stop_loss_max_distance_percent = 0.03` (3%)
+
+4. **更新策略初始化**（[`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py:60)）：
+   - 读取最大止损距离配置参数
+
+**影响范围：**
+- [`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py) - 修改止损计算逻辑
+- [`../config.toml`](../config.toml) - 添加最大止损距离配置
+- [`docs/TRADING_FLOW.md`](../docs/TRADING_FLOW.md) - 更新文档
+
+**风险/收益分析（10倍杠杆）：**
+- **止损2.5%-3%**：账户亏损25%-30%，可接受的风险水平
+- **止盈3.5%**：账户收益35%，良好的收益水平
+- **风险/收益比1:1.4**：符合专业交易标准
+- **胜率要求**：只需42%的胜率即可盈亏平衡
+
+**优势：**
+- ✅ 止损距离被限制在合理范围内
+- ✅ 即使K线振幅很大，止损也不会超过3%
+- ✅ 避免大额亏损（如6%）
+- ✅ 提高资金安全性
+- ✅ 适合高波动市场
+
+**适用场景：**
+- 10倍杠杆的USDC-M永续合约
+- 高波动性加密货币（如BTC、ETH）
+- 5分钟K线周期交易
+- 追求资金安全的交易者
+
 **适用场景：**
 - 10倍杠杆的USDC-M永续合约
 - 高波动性加密货币（如BTC、ETH）

@@ -58,6 +58,7 @@ range_ratio_threshold = 0.5  # Minimum range ratio (current range / average rang
 # Stop loss parameters
 stop_loss_range_multiplier = 0.8  # Moving stop loss distance = latest 5m K-line range * this multiplier
 stop_loss_min_distance_percent = 0.025  # Minimum stop loss distance as percentage of price (2.5% = 0.025) - 平衡型配置
+stop_loss_max_distance_percent = 0.03  # Maximum stop loss distance as percentage of price (3% = 0.03) - 防止止损距离过大
 engulfing_body_ratio_threshold = 0.85  # Minimum engulfing body ratio to trigger stop loss (85% = less sensitive)
 
 # Real-time stop loss optimization parameters (实时止损优化参数)

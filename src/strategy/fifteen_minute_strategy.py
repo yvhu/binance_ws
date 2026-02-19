@@ -56,7 +56,8 @@ class FiveMinuteStrategy:
         self.shadow_ratio_threshold = config.get_config("strategy", "shadow_ratio_threshold", default=0.5)
         self.range_ratio_threshold = config.get_config("strategy", "range_ratio_threshold", default=0.7)
         self.stop_loss_range_multiplier = config.get_config("strategy", "stop_loss_range_multiplier", default=0.8)
-        self.stop_loss_min_distance_percent = config.get_config("strategy", "stop_loss_min_distance_percent", default=0.003)
+        self.stop_loss_min_distance_percent = config.get_config("strategy", "stop_loss_min_distance_percent", default=0.025)
+        self.stop_loss_max_distance_percent = config.get_config("strategy", "stop_loss_max_distance_percent", default=0.03)
         self.engulfing_body_ratio_threshold = config.get_config("strategy", "engulfing_body_ratio_threshold", default=0.7)
         self.trend_filter_enabled = config.get_config("strategy", "trend_filter_enabled", default=True)
         self.trend_filter_ma_period = config.get_config("strategy", "trend_filter_ma_period", default=20)
@@ -592,16 +593,32 @@ class FiveMinuteStrategy:
             stop_loss_distance_percent = None
             if stop_loss_price is not None and current_price > 0:
                 # For long position, stop loss is below entry price
-                stop_loss_distance_percent = (current_price - stop_loss_price) / current_price
-                # Ensure minimum stop loss distance
+                calculated_stop_loss_distance = current_price - stop_loss_price
+                # Ensure minimum stop loss distance AND limit maximum stop loss distance
                 min_stop_loss_distance = current_price * self.stop_loss_min_distance_percent
-                actual_stop_loss_distance = max(current_price - stop_loss_price, min_stop_loss_distance)
+                # Use min() to limit maximum stop loss distance, not max()
+                actual_stop_loss_distance = max(calculated_stop_loss_distance, min_stop_loss_distance)
+                # But also cap it at a reasonable maximum (e.g., 3% for 10x leverage)
+                max_stop_loss_distance = current_price * self.stop_loss_max_distance_percent
+                actual_stop_loss_distance = min(actual_stop_loss_distance, max_stop_loss_distance)
                 stop_loss_distance_percent = actual_stop_loss_distance / current_price
+                
+                # Recalculate stop loss price if it was capped
+                if actual_stop_loss_distance != calculated_stop_loss_distance:
+                    stop_loss_price = current_price - actual_stop_loss_distance
+                    # Update position's stop loss price
+                    position = self.position_manager.get_position(symbol)
+                    if position:
+                        position['stop_loss_price'] = stop_loss_price
+                
                 logger.info(
                     f"Stop loss distance for {symbol}: "
                     f"price={current_price:.2f}, "
-                    f"stop_loss={stop_loss_price:.2f}, "
-                    f"distance={actual_stop_loss_distance:.2f} ({stop_loss_distance_percent*100:.2f}%)"
+                    f"calculated_stop_loss={calculated_stop_loss_distance:.2f} ({calculated_stop_loss_distance/current_price*100:.2f}%), "
+                    f"min_distance={min_stop_loss_distance:.2f} ({self.stop_loss_min_distance_percent*100:.2f}%), "
+                    f"max_distance={max_stop_loss_distance:.2f} ({self.stop_loss_max_distance_percent*100:.2f}%), "
+                    f"actual_distance={actual_stop_loss_distance:.2f} ({stop_loss_distance_percent*100:.2f}%), "
+                    f"final_stop_loss={stop_loss_price:.2f}"
                 )
             
             # Calculate position size with risk management
@@ -708,16 +725,32 @@ class FiveMinuteStrategy:
             stop_loss_distance_percent = None
             if stop_loss_price is not None and current_price > 0:
                 # For short position, stop loss is above entry price
-                stop_loss_distance_percent = (stop_loss_price - current_price) / current_price
-                # Ensure minimum stop loss distance
+                calculated_stop_loss_distance = stop_loss_price - current_price
+                # Ensure minimum stop loss distance AND limit maximum stop loss distance
                 min_stop_loss_distance = current_price * self.stop_loss_min_distance_percent
-                actual_stop_loss_distance = max(stop_loss_price - current_price, min_stop_loss_distance)
+                # Use min() to limit maximum stop loss distance, not max()
+                actual_stop_loss_distance = max(calculated_stop_loss_distance, min_stop_loss_distance)
+                # But also cap it at a reasonable maximum (e.g., 3% for 10x leverage)
+                max_stop_loss_distance = current_price * self.stop_loss_max_distance_percent
+                actual_stop_loss_distance = min(actual_stop_loss_distance, max_stop_loss_distance)
                 stop_loss_distance_percent = actual_stop_loss_distance / current_price
+                
+                # Recalculate stop loss price if it was capped
+                if actual_stop_loss_distance != calculated_stop_loss_distance:
+                    stop_loss_price = current_price + actual_stop_loss_distance
+                    # Update position's stop loss price
+                    position = self.position_manager.get_position(symbol)
+                    if position:
+                        position['stop_loss_price'] = stop_loss_price
+                
                 logger.info(
                     f"Stop loss distance for {symbol}: "
                     f"price={current_price:.2f}, "
-                    f"stop_loss={stop_loss_price:.2f}, "
-                    f"distance={actual_stop_loss_distance:.2f} ({stop_loss_distance_percent*100:.2f}%)"
+                    f"calculated_stop_loss={calculated_stop_loss_distance:.2f} ({calculated_stop_loss_distance/current_price*100:.2f}%), "
+                    f"min_distance={min_stop_loss_distance:.2f} ({self.stop_loss_min_distance_percent*100:.2f}%), "
+                    f"max_distance={max_stop_loss_distance:.2f} ({self.stop_loss_max_distance_percent*100:.2f}%), "
+                    f"actual_distance={actual_stop_loss_distance:.2f} ({stop_loss_distance_percent*100:.2f}%), "
+                    f"final_stop_loss={stop_loss_price:.2f}"
                 )
             
             # Calculate position size with risk management
