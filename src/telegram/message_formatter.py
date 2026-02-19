@@ -543,8 +543,8 @@ class MessageFormatter:
         
         # MACD condition
         if macd_info:
-            macd_valid = macd_info.get('macd_valid', False)
-            macd_histogram = macd_info.get('macd_histogram', 0)
+            macd_valid = macd_info.get('is_valid', False)
+            macd_histogram = macd_info.get('histogram', 0)
             conditions.append(f"MACD {macd_histogram:.4f} {'✅' if macd_valid else '❌'}")
         
         # ADX condition
@@ -557,7 +557,7 @@ class MessageFormatter:
         if market_env_info:
             market_type = market_env_info.get('market_type', 'UNKNOWN')
             confidence = market_env_info.get('confidence', 0)
-            env_valid = market_env_info.get('env_valid', False)
+            env_valid = market_env_info.get('is_valid', False)
             conditions.append(f"市场 {market_type[:2]} {confidence:.0f}% {'✅' if env_valid else '❌'}")
         
         # Multi-timeframe condition
@@ -569,9 +569,9 @@ class MessageFormatter:
         
         # Sentiment condition
         if sentiment_info:
-            fear_greed_value = sentiment_info.get('fear_greed_value', 0)
-            fear_greed_classification = sentiment_info.get('fear_greed_classification', 'N/A')
-            sentiment_valid = sentiment_info.get('sentiment_valid', False)
+            fear_greed_value = sentiment_info.get('value', 0)
+            fear_greed_classification = sentiment_info.get('classification', 'N/A')
+            sentiment_valid = sentiment_info.get('is_valid', False)
             conditions.append(f"情绪 {fear_greed_value} ({fear_greed_classification[:2]}) {'✅' if sentiment_valid else '❌'}")
         
         # ML condition
@@ -628,8 +628,8 @@ class MessageFormatter:
             
             # Sentiment details
             if sentiment_info:
-                fear_greed_value = sentiment_info.get('fear_greed_value', 0)
-                fear_greed_classification = sentiment_info.get('fear_greed_classification', 'N/A')
+                fear_greed_value = sentiment_info.get('value', 0)
+                fear_greed_classification = sentiment_info.get('classification', 'N/A')
                 message += f"  😊 恐惧贪婪指数: {fear_greed_value} ({fear_greed_classification})\n"
             
             # ML details

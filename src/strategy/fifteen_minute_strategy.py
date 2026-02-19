@@ -3500,10 +3500,10 @@ class FiveMinuteStrategy:
         """
         try:
             # Extract indicator values
-            rsi_value = rsi_info.get('rsi', 0) if rsi_info else 0
-            adx_value = adx_info.get('adx', 0) if adx_info else 0
-            macd_value = macd_info.get('macd', 0) if macd_info else 0
-            macd_signal_value = macd_info.get('signal', 0) if macd_info else 0
+            rsi_value = rsi_info.get('rsi_value', 0) if rsi_info else 0
+            adx_value = adx_info.get('adx_value', 0) if adx_info else 0
+            macd_value = macd_info.get('macd_value', 0) if macd_info else 0
+            macd_signal_value = macd_info.get('signal_value', 0) if macd_info else 0
             macd_hist_value = macd_info.get('histogram', 0) if macd_info else 0
             
             # Calculate ATR
