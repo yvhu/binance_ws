@@ -149,8 +149,6 @@ class FiveMinuteStrategy:
         
         # Early entry configuration
         self.early_entry_enabled = config.get_config("strategy", "early_entry_enabled", default=False)
-        self.early_entry_min_progress = config.get_config("strategy", "early_entry_min_progress", default=0.7)
-        self.early_entry_strong_signal_only = config.get_config("strategy", "early_entry_strong_signal_only", default=True)
         
         # Entry confirmation configuration
         self.entry_confirmation_enabled = config.get_config("strategy", "entry_confirmation_enabled", default=True)
@@ -158,9 +156,6 @@ class FiveMinuteStrategy:
         self.entry_confirmation_wait_klines = config.get_config("strategy", "entry_confirmation_wait_klines", default=1)
         self.entry_confirmation_price_threshold = config.get_config("strategy", "entry_confirmation_price_threshold", default=0.002)
         self.entry_confirmation_volume_threshold = config.get_config("strategy", "entry_confirmation_volume_threshold", default=1.1)
-        
-        # Track early entry status for each symbol
-        self.early_entry_checked: Dict[str, int] = {}  # symbol -> kline_open_time
         
         # Track pending entry confirmations for each symbol
         self.pending_entry_confirmations: Dict[str, Dict] = {}  # symbol -> {direction, kline_time, signal_strength, volume_info, range_info, body_info, trend_info, rsi_info, macd_info, adx_info, market_env_info, multi_timeframe_info, sentiment_info, ml_info}
@@ -259,6 +254,8 @@ class FiveMinuteStrategy:
         # Check for real-time engulfing stop loss if position exists
         if self.position_manager.has_position(symbol):
             await self._check_engulfing_stop_loss_realtime(symbol, kline_info)
+            # Check for real-time trend reversal
+            await self._check_realtime_trend_reversal(symbol, kline_info)
         
         # Check for early entry if enabled and K-line is not closed
         if not is_closed and self.early_entry_enabled:
@@ -942,41 +939,10 @@ class FiveMinuteStrategy:
             logger.error(traceback.format_exc())
             return True, None
     
-    def _calculate_kline_progress(self, kline: Dict) -> float:
-        """
-        Calculate K-line progress (0.0 to 1.0)
-        
-        Args:
-            kline: K-line information dictionary
-            
-        Returns:
-            Progress as a float between 0.0 and 1.0
-        """
-        try:
-            import time
-            current_time = int(time.time() * 1000)
-            open_time = kline.get('open_time', 0)
-            close_time = kline.get('close_time', 0)
-            
-            if close_time <= open_time:
-                return 0.0
-            
-            elapsed = current_time - open_time
-            total_duration = close_time - open_time
-            progress = elapsed / total_duration if total_duration > 0 else 0.0
-            
-            # Clamp progress between 0 and 1
-            progress = max(0.0, min(1.0, progress))
-            
-            return progress
-            
-        except Exception as e:
-            logger.error(f"Error calculating K-line progress: {e}")
-            return 0.0
-    
     async def _check_early_entry(self, symbol: str, kline: Dict) -> None:
         """
-        Check if early entry conditions are met before K-line closes
+        实时检查开仓条件（WebSocket实时数据）
+        每次K线更新时都检查，不等待K线关闭
         
         Args:
             symbol: Trading pair symbol
@@ -991,20 +957,8 @@ class FiveMinuteStrategy:
             if self.position_manager.has_position(symbol):
                 return
             
-            # Check if this K-line has already been checked for early entry
-            kline_open_time = kline.get('open_time', 0)
-            if symbol in self.early_entry_checked and self.early_entry_checked[symbol] == kline_open_time:
-                return
-            
-            # Calculate K-line progress
-            progress = self._calculate_kline_progress(kline)
-            
-            # Check if K-line has reached minimum progress
-            if progress < self.early_entry_min_progress:
-                return
-            
-            # Mark this K-line as checked
-            self.early_entry_checked[symbol] = kline_open_time
+            # 实时检查：每次K线更新都检查开仓条件
+            # 不限制检查次数，让市场实时决定是否开仓
             
             
             # Get K-line direction
@@ -1080,10 +1034,6 @@ class FiveMinuteStrategy:
                 elif signal_strength == 'MEDIUM':
                     signal_strength = 'WEAK'
             
-            # Check if only strong signals are allowed for early entry
-            if self.early_entry_strong_signal_only and signal_strength != 'STRONG':
-                return
-            
             # If all conditions met, open position
             if all_conditions_met:
                 
@@ -1115,14 +1065,14 @@ class FiveMinuteStrategy:
                 
                 # Send notification
                 await self.telegram_client.send_message(
-                    f"⚡ 提前开仓执行\n\n"
+                    f"⚡ 实时开仓执行\n\n"
                     f"交易对: {symbol}\n"
                     f"方向: {direction}\n"
-                    f"K线进度: {progress*100:.1f}%\n"
                     f"信号强度: {signal_strength}\n"
                     f"当前价格: ${current_price:.2f}\n"
                     f"止损价格: ${stop_loss_price:.2f if stop_loss_price else 'N/A'}\n"
-                    f"止盈比例: {take_profit_percent*100:.1f}%"
+                    f"止盈比例: {take_profit_percent*100:.1f}%\n"
+                    f"⚡ WebSocket实时数据"
                 )
         except Exception as e:
             logger.error(f"Error checking early entry for {symbol}: {e}")
@@ -2477,6 +2427,178 @@ class FiveMinuteStrategy:
                 
         except Exception as e:
             logger.error(f"Error checking realtime engulfing stop loss for {symbol}: {e}")
+    
+    async def _check_realtime_trend_reversal(self, symbol: str, current_kline: Dict) -> None:
+        """
+        实时检测趋势反转，提前平仓
+        当检测到强吞没形态时立即平仓，不等待K线关闭
+        
+        Args:
+            symbol: 交易对
+            current_kline: 当前K线（可能未关闭）
+        """
+        try:
+            # 获取持仓信息
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            position_side = position['side']
+            
+            # 获取最近的K线数据
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines or len(all_klines) < 2:
+                return
+            
+            # 获取上一根已关闭的K线
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            if len(closed_klines) < 1:
+                return
+            
+            previous_kline = closed_klines[-1]
+            
+            # 判断当前K线方向（即使未关闭）
+            current_direction = self.technical_analyzer.get_kline_direction(current_kline)
+            if current_direction is None:
+                return
+            
+            # 判断上一根K线方向
+            previous_direction = self.technical_analyzer.get_kline_direction(previous_kline)
+            if previous_direction is None:
+                return
+            
+            # 检查是否形成反向吞没
+            if current_direction == previous_direction:
+                return
+            
+            # 计算实体比例
+            previous_body = abs(previous_kline['close'] - previous_kline['open'])
+            current_body = abs(current_kline['close'] - current_kline['open'])
+            
+            if previous_body == 0:
+                logger.warning(f"Previous kline body is zero, cannot calculate engulfing ratio")
+                return
+            
+            engulfing_ratio = current_body / previous_body
+            
+            # 检查真正的吞没形态
+            is_true_engulfing = False
+            if current_direction == 'UP' and previous_direction == 'DOWN':
+                # 当前是阳线，上一根是阴线
+                # 真正的吞没：当前开盘价 < 上一根收盘价 且 当前收盘价 > 上一根开盘价
+                is_true_engulfing = (
+                    current_kline['open'] < previous_kline['close'] and
+                    current_kline['close'] > previous_kline['open']
+                )
+            elif current_direction == 'DOWN' and previous_direction == 'UP':
+                # 当前是阴线，上一根是阳线
+                # 真正的吞没：当前开盘价 > 上一根收盘价 且 当前收盘价 < 上一根开盘价
+                is_true_engulfing = (
+                    current_kline['open'] > previous_kline['close'] and
+                    current_kline['close'] < previous_kline['open']
+                )
+            
+            if not is_true_engulfing:
+                return
+            
+            # 检查是否是强吞没形态（实体比例大于阈值）
+            if engulfing_ratio >= self.engulfing_body_ratio_threshold:
+                # 检查是否与持仓方向相反
+                is_reversal = False
+                reversal_reason = ""
+                
+                if position_side == 'LONG' and current_direction == 'DOWN':
+                    # 多头持仓，当前是阴线吞没
+                    is_reversal = True
+                    reversal_reason = "强阴线吞没反转"
+                elif position_side == 'SHORT' and current_direction == 'UP':
+                    # 空头持仓，当前是阳线吞没
+                    is_reversal = True
+                    reversal_reason = "强阳线吞没反转"
+                
+                if is_reversal:
+                    logger.warning(
+                        f"[REALTIME_TREND_REVERSAL] {symbol}: "
+                        f"position_side={position_side}, "
+                        f"previous_direction={previous_direction}, current_direction={current_direction}, "
+                        f"previous_body={previous_body:.2f}, current_body={current_body:.2f}, "
+                        f"engulfing_ratio={engulfing_ratio:.2f}, threshold={self.engulfing_body_ratio_threshold}"
+                    )
+                    
+                    # 立即平仓
+                    success = await self.trading_executor.close_all_positions(symbol)
+                    
+                    if success:
+                        # 获取持仓详情用于通知
+                        entry_price = position.get('entry_price', 0)
+                        quantity = position.get('quantity', 0)
+                        current_price = self.data_handler.get_current_price(symbol)
+                        
+                        # 计算盈亏
+                        pnl = 0.0
+                        if current_price and entry_price > 0:
+                            if position_side == 'LONG':
+                                pnl = (current_price - entry_price) * quantity
+                            else:  # SHORT
+                                pnl = (entry_price - current_price) * quantity
+                        
+                        # 发送平仓通知
+                        await self.telegram_client.send_close_notification(
+                            symbol=symbol,
+                            side=position_side,
+                            entry_price=entry_price,
+                            exit_price=current_price if current_price else 0,
+                            quantity=quantity,
+                            pnl=pnl,
+                            close_reason=f"实时趋势反转平仓\n"
+                                       f"原因: {reversal_reason}\n"
+                                       f"上一根K线方向: {previous_direction}\n"
+                                       f"当前K线方向: {current_direction}\n"
+                                       f"上一根K线实体: {previous_body:.2f}\n"
+                                       f"当前K线实体: {current_body:.2f}\n"
+                                       f"吞没比例: {engulfing_ratio*100:.2f}%\n"
+                                       f"阈值: {self.engulfing_body_ratio_threshold*100:.0f}%\n"
+                                       f"⚡ 实时监控，未等待K线关闭"
+                        )
+                        
+                        # Update trade result for drawdown protection
+                        self._update_trade_result(pnl)
+                        
+                        # Log exit signal
+                        self._log_signal(
+                            symbol=symbol,
+                            direction='UP' if position_side == 'LONG' else 'DOWN',
+                            current_price=current_price if current_price else 0,
+                            kline=current_kline,
+                            signal_strength='MEDIUM',
+                            volume_info={},
+                            range_info={},
+                            body_info={},
+                            signal_type="EXIT_REALTIME_TREND_REVERSAL"
+                        )
+                        
+                        # Log trade data
+                        self._log_trade(symbol, position, current_price if current_price else 0, "Realtime Trend Reversal")
+                        
+                        # 清除本地持仓状态
+                        self.position_manager.close_position(symbol, current_price if current_price else 0)
+                        
+                        # 清除相关状态
+                        if symbol in self.position_peak_prices:
+                            del self.position_peak_prices[symbol]
+                        if symbol in self.position_entry_times:
+                            del self.position_entry_times[symbol]
+                        if symbol in self.partial_take_profit_status:
+                            del self.partial_take_profit_status[symbol]
+                        if symbol in self.stop_loss_first_trigger_time:
+                            del self.stop_loss_first_trigger_time[symbol]
+                    else:
+                        logger.error(f"Failed to close position due to realtime trend reversal for {symbol}")
+            
+        except Exception as e:
+            logger.error(f"Error checking realtime trend reversal for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             import traceback
             logger.error(traceback.format_exc())
     
