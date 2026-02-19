@@ -180,8 +180,8 @@ class PositionManager:
                                     current_range = latest_kline['high'] - latest_kline['low']
                                     
                                     # Get stop loss parameters from config
-                                    stop_loss_range_multiplier = self.config.get('strategy.stop_loss_range_multiplier', 0.6)
-                                    stop_loss_min_distance_percent = self.config.get('strategy.stop_loss_min_distance_percent', 0.005)
+                                    stop_loss_range_multiplier = self.config.get_config('strategy', 'stop_loss_range_multiplier', default=0.8)
+                                    stop_loss_min_distance_percent = self.config.get_config('strategy', 'stop_loss_min_distance_percent', default=0.03)
                                     
                                     # Calculate stop loss distance
                                     stop_loss_distance = current_range * stop_loss_range_multiplier
@@ -220,7 +220,7 @@ class PositionManager:
                         
                         logger.warning(
                             f"⚠️ Position synced from exchange: {symbol} {side} "
-                            f"qty={quantity} entry_price={entry_price:.2f} "
+                            f"qty={quantity} entry_price={entry_price:.2f if entry_price is not None else 'N/A'} "
                             f"stop_loss={stop_loss_price:.2f if stop_loss_price is not None else 'N/A'}"
                         )
                     else:
@@ -280,8 +280,8 @@ class PositionManager:
                     continue
                 
                 # Get stop loss parameters from config
-                stop_loss_range_multiplier = self.config.get('strategy.stop_loss_range_multiplier', 0.8)
-                stop_loss_min_distance_percent = self.config.get('strategy.stop_loss_min_distance_percent', 0.003)
+                stop_loss_range_multiplier = self.config.get_config('strategy', 'stop_loss_range_multiplier', default=0.8)
+                stop_loss_min_distance_percent = self.config.get_config('strategy', 'stop_loss_min_distance_percent', default=0.03)
                 
                 # Calculate stop loss distance
                 stop_loss_distance = current_range * stop_loss_range_multiplier
