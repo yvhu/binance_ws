@@ -425,9 +425,13 @@ class MessageFormatter:
                                    range_info: Optional[Dict] = None,
                                    body_info: Optional[Dict] = None,
                                    trend_info: Optional[Dict] = None,
+                                   rsi_info: Optional[Dict] = None,
+                                   macd_info: Optional[Dict] = None,
+                                   adx_info: Optional[Dict] = None,
+                                   signal_strength: str = 'MEDIUM',
                                    kline_time: Optional[int] = None) -> str:
         """
-        Format indicator analysis message
+        Format indicator analysis message - Optimized version
         
         Args:
             symbol: Trading pair symbol
@@ -441,6 +445,10 @@ class MessageFormatter:
             range_info: Range information dictionary (optional)
             body_info: Body ratio information dictionary (optional)
             trend_info: Trend filter information dictionary (optional)
+            rsi_info: RSI filter information dictionary (optional)
+            macd_info: MACD filter information dictionary (optional)
+            adx_info: ADX filter information dictionary (optional)
+            signal_strength: Signal strength (STRONG/MEDIUM/WEAK)
             kline_time: K-line timestamp in milliseconds (optional)
             
         Returns:
@@ -448,133 +456,141 @@ class MessageFormatter:
         """
         # Direction emojis
         direction_emoji = {
-            'UP': '🟢 上涨',
-            'DOWN': '🔴 下跌'
+            'UP': '🟢',
+            'DOWN': '🔴'
         }
         
-        # Decision emoji
+        # Decision emoji and text
         decision_emoji = {
             'LONG': '🟢 做多',
             'SHORT': '🔴 做空',
             'NO_TRADE': '⏭️ 不交易'
         }
         
-        symbol_escaped = MessageFormatter._escape_html(symbol)
-        message = (
-            f"📊 <b>{symbol_escaped} 指标分析</b>\n\n"
-        )
+        # Signal strength emoji
+        strength_emoji = {
+            'STRONG': '💪',
+            'MEDIUM': '👍',
+            'WEAK': '👌'
+        }
         
-        # Add K-line time information
+        symbol_escaped = MessageFormatter._escape_html(symbol)
+        
+        # Build header with decision
+        header_emoji = decision_emoji.get(decision, '📊') if decision else '📊'
+        message = f"{header_emoji} <b>{symbol_escaped} 5m K线分析</b>\n\n"
+        
+        # Add K-line time and price in one line
         if kline_time is not None:
             kline_end = datetime.fromtimestamp(kline_time / 1000)
             kline_start = kline_end.replace(minute=(kline_end.minute // 5) * 5, second=0, microsecond=0)
             kline_end_rounded = kline_start + timedelta(minutes=5)
-            message += f"⏰ <b>5m K线时间:</b> {kline_start.strftime('%H:%M:%S')}-{kline_end_rounded.strftime('%H:%M:%S')}\n\n"
+            time_str = f"{kline_start.strftime('%H:%M')}-{kline_end_rounded.strftime('%H:%M')}"
+        else:
+            time_str = "N/A"
         
-        if current_price is not None:
-            message += f"💰 <b>当前价格:</b> ${current_price:,.2f}\n\n"
+        price_str = f"${current_price:,.2f}" if current_price else "N/A"
+        direction_str = direction_emoji.get(direction_5m, direction_5m)
+        message += f"⏰ {time_str} | 💰 {price_str} | {direction_str}\n\n"
         
-        message += (
-            f"📊 <b>5m K线方向:</b>\n"
-            f"  • {direction_emoji.get(direction_5m, direction_5m)}\n"
-        )
+        # Build condition summary - compact format
+        conditions = []
         
-        # Add volume information if available
+        # Volume condition
         if volume_info:
-            current_volume = volume_info.get('current_volume', 0)
-            avg_volume_5 = volume_info.get('avg_volume_5', 0)
             ratio_5 = volume_info.get('ratio_5', 0)
             threshold = volume_info.get('threshold', 0)
-            
             volume_valid = ratio_5 >= threshold
-            volume_status = "✅ 通过" if volume_valid else "❌ 未通过"
-            
-            message += (
-                f"\n"
-                f"📦 <b>5m K线成交量 (基于已关闭K线):</b>\n"
-                f"  • 当前5m成交量: {current_volume:,.2f}\n"
-                f"  • 近5根平均: {avg_volume_5:,.2f} (比例: {ratio_5:.2f}x)\n"
-                f"  • 阈值要求: ≥{threshold:.2f}x\n"
-                f"  • 成交量检查: {volume_status}\n"
-            )
+            conditions.append(f"成交量 {ratio_5:.2f}x {'✅' if volume_valid else '❌'}")
         
-        # Add range information if available
+        # Range condition
         if range_info:
-            current_range = range_info.get('current_range', 0)
-            avg_range_5 = range_info.get('avg_range_5', 0)
             ratio_5 = range_info.get('ratio_5', 0)
             threshold = range_info.get('threshold', 0)
-            
             range_valid = ratio_5 >= threshold
-            range_status = "✅ 通过" if range_valid else "❌ 未通过"
-            
-            message += (
-                f"\n"
-                f"📊 <b>5m K线振幅 (基于已关闭K线):</b>\n"
-                f"  • 当前5m振幅: {current_range:.2f}\n"
-                f"  • 近5根平均: {avg_range_5:.2f} (比例: {ratio_5:.2f}x)\n"
-                f"  • 阈值要求: ≥{threshold:.2f}x\n"
-                f"  • 振幅检查: {range_status}\n"
-            )
+            conditions.append(f"振幅 {ratio_5:.2f}x {'✅' if range_valid else '❌'}")
         
-        # Direction is determined by 5m K-line only
-        message += f"\n<b>交易方向:</b> {direction_emoji.get(direction_5m, direction_5m)}\n"
-        
-        # Add body ratio information if available
+        # Body condition
         if body_info:
-            body = body_info.get('body', 0)
-            range_val = body_info.get('range', 0)
             body_ratio = body_info.get('body_ratio', 0)
-            upper_shadow = body_info.get('upper_shadow', 0)
-            lower_shadow = body_info.get('lower_shadow', 0)
+            threshold = body_info.get('threshold', 0)
             upper_shadow_ratio = body_info.get('upper_shadow_ratio', 0)
             lower_shadow_ratio = body_info.get('lower_shadow_ratio', 0)
-            threshold = body_info.get('threshold', 0)
             shadow_ratio_threshold = body_info.get('shadow_ratio_threshold', 0.5)
-            
             body_valid = body_ratio >= threshold
             shadow_valid = upper_shadow_ratio < shadow_ratio_threshold and lower_shadow_ratio < shadow_ratio_threshold
-            body_status = "✅ 通过" if (body_valid and shadow_valid) else "❌ 未通过"
-            
-            message += (
-                f"\n"
-                f"📊 <b>5m K线实体比例:</b>\n"
-                f"  • 实体长度: {body:.2f}\n"
-                f"  • 整体振幅: {range_val:.2f}\n"
-                f"  • 实体比例: {body_ratio:.4f}\n"
-                f"  • 上影线: {upper_shadow:.2f} ({upper_shadow_ratio*100:.1f}%)\n"
-                f"  • 下影线: {lower_shadow:.2f} ({lower_shadow_ratio*100:.1f}%)\n"
-                # f"  • 阈值要求: 实体≥{threshold:.4f}, 单边影线<({shadow_ratio_threshold*100:.1f}%)\n"
-                f"  • 实体检查: {body_status}\n"
-            )
+            conditions.append(f"实体 {body_ratio*100:.0f}% {'✅' if (body_valid and shadow_valid) else '❌'}")
         
-        # Add trend filter information if available
+        # Trend condition
         if trend_info:
-            current_price_trend = trend_info.get('current_price', 0)
-            ma_value = trend_info.get('ma_value', 0)
-            ma_direction = trend_info.get('ma_direction', 'UNKNOWN')
-            price_vs_ma = trend_info.get('price_vs_ma', 'UNKNOWN')
             trend_aligned = trend_info.get('trend_aligned', False)
             ma_period = trend_info.get('ma_period', 20)
-            
-            ma_direction_emoji = '📈 上升' if ma_direction == 'UP' else '📉 下降'
-            price_vs_ma_emoji = '🔼 上方' if price_vs_ma == 'ABOVE' else '🔽 下方'
-            trend_status = "✅ 通过" if trend_aligned else "❌ 未通过"
-            
-            message += (
-                f"\n"
-                f"📊 <b>趋势过滤 (MA{ma_period}):</b>\n"
-                f"  • 当前价格: ${current_price_trend:,.2f}\n"
-                f"  • MA{ma_period}值: ${ma_value:,.2f}\n"
-                f"  • MA方向: {ma_direction_emoji}\n"
-                f"  • 价格位置: {price_vs_ma_emoji}\n"
-                f"  • 趋势一致性: {trend_status}\n"
-            )
+            conditions.append(f"MA{ma_period} {'✅' if trend_aligned else '❌'}")
+        
+        # RSI condition
+        if rsi_info:
+            rsi_valid = rsi_info.get('rsi_valid', False)
+            rsi_value = rsi_info.get('rsi_value', 0)
+            conditions.append(f"RSI {rsi_value:.0f} {'✅' if rsi_valid else '❌'}")
+        
+        # MACD condition
+        if macd_info:
+            macd_valid = macd_info.get('macd_valid', False)
+            macd_histogram = macd_info.get('macd_histogram', 0)
+            conditions.append(f"MACD {macd_histogram:.4f} {'✅' if macd_valid else '❌'}")
+        
+        # ADX condition
+        if adx_info:
+            adx_valid = adx_info.get('adx_valid', False)
+            adx_value = adx_info.get('adx_value', 0)
+            conditions.append(f"ADX {adx_value:.0f} {'✅' if adx_valid else '❌'}")
+        
+        # Display conditions in compact format (2 per line)
+        message += "<b>条件检查:</b>\n"
+        for i in range(0, len(conditions), 2):
+            if i + 1 < len(conditions):
+                message += f"  {conditions[i]}  |  {conditions[i+1]}\n"
+            else:
+                message += f"  {conditions[i]}\n"
+        
+        # Add signal strength and decision
+        message += f"\n<b>信号强度:</b> {strength_emoji.get(signal_strength, signal_strength)} {signal_strength}\n"
         
         if decision:
-            message += f"\n<b>交易决策:</b> {decision_emoji.get(decision, decision)}\n"
+            message += f"<b>交易决策:</b> {decision_emoji.get(decision, decision)}\n"
         
-        message += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        # Add detailed info only for trade decisions or when requested
+        if decision and decision != 'NO_TRADE':
+            message += "\n<b>详细信息:</b>\n"
+            
+            # Volume details
+            if volume_info:
+                current_volume = volume_info.get('current_volume', 0)
+                avg_volume_5 = volume_info.get('avg_volume_5', 0)
+                message += f"  📦 成交量: {current_volume:,.0f} (平均: {avg_volume_5:,.0f})\n"
+            
+            # Range details
+            if range_info:
+                current_range = range_info.get('current_range', 0)
+                avg_range_5 = range_info.get('avg_range_5', 0)
+                message += f"  📊 振幅: ${current_range:.2f} (平均: ${avg_range_5:.2f})\n"
+            
+            # Body details
+            if body_info:
+                body = body_info.get('body', 0)
+                range_val = body_info.get('range', 0)
+                upper_shadow = body_info.get('upper_shadow', 0)
+                lower_shadow = body_info.get('lower_shadow', 0)
+                message += f"  🕯️ 实体: ${body:.2f} | 上影: ${upper_shadow:.2f} | 下影: ${lower_shadow:.2f}\n"
+            
+            # Trend details
+            if trend_info:
+                ma_value = trend_info.get('ma_value', 0)
+                ma_direction = trend_info.get('ma_direction', 'UNKNOWN')
+                ma_direction_emoji = '📈' if ma_direction == 'UP' else '📉'
+                message += f"  📈 MA20: ${ma_value:,.2f} {ma_direction_emoji}\n"
+        
+        message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return message
     

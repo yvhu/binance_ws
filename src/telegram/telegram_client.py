@@ -339,6 +339,10 @@ class TelegramClient:
                                        range_info: Optional[Dict] = None,
                                        body_info: Optional[Dict] = None,
                                        trend_info: Optional[Dict] = None,
+                                       rsi_info: Optional[Dict] = None,
+                                       macd_info: Optional[Dict] = None,
+                                       adx_info: Optional[Dict] = None,
+                                       signal_strength: str = 'MEDIUM',
                                        kline_time: Optional[int] = None) -> bool:
         """
         Send indicator analysis notification to Telegram
@@ -362,7 +366,8 @@ class TelegramClient:
         """
         message = self.formatter.format_indicator_analysis(
             symbol, sar_direction, direction_3m, direction_5m,
-            sar_value, current_price, decision, volume_info, range_info, body_info, trend_info, kline_time
+            sar_value, current_price, decision, volume_info, range_info, body_info, trend_info,
+            rsi_info, macd_info, adx_info, signal_strength, kline_time
         )
         return await self.send_message(message, parse_mode='HTML')
     
