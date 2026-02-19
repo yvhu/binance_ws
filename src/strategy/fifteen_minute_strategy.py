@@ -1568,6 +1568,27 @@ class FiveMinuteStrategy:
                 logger.info(f"[STRATEGY] All conditions met for {symbol}, preparing to open position...")
                 # All conditions met - send trade decision
                 decision = 'LONG' if direction_5m == 'UP' else 'SHORT'
+                
+                # Log signal data for analysis (even if no actual trade)
+                self._log_signal(
+                    symbol=symbol,
+                    direction=direction_5m,
+                    current_price=current_price,
+                    kline=kline_5m,
+                    signal_strength=signal_strength,
+                    volume_info=volume_info,
+                    range_info=range_info,
+                    body_info=body_info,
+                    trend_info=trend_info,
+                    rsi_info=rsi_info,
+                    macd_info=macd_info,
+                    adx_info=adx_info,
+                    market_env_info=market_env_info,
+                    multi_timeframe_info=multi_timeframe_info,
+                    sentiment_info=sentiment_info,
+                    ml_info=ml_info
+                )
+                
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
                     sar_direction=None,
@@ -2417,6 +2438,19 @@ class FiveMinuteStrategy:
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
                     
+                    # Log exit signal
+                    self._log_signal(
+                        symbol=symbol,
+                        direction='UP' if position_side == 'LONG' else 'DOWN',
+                        current_price=current_price if current_price else 0,
+                        kline=current_kline,
+                        signal_strength='MEDIUM',
+                        volume_info={},
+                        range_info={},
+                        body_info={},
+                        signal_type="EXIT_ENGULFING_STOP_LOSS"
+                    )
+                    
                     # Log trade data
                     self._log_trade(symbol, position, current_price if current_price else 0, "Engulfing Stop Loss")
                     
@@ -2563,6 +2597,19 @@ class FiveMinuteStrategy:
                     
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
+                    
+                    # Log exit signal
+                    self._log_signal(
+                        symbol=symbol,
+                        direction='UP' if position_side == 'LONG' else 'DOWN',
+                        current_price=current_price if current_price else 0,
+                        kline=current_kline,
+                        signal_strength='MEDIUM',
+                        volume_info={},
+                        range_info={},
+                        body_info={},
+                        signal_type="EXIT_REALTIME_ENGULFING_STOP_LOSS"
+                    )
                     
                     # Log trade data
                     self._log_trade(symbol, position, current_price if current_price else 0, "Realtime Engulfing Stop Loss")
@@ -2866,6 +2913,19 @@ class FiveMinuteStrategy:
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
                     
+                    # Log exit signal
+                    self._log_signal(
+                        symbol=symbol,
+                        direction='UP' if position_side == 'LONG' else 'DOWN',
+                        current_price=current_price,
+                        kline={},
+                        signal_strength='MEDIUM',
+                        volume_info={},
+                        range_info={},
+                        body_info={},
+                        signal_type="EXIT_PRICE_STOP_LOSS"
+                    )
+                    
                     # Log trade data
                     self._log_trade(symbol, position, current_price, "Price Stop Loss")
                     
@@ -3049,6 +3109,19 @@ class FiveMinuteStrategy:
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
                     
+                    # Log exit signal
+                    self._log_signal(
+                        symbol=symbol,
+                        direction='UP' if position_side == 'LONG' else 'DOWN',
+                        current_price=current_price,
+                        kline={},
+                        signal_strength='MEDIUM',
+                        volume_info={},
+                        range_info={},
+                        body_info={},
+                        signal_type="EXIT_TAKE_PROFIT"
+                    )
+                    
                     # Log trade data
                     self._log_trade(symbol, position, current_price, "Take Profit")
                     
@@ -3224,6 +3297,19 @@ class FiveMinuteStrategy:
                     
                     # Update trade result for drawdown protection
                     self._update_trade_result(pnl)
+                    
+                    # Log exit signal
+                    self._log_signal(
+                        symbol=symbol,
+                        direction='UP' if position_side == 'LONG' else 'DOWN',
+                        current_price=current_price,
+                        kline={},
+                        signal_strength='MEDIUM',
+                        volume_info={},
+                        range_info={},
+                        body_info={},
+                        signal_type="EXIT_TIME_STOP_LOSS"
+                    )
                     
                     # Log trade data
                     self._log_trade(symbol, position, current_price, "Time Stop Loss")
@@ -3523,3 +3609,134 @@ class FiveMinuteStrategy:
             
         except Exception as e:
             logger.error(f"Error logging trade for {symbol}: {e}")
+    
+    def _log_signal(self, symbol: str, direction: str, current_price: float, kline: Dict,
+                    signal_strength: str, volume_info: Dict, range_info: Dict, body_info: Dict,
+                    trend_info: Optional[Dict] = None, rsi_info: Optional[Dict] = None,
+                    macd_info: Optional[Dict] = None, adx_info: Optional[Dict] = None,
+                    market_env_info: Optional[Dict] = None, multi_timeframe_info: Optional[Dict] = None,
+                    sentiment_info: Optional[Dict] = None, ml_info: Optional[Dict] = None,
+                    signal_type: str = "ENTRY") -> None:
+        """
+        Log trading signal data for analysis (works even without real trading)
+        
+        Args:
+            symbol: Trading pair symbol
+            direction: 'UP' or 'DOWN'
+            current_price: Current price
+            kline: K-line data
+            signal_strength: Signal strength (STRONG/MEDIUM/WEAK)
+            volume_info: Volume information
+            range_info: Range information
+            body_info: Body information
+            trend_info: Trend information (optional)
+            rsi_info: RSI information (optional)
+            macd_info: MACD information (optional)
+            adx_info: ADX information (optional)
+            market_env_info: Market environment information (optional)
+            multi_timeframe_info: Multi-timeframe information (optional)
+            sentiment_info: Sentiment information (optional)
+            ml_info: ML information (optional)
+            signal_type: Signal type (ENTRY/EXIT)
+        """
+        try:
+            # Extract indicator values
+            rsi_value = rsi_info.get('rsi', 0) if rsi_info else 0
+            adx_value = adx_info.get('adx', 0) if adx_info else 0
+            macd_value = macd_info.get('macd', 0) if macd_info else 0
+            macd_signal_value = macd_info.get('signal', 0) if macd_info else 0
+            macd_hist_value = macd_info.get('histogram', 0) if macd_info else 0
+            
+            # Calculate ATR
+            atr_value = 0
+            try:
+                all_klines = self.data_handler.get_klines(symbol, "5m")
+                if all_klines:
+                    closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+                    if len(closed_klines) >= self.atr_period + 1:
+                        df = pd.DataFrame(closed_klines)
+                        atr_series = self.technical_analyzer.calculate_atr(df, period=self.atr_period)
+                        if atr_series is not None and len(atr_series) > 0:
+                            atr_value = atr_series.iloc[-1]
+            except:
+                pass
+            
+            # Extract other values
+            volume_ratio = volume_info.get('ratio_5', 0) if volume_info else 0
+            body_ratio = body_info.get('body_ratio', 0) if body_info else 0
+            shadow_ratio = max(body_info.get('upper_shadow_ratio', 0), body_info.get('lower_shadow_ratio', 0)) if body_info else 0
+            
+            # Calculate EMAs
+            ema_20 = 0
+            ema_50 = 0
+            ema_200 = 0
+            try:
+                all_klines = self.data_handler.get_klines(symbol, "5m")
+                if all_klines:
+                    closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+                    if len(closed_klines) >= 200:
+                        df = pd.DataFrame(closed_klines)
+                        ema_20 = self.technical_analyzer.calculate_ma(df['close'], 20).iloc[-1] if len(self.technical_analyzer.calculate_ma(df['close'], 20)) > 0 else 0
+                        ema_50 = self.technical_analyzer.calculate_ma(df['close'], 50).iloc[-1] if len(self.technical_analyzer.calculate_ma(df['close'], 50)) > 0 else 0
+                        ema_200 = self.technical_analyzer.calculate_ma(df['close'], 200).iloc[-1] if len(self.technical_analyzer.calculate_ma(df['close'], 200)) > 0 else 0
+            except:
+                pass
+            
+            # Determine trend
+            higher_trend = 'SIDEWAYS'
+            if ema_20 > ema_50 > ema_200:
+                higher_trend = 'UP'
+            elif ema_20 < ema_50 < ema_200:
+                higher_trend = 'DOWN'
+            
+            # Market environment
+            market_type = market_env_info.get('market_type', 'UNKNOWN') if market_env_info else 'UNKNOWN'
+            
+            # Sentiment
+            sentiment_score = sentiment_info.get('fear_greed_value', 50) if sentiment_info else 50
+            sentiment_label = sentiment_info.get('fear_greed_classification', 'NEUTRAL') if sentiment_info else 'NEUTRAL'
+            
+            # ML prediction
+            ml_prediction = ml_info.get('prediction', 'NEUTRAL') if ml_info else 'NEUTRAL'
+            ml_confidence = ml_info.get('confidence', 0) if ml_info else 0
+            
+            # Log signal
+            self.trade_logger.log_trade(
+                trade_id=f"{symbol}_{signal_type}_{int(datetime.now().timestamp())}",
+                timestamp=datetime.now(),
+                side='LONG' if direction == 'UP' else 'SHORT',
+                entry_price=current_price,
+                entry_time=datetime.now(),
+                entry_reason=f'{signal_type} Signal',
+                exit_price=current_price,
+                exit_time=datetime.now(),
+                close_reason=signal_type,
+                pnl=0,  # No actual PnL for signals
+                pnl_percent=0,
+                holding_time_minutes=0,
+                signal_strength=signal_strength,
+                market_type=market_type,
+                rsi=rsi_value,
+                adx=adx_value,
+                macd=macd_value,
+                macd_signal=macd_signal_value,
+                macd_hist=macd_hist_value,
+                atr=atr_value,
+                volume_ratio=volume_ratio,
+                body_ratio=body_ratio,
+                shadow_ratio=shadow_ratio,
+                ema_20=ema_20,
+                ema_50=ema_50,
+                ema_200=ema_200,
+                higher_trend=higher_trend,
+                lower_trend='5m',
+                sentiment_score=sentiment_score,
+                sentiment_label=sentiment_label,
+                ml_prediction=ml_prediction,
+                ml_confidence=ml_confidence
+            )
+            
+            logger.info(f"Signal logged for {symbol}: {signal_type} {direction} strength={signal_strength}")
+            
+        except Exception as e:
+            logger.error(f"Error logging signal for {symbol}: {e}")
