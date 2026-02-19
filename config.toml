@@ -57,7 +57,7 @@ range_ratio_threshold = 0.5  # Minimum range ratio (current range / average rang
 
 # Stop loss parameters
 stop_loss_range_multiplier = 0.8  # Moving stop loss distance = latest 5m K-line range * this multiplier
-stop_loss_min_distance_percent = 0.03  # Minimum stop loss distance as percentage of price (3.0% = 0.03)
+stop_loss_min_distance_percent = 0.03  # Minimum stop loss distance as percentage of price (3.0% = 0.03) - 激进型配置
 engulfing_body_ratio_threshold = 0.85  # Minimum engulfing body ratio to trigger stop loss (85% = less sensitive)
 
 # Real-time stop loss optimization parameters (实时止损优化参数)
@@ -71,11 +71,11 @@ trailing_stop_enabled = true  # Enable trailing stop loss (移动止损开关)
 trailing_stop_kline_count = 5  # Number of recent klines to use for trailing stop (使用最近N根K线的最低/最高点) - 增加到5根K线
 
 # Take profit parameters (止盈参数)
-# 适合高波动加密货币市场的保守配置
+# 激进型配置：止损3%，止盈6%，风险/收益比1:2
 take_profit_enabled = true  # Enable take profit (止盈开关)
-take_profit_percent = 0.03  # Take profit threshold as percentage of entry price (3.0% = 0.03) - 适合BTC等高波动资产
+take_profit_percent = 0.06  # Take profit threshold as percentage of entry price (6.0% = 0.06) - 激进型配置
 take_profit_trailing_enabled = true  # Enable trailing take profit after reaching take profit (移动止盈开关)
-take_profit_trailing_percent = 0.01  # Trailing take profit threshold (1.0% = 0.01) - 达到止盈后，价格回撤1%才平仓，避免过早止盈
+take_profit_trailing_percent = 0.03  # Trailing take profit threshold (3.0% = 0.03) - 达到止盈后，价格回撤3%才平仓，最大化利润
 
 # Trend filter parameters (to avoid false breakouts in sideways markets)
 trend_filter_enabled = true  # Enable trend filter to avoid false breakouts
