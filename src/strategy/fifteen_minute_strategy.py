@@ -940,25 +940,6 @@ class FiveMinuteStrategy:
                             symbol, volume_info, range_info, stop_loss_price, kline_5m,
                             kline_5m.get('close_time'), signal_strength, self.take_profit_percent
                         )
-            else:
-                # Some conditions not met - send no trade notification with all condition info
-                await self.telegram_client.send_indicator_analysis(
-                    symbol=symbol,
-                    sar_direction=None,
-                    direction_3m=None,
-                    direction_5m=direction_5m,
-                    sar_value=None,
-                    current_price=current_price,
-                    decision='NO_TRADE',
-                    volume_info=volume_info,
-                    range_info=range_info,
-                    body_info=body_info,
-                    trend_info=trend_info,
-                    rsi_info=rsi_info,
-                    signal_strength=signal_strength,
-            
-                    kline_time=kline_5m.get('close_time')
-                )
             
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")

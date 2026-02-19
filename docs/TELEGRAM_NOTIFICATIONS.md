@@ -32,7 +32,7 @@ Sent when the project stops
 
 ## Indicator Analysis Notification
 
-Sent when analyzing entry conditions, including:
+**Only sent when there is a trading signal** (LONG or SHORT), including:
 - Trading pair
 - 5m K-line time (the specific K-line being analyzed)
 - Current price
@@ -40,7 +40,14 @@ Sent when analyzing entry conditions, including:
 - Condition checks organized by category (Basic, Technical, Advanced)
 - Signal strength
 - Trading decision
-- Detailed information (only for trade decisions)
+- Detailed information
+
+**Important Notes:**
+- No notification is sent when there is no trading signal (reduces noise)
+- Only sent when entry conditions are met
+- Volume calculations are based on **closed K-lines only** to match Binance's display
+- MA5 and MA10 include the current K-line (just closed) to match Binance's update timing
+- The K-line time shown is the close time of the 5m K-line being analyzed
 
 Example (Trade Decision):
 ```
@@ -68,34 +75,13 @@ Example (Trade Decision):
 ⏰ 2024-02-15 16:45:05
 ```
 
-Example (No Trade):
-```
-📊 BTCUSDC 5m K线分析
-──────────────────────────────
-⏰ 16:45-16:50 | 💰 $50,000.00 | 🟢
-
-📊 条件检查
-  基础: 成交量 1.16x ✅ | 振幅 1.25x ✅ | 实体 33% ❌
-  技术: MA20 ✅ | RSI 65 ✅ | MACD 0.0123 ✅ | ADX 28 ✅
-  高级: 市场 趋势 75% ✅ | 多周期 2/2 ✅ | 情绪 55 (贪婪) ✅ | ML 做多 85% ✅
-
-💪 信号强度: 👍 MEDIUM
-🎯 交易决策: ⏭️ 不交易
-
-⏰ 2024-02-15 16:45:05
-```
-
 **Key Improvements:**
 - Conditions organized by category (Basic, Technical, Advanced)
 - Compact format with visual separators
 - Detailed information only shown for trade decisions
 - Better visual hierarchy with emojis and formatting
 - Easier to scan and understand at a glance
-
-**Important Notes:**
-- Volume calculations are based on **closed K-lines only** to match Binance's display
-- MA5 and MA10 include the current K-line (just closed) to match Binance's update timing
-- The K-line time shown is the close time of the 5m K-line being analyzed
+- **Reduced noise**: No notifications when there's no trading signal
 
 ## Trading Notifications
 
@@ -225,44 +211,6 @@ Example (Loss with detailed reason):
 - Multi-line reasons properly indented
 - Cleaner, more readable format
 
-### No Trade Notification
-Sent when no trade is executed, including:
-- Trading pair
-- Reason for not trading (formatted for readability)
-- K-line time (if available)
-
-Example:
-```
-⏭️ 未交易 - BTCUSDC
-──────────────────────────────
-📋 原因
-  实体比例不足: 33% < 55%
-
-⏰ K线时间: 16:45-16:50
-
-⏰ 2024-02-15 16:45:05
-```
-
-Example with multi-line reason:
-```
-⏭️ 未交易 - BTCUSDC
-──────────────────────────────
-📋 原因
-  多个条件未通过:
-  • 实体比例: 33% < 55%
-  • RSI超买: 72 > 70
-
-⏰ K线时间: 16:45-16:50
-
-⏰ 2024-02-15 16:45:05
-```
-
-**Key Improvements:**
-- Visual separator for better structure
-- Reason formatted as a separate section
-- Multi-line reasons properly indented
-- K-line time shown in compact format
-
 ## Error Notifications
 
 ### Error Alert
@@ -291,13 +239,14 @@ All messages are formatted with:
 ## Notification Triggers
 
 1. **Startup**: When `main.py` starts
-2. **Indicator Analysis**: When analyzing entry conditions (5m K-line closes)
+2. **Indicator Analysis**: When analyzing entry conditions and a trading signal is detected (5m K-line closes)
 3. **Position Open**: When strategy opens a position
 4. **Position Close**: When stop loss is triggered or position is closed
-5. **No Trade**: When entry conditions are not met
-6. **Error**: When any error occurs in the system
-7. **Shutdown**: When the bot stops gracefully
-8. **Trailing Stop Update**: When trailing stop loss is updated (if enabled)
+5. **Error**: When any error occurs in the system
+6. **Shutdown**: When the bot stops gracefully
+7. **Trailing Stop Update**: When trailing stop loss is updated (if enabled)
+
+**Important Note**: No notification is sent when entry conditions are not met (reduces noise)
 
 ## Trailing Stop Update Notification
 
