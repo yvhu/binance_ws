@@ -200,8 +200,8 @@ class FiveMinuteStrategy:
             # Check for real-time trend reversal
             await self._check_realtime_trend_reversal(symbol, kline_info)
         
-        # Check for early entry if enabled and K-line is not closed
-        if not is_closed and self.early_entry_enabled:
+        # Check for early entry if K-line is not closed (real-time entry)
+        if not is_closed:
             await self._check_early_entry(symbol, kline_info)
     
     async def on_5m_kline_close(self, kline_info: Dict) -> None:

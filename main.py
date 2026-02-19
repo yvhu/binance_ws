@@ -14,8 +14,6 @@ from src.binance.user_data_client import UserDataClient
 from src.binance.data_handler import BinanceDataHandler
 from src.telegram.telegram_client import TelegramClient
 from src.indicators.technical_analyzer import TechnicalAnalyzer
-from src.indicators.sentiment_analyzer import SentimentAnalyzer
-from src.indicators.ml_predictor import MLPredictor
 from src.trading.position_manager import PositionManager
 from src.trading.trading_executor import TradingExecutor
 from src.strategy.fifteen_minute_strategy import FiveMinuteStrategy
@@ -63,8 +61,6 @@ class BinanceTelegramBot:
         )
         
         self.user_data_client = UserDataClient(self.config, self.trading_executor)
-        self.sentiment_analyzer = SentimentAnalyzer()
-        self.ml_predictor = MLPredictor()
         
         self.strategy = FiveMinuteStrategy(
             self.config,
@@ -72,9 +68,7 @@ class BinanceTelegramBot:
             self.position_manager,
             self.trading_executor,
             self.data_handler,
-            self.telegram_client,
-            self.sentiment_analyzer,
-            self.ml_predictor
+            self.telegram_client
         )
         
         # Bot state
@@ -84,8 +78,6 @@ class BinanceTelegramBot:
         # Task references
         self.user_data_task = None
         self.market_data_task = None
-        self.sentiment_update_task = None
-        self.ml_retrain_task = None
         
         # Register signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -543,18 +535,6 @@ class BinanceTelegramBot:
             # 发送启动通知
             await self.send_startup_notification()
 
-            # --- 启动情绪指标更新任务 ---
-            if self.config.get_config("strategy", "sentiment_filter_enabled", default=False):
-                self.sentiment_update_task = asyncio.create_task(self._update_sentiment_periodically())
-
-            # --- 启动ML模型训练任务 ---
-            if self.config.get_config("strategy", "ml_filter_enabled", default=False):
-                await self._train_ml_model()
-                
-                # 启动定期重新训练任务
-                retrain_interval = self.config.get_config("strategy", "ml_retrain_interval", default=24)
-                self.ml_retrain_task = asyncio.create_task(self._retrain_ml_periodically(retrain_interval))
-
             # --- 主协程可以继续做其他任务，WebSocket 永远在后台运行 ---
             loop_count = 0
             while self.is_running:
@@ -583,25 +563,6 @@ class BinanceTelegramBot:
                     else:
                         self.logger.warning("Market data task is None!")
                     
-                    # 检查情绪指标更新任务状态
-                    if self.sentiment_update_task:
-                        if self.sentiment_update_task.done():
-                            self.logger.warning("Sentiment update task has stopped!")
-                            try:
-                                result = self.sentiment_update_task.result()
-                                self.logger.warning(f"Sentiment update task result: {result}")
-                            except Exception as e:
-                                self.logger.error(f"Sentiment update task exception: {e}")
-                    
-                    # 检查ML重新训练任务状态
-                    if self.ml_retrain_task:
-                        if self.ml_retrain_task.done():
-                            self.logger.warning("ML retrain task has stopped!")
-                            try:
-                                result = self.ml_retrain_task.result()
-                                self.logger.warning(f"ML retrain task result: {result}")
-                            except Exception as e:
-                                self.logger.error(f"ML retrain task exception: {e}")
                 await asyncio.sleep(1)
 
         except asyncio.CancelledError:
@@ -614,96 +575,6 @@ class BinanceTelegramBot:
         finally:
             await self.shutdown()
     
-    async def _update_sentiment_periodically(self) -> None:
-        """Periodically update Fear and Greed Index"""
-        while self.is_running:
-            try:
-                # Fetch Fear and Greed Index
-                sentiment_data = await asyncio.to_thread(self.sentiment_analyzer.get_fear_greed_index)
-                
-                if sentiment_data:
-                    value = sentiment_data.get('value', 0)
-                    classification = sentiment_data.get('classification', 'N/A')
-                    timestamp = sentiment_data.get('timestamp', 0)
-                    
-                    pass
-                else:
-                    self.logger.warning("[SENTIMENT] Failed to fetch Fear and Greed Index")
-                
-                # Wait for 1 hour before next update
-                await asyncio.sleep(3600)  # 1 hour
-                
-            except asyncio.CancelledError:
-                self.logger.info("Sentiment update task cancelled")
-                break
-            except Exception as e:
-                self.logger.error(f"Error updating sentiment: {e}")
-                import traceback
-                self.logger.error(traceback.format_exc())
-                # Wait for 5 minutes before retry
-                await asyncio.sleep(300)  # 5 minutes
-    
-    async def _train_ml_model(self) -> bool:
-        """Train ML model with historical data"""
-        try:
-            self.logger.info("Training ML model...")
-            
-            # Get historical data for all symbols
-            symbols = self.config.binance_symbols
-            
-            for symbol in symbols:
-                # Get 5m klines
-                all_klines = self.data_handler.get_klines(symbol, "5m")
-                if not all_klines:
-                    self.logger.warning(f"No 5m K-line data for {symbol}")
-                    continue
-                
-                # Filter only closed K-lines
-                closed_klines = [k for k in all_klines if k.get('is_closed', False)]
-                
-                if len(closed_klines) < 50:
-                    self.logger.warning(f"Not enough closed K-lines for ML training: {len(closed_klines)} < 50")
-                    continue
-                
-                # Convert to DataFrame
-                import pandas as pd
-                df = pd.DataFrame(closed_klines)
-                
-                # Train model
-                success = await asyncio.to_thread(self.ml_predictor.train_model, df)
-                
-                if success:
-                    return True
-                else:
-                    pass
-            
-            self.logger.warning("Failed to train ML model for any symbol")
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Error training ML model: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-            return False
-    
-    async def _retrain_ml_periodically(self, interval_hours: int) -> None:
-        """Periodically retrain ML model"""
-        while self.is_running:
-            try:
-                # Wait for the specified interval
-                await asyncio.sleep(interval_hours * 3600)  # Convert hours to seconds
-                
-                # Retrain model
-                await self._train_ml_model()
-                
-            except asyncio.CancelledError:
-                self.logger.info("ML retrain task cancelled")
-                break
-            except Exception as e:
-                self.logger.error(f"Error retraining ML model: {e}")
-                import traceback
-                self.logger.error(traceback.format_exc())
-    
     async def shutdown(self) -> None:
         """Shutdown the bot gracefully"""
         self.logger.info("Shutting down bot...")
@@ -711,22 +582,6 @@ class BinanceTelegramBot:
         try:
             # Send shutdown notification
             await self.send_shutdown_notification()
-            
-            # Cancel sentiment update task
-            if self.sentiment_update_task and not self.sentiment_update_task.done():
-                self.sentiment_update_task.cancel()
-                try:
-                    await self.sentiment_update_task
-                except asyncio.CancelledError:
-                    pass
-            
-            # Cancel ML retrain task
-            if self.ml_retrain_task and not self.ml_retrain_task.done():
-                self.ml_retrain_task.cancel()
-                try:
-                    await self.ml_retrain_task
-                except asyncio.CancelledError:
-                    pass
             
             # Disconnect WebSocket clients
             if self.binance_client:
