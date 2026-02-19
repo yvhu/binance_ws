@@ -188,12 +188,13 @@ class TechnicalAnalyzer:
             logger.error(f"Error calculating Bollinger Bands: {e}")
             return None, None, None
     
-    def calculate_atr(self, df: pd.DataFrame) -> Optional[pd.Series]:
+    def calculate_atr(self, df: pd.DataFrame, period: int = 14) -> Optional[pd.Series]:
         """
         Calculate Average True Range (ATR)
         
         Args:
             df: DataFrame with OHLC data
+            period: ATR period (default: 14)
             
         Returns:
             ATR series or None
@@ -202,9 +203,29 @@ class TechnicalAnalyzer:
             high = df['high'].values
             low = df['low'].values
             close = df['close'].values
-            return talib.ATR(high, low, close, timeperiod=14)
+            return talib.ATR(high, low, close, timeperiod=period)
         except Exception as e:
             logger.error(f"Error calculating ATR: {e}")
+            return None
+    
+    def calculate_adx(self, df: pd.DataFrame, period: int = 14) -> Optional[pd.Series]:
+        """
+        Calculate Average Directional Index (ADX) for trend strength
+        
+        Args:
+            df: DataFrame with OHLC data
+            period: ADX period (default: 14)
+            
+        Returns:
+            ADX series or None
+        """
+        try:
+            high = df['high'].values
+            low = df['low'].values
+            close = df['close'].values
+            return talib.ADX(high, low, close, timeperiod=period)
+        except Exception as e:
+            logger.error(f"Error calculating ADX: {e}")
             return None
     
     def calculate_stochastic(self, df: pd.DataFrame) -> Tuple[Optional[pd.Series], Optional[pd.Series]]:
@@ -531,3 +552,252 @@ class TechnicalAnalyzer:
             import traceback
             logger.error(traceback.format_exc())
             return False, {'error': str(e)}
+    
+    def check_rsi_filter(self, df: pd.DataFrame, kline_direction: str,
+                         rsi_long_max: float = 70, rsi_short_min: float = 30) -> Tuple[bool, Dict]:
+        """
+        Check if RSI conditions are met for entry
+        
+        Args:
+            df: DataFrame with OHLCV data
+            kline_direction: 'UP' or 'DOWN'
+            rsi_long_max: Maximum RSI for long entry (default: 70)
+            rsi_short_min: Minimum RSI for short entry (default: 30)
+            
+        Returns:
+            Tuple of (is_valid, rsi_info) where rsi_info contains:
+            - rsi_value: Current RSI value
+            - condition: RSI condition description
+        """
+        try:
+            if df.empty or len(df) < self.rsi_period + 1:
+                return False, {'error': 'Not enough data for RSI filter'}
+            
+            rsi = self.calculate_rsi(df['close'])
+            if rsi is None or len(rsi) == 0:
+                return False, {'error': 'Failed to calculate RSI'}
+            
+            rsi_value = float(rsi[-1])
+            is_valid = False
+            condition = ""
+            
+            if kline_direction == 'UP':
+                # For long: RSI should not be overbought
+                is_valid = rsi_value < rsi_long_max
+                condition = f"RSI {rsi_value:.2f} < {rsi_long_max} (not overbought)"
+            else:  # DOWN
+                # For short: RSI should not be oversold
+                is_valid = rsi_value > rsi_short_min
+                condition = f"RSI {rsi_value:.2f} > {rsi_short_min} (not oversold)"
+            
+            rsi_info = {
+                'rsi_value': rsi_value,
+                'condition': condition,
+                'is_valid': is_valid
+            }
+            
+            logger.info(
+                f"RSI filter check: "
+                f"direction={kline_direction}, "
+                f"RSI={rsi_value:.2f}, "
+                f"condition={condition}, "
+                f"valid={is_valid}"
+            )
+            
+            return is_valid, rsi_info
+            
+        except Exception as e:
+            logger.error(f"Error checking RSI filter: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, {'error': str(e)}
+    
+    def check_macd_filter(self, df: pd.DataFrame, kline_direction: str) -> Tuple[bool, Dict]:
+        """
+        Check if MACD conditions are met for entry
+        
+        Args:
+            df: DataFrame with OHLCV data
+            kline_direction: 'UP' or 'DOWN'
+            
+        Returns:
+            Tuple of (is_valid, macd_info) where macd_info contains:
+            - macd_value: Current MACD value
+            - signal_value: Current MACD signal value
+            - histogram: Current MACD histogram value
+            - crossover: Crossover signal if any
+            - condition: MACD condition description
+        """
+        try:
+            if df.empty or len(df) < self.macd_slow + self.macd_signal + 1:
+                return False, {'error': 'Not enough data for MACD filter'}
+            
+            macd, signal, hist = self.calculate_macd(df['close'])
+            if macd is None or len(macd) < 2:
+                return False, {'error': 'Failed to calculate MACD'}
+            
+            macd_value = float(macd[-1])
+            signal_value = float(signal[-1])
+            histogram = float(hist[-1])
+            
+            # Check for crossover
+            prev_macd_above = macd[-2] > signal[-2]
+            curr_macd_above = macd[-1] > signal[-1]
+            
+            crossover = None
+            if not prev_macd_above and curr_macd_above:
+                crossover = 'BULLISH_CROSS'
+            elif prev_macd_above and not curr_macd_above:
+                crossover = 'BEARISH_CROSS'
+            
+            is_valid = False
+            condition = ""
+            
+            if kline_direction == 'UP':
+                # For long: histogram > 0 OR bullish crossover
+                is_valid = (histogram > 0) or (crossover == 'BULLISH_CROSS')
+                if histogram > 0:
+                    condition = f"MACD histogram {histogram:.4f} > 0 (bullish)"
+                elif crossover == 'BULLISH_CROSS':
+                    condition = f"MACD bullish crossover detected"
+                else:
+                    condition = f"MACD histogram {histogram:.4f} <= 0 (bearish)"
+            else:  # DOWN
+                # For short: histogram < 0 OR bearish crossover
+                is_valid = (histogram < 0) or (crossover == 'BEARISH_CROSS')
+                if histogram < 0:
+                    condition = f"MACD histogram {histogram:.4f} < 0 (bearish)"
+                elif crossover == 'BEARISH_CROSS':
+                    condition = f"MACD bearish crossover detected"
+                else:
+                    condition = f"MACD histogram {histogram:.4f} >= 0 (bullish)"
+            
+            macd_info = {
+                'macd_value': macd_value,
+                'signal_value': signal_value,
+                'histogram': histogram,
+                'crossover': crossover,
+                'condition': condition,
+                'is_valid': is_valid
+            }
+            
+            logger.info(
+                f"MACD filter check: "
+                f"direction={kline_direction}, "
+                f"MACD={macd_value:.4f}, "
+                f"Signal={signal_value:.4f}, "
+                f"Histogram={histogram:.4f}, "
+                f"Crossover={crossover}, "
+                f"condition={condition}, "
+                f"valid={is_valid}"
+            )
+            
+            return is_valid, macd_info
+            
+        except Exception as e:
+            logger.error(f"Error checking MACD filter: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, {'error': str(e)}
+    
+    def check_adx_filter(self, df: pd.DataFrame, adx_min_trend: float = 20,
+                         adx_sideways: float = 20) -> Tuple[bool, Dict]:
+        """
+        Check ADX for trend strength and market type
+        
+        Args:
+            df: DataFrame with OHLCV data
+            adx_min_trend: Minimum ADX for trend market (default: 20)
+            adx_sideways: ADX threshold for sideways market (default: 20)
+            
+        Returns:
+            Tuple of (is_valid, adx_info) where adx_info contains:
+            - adx_value: Current ADX value
+            - market_type: 'TREND' or 'SIDEWAYS'
+            - trend_strength: 'STRONG', 'MODERATE', or 'WEAK'
+            - condition: ADX condition description
+        """
+        try:
+            if df.empty or len(df) < 14 + 1:
+                return False, {'error': 'Not enough data for ADX filter'}
+            
+            adx = self.calculate_adx(df, period=14)
+            if adx is None or len(adx) == 0:
+                return False, {'error': 'Failed to calculate ADX'}
+            
+            adx_value = float(adx[-1])
+            
+            # Determine market type and trend strength
+            if adx_value >= adx_min_trend:
+                market_type = 'TREND'
+                if adx_value >= 40:
+                    trend_strength = 'STRONG'
+                elif adx_value >= 25:
+                    trend_strength = 'MODERATE'
+                else:
+                    trend_strength = 'WEAK'
+            else:
+                market_type = 'SIDEWAYS'
+                trend_strength = 'WEAK'
+            
+            # For trading, we prefer trend markets but can trade weak trends
+            is_valid = adx_value >= adx_sideways
+            
+            condition = f"ADX {adx_value:.2f}, Market: {market_type}, Strength: {trend_strength}"
+            
+            adx_info = {
+                'adx_value': adx_value,
+                'market_type': market_type,
+                'trend_strength': trend_strength,
+                'condition': condition,
+                'is_valid': is_valid
+            }
+            
+            logger.info(
+                f"ADX filter check: "
+                f"ADX={adx_value:.2f}, "
+                f"market_type={market_type}, "
+                f"trend_strength={trend_strength}, "
+                f"valid={is_valid}"
+            )
+            
+            return is_valid, adx_info
+            
+        except Exception as e:
+            logger.error(f"Error checking ADX filter: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, {'error': str(e)}
+    
+    def calculate_signal_strength(self, volume_valid: bool, range_valid: bool, body_valid: bool,
+                                  trend_valid: bool, rsi_valid: bool, macd_valid: bool,
+                                  adx_valid: bool) -> str:
+        """
+        Calculate overall signal strength based on all filter conditions
+        
+        Args:
+            volume_valid: Volume condition met
+            range_valid: Range condition met
+            body_valid: Body condition met
+            trend_valid: Trend filter met
+            rsi_valid: RSI filter met
+            macd_valid: MACD filter met
+            adx_valid: ADX filter met
+            
+        Returns:
+            Signal strength: 'STRONG', 'MEDIUM', or 'WEAK'
+        """
+        # Count valid conditions
+        valid_count = sum([volume_valid, range_valid, body_valid, trend_valid, rsi_valid, macd_valid, adx_valid])
+        total_count = 7
+        
+        # Calculate percentage of valid conditions
+        valid_percent = valid_count / total_count
+        
+        # Determine signal strength
+        if valid_percent >= 0.85:  # 85% or more conditions met
+            return 'STRONG'
+        elif valid_percent >= 0.70:  # 70% or more conditions met
+            return 'MEDIUM'
+        else:
+            return 'WEAK'

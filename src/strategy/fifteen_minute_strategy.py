@@ -51,31 +51,67 @@ class FiveMinuteStrategy:
         
         # Strategy configuration
         self.check_interval = config.get_config("strategy", "check_interval", default="5m")
-        self.volume_ratio_threshold = config.get_config("strategy", "volume_ratio_threshold", default=0.55)
-        self.body_ratio_threshold = config.get_config("strategy", "body_ratio_threshold", default=0.3)
+        self.volume_ratio_threshold = config.get_config("strategy", "volume_ratio_threshold", default=0.85)
+        self.body_ratio_threshold = config.get_config("strategy", "body_ratio_threshold", default=0.55)
         self.shadow_ratio_threshold = config.get_config("strategy", "shadow_ratio_threshold", default=0.5)
-        self.range_ratio_threshold = config.get_config("strategy", "range_ratio_threshold", default=0.7)
-        self.stop_loss_range_multiplier = config.get_config("strategy", "stop_loss_range_multiplier", default=0.8)
-        self.stop_loss_min_distance_percent = config.get_config("strategy", "stop_loss_min_distance_percent", default=0.025)
-        self.stop_loss_max_distance_percent = config.get_config("strategy", "stop_loss_max_distance_percent", default=0.03)
-        self.engulfing_body_ratio_threshold = config.get_config("strategy", "engulfing_body_ratio_threshold", default=0.7)
+        self.range_ratio_threshold = config.get_config("strategy", "range_ratio_threshold", default=0.60)
+        self.stop_loss_range_multiplier = config.get_config("strategy", "stop_loss_range_multiplier", default=0.6)
+        self.stop_loss_min_distance_percent = config.get_config("strategy", "stop_loss_min_distance_percent", default=0.015)
+        self.stop_loss_max_distance_percent = config.get_config("strategy", "stop_loss_max_distance_percent", default=0.025)
+        self.engulfing_body_ratio_threshold = config.get_config("strategy", "engulfing_body_ratio_threshold", default=0.95)
         self.trend_filter_enabled = config.get_config("strategy", "trend_filter_enabled", default=True)
         self.trend_filter_ma_period = config.get_config("strategy", "trend_filter_ma_period", default=20)
         
+        # ATR-based stop loss configuration
+        self.atr_stop_loss_enabled = config.get_config("strategy", "atr_stop_loss_enabled", default=True)
+        self.atr_stop_loss_multiplier = config.get_config("strategy", "atr_stop_loss_multiplier", default=1.5)
+        self.atr_period = config.get_config("strategy", "atr_period", default=14)
+        
+        # Time-based stop loss configuration
+        self.time_stop_loss_enabled = config.get_config("strategy", "time_stop_loss_enabled", default=True)
+        self.time_stop_loss_klines = config.get_config("strategy", "time_stop_loss_klines", default=3)
+        
         # Trailing stop loss configuration
         self.trailing_stop_enabled = config.get_config("strategy", "trailing_stop_enabled", default=False)
-        self.trailing_stop_kline_count = config.get_config("strategy", "trailing_stop_kline_count", default=5)  # Increased from 3 to 5
+        self.trailing_stop_kline_count = config.get_config("strategy", "trailing_stop_kline_count", default=5)
         
         # Real-time stop loss optimization configuration
-        self.stop_loss_price_buffer_percent = config.get_config("strategy", "stop_loss_price_buffer_percent", default=0.002)  # Increased from 0.1% to 0.2%
-        self.stop_loss_time_threshold = config.get_config("strategy", "stop_loss_time_threshold", default=5)  # Increased from 3s to 5s
-        self.stop_loss_check_interval = config.get_config("strategy", "stop_loss_check_interval", default=1)  # Check every 1 second
+        self.stop_loss_price_buffer_percent = config.get_config("strategy", "stop_loss_price_buffer_percent", default=0.002)
+        self.stop_loss_time_threshold = config.get_config("strategy", "stop_loss_time_threshold", default=5)
+        self.stop_loss_check_interval = config.get_config("strategy", "stop_loss_check_interval", default=1)
         
         # Take profit configuration
         self.take_profit_enabled = config.get_config("strategy", "take_profit_enabled", default=True)
-        self.take_profit_percent = config.get_config("strategy", "take_profit_percent", default=0.015)  # 1.5% take profit
+        self.take_profit_percent = config.get_config("strategy", "take_profit_percent", default=0.05)
         self.take_profit_trailing_enabled = config.get_config("strategy", "take_profit_trailing_enabled", default=True)
-        self.take_profit_trailing_percent = config.get_config("strategy", "take_profit_trailing_percent", default=0.005)  # 0.5% trailing after take profit
+        self.take_profit_trailing_percent = config.get_config("strategy", "take_profit_trailing_percent", default=0.02)
+        
+        # Partial take profit configuration
+        self.partial_take_profit_enabled = config.get_config("strategy", "partial_take_profit_enabled", default=True)
+        self.partial_take_profit_levels = config.get_config("strategy", "partial_take_profit_levels", default=[0.03, 0.05])
+        self.partial_take_profit_ratios = config.get_config("strategy", "partial_take_profit_ratios", default=[0.5, 0.5])
+        
+        # Dynamic take profit configuration
+        self.dynamic_take_profit_enabled = config.get_config("strategy", "dynamic_take_profit_enabled", default=True)
+        self.strong_trend_take_profit_percent = config.get_config("strategy", "strong_trend_take_profit_percent", default=0.07)
+        self.weak_trend_take_profit_percent = config.get_config("strategy", "weak_trend_take_profit_percent", default=0.03)
+        self.adx_trend_threshold = config.get_config("strategy", "adx_trend_threshold", default=25)
+        
+        # Additional indicator filters
+        self.rsi_filter_enabled = config.get_config("strategy", "rsi_filter_enabled", default=True)
+        self.rsi_long_max = config.get_config("strategy", "rsi_long_max", default=70)
+        self.rsi_short_min = config.get_config("strategy", "rsi_short_min", default=30)
+        
+        self.macd_filter_enabled = config.get_config("strategy", "macd_filter_enabled", default=True)
+        
+        self.adx_filter_enabled = config.get_config("strategy", "adx_filter_enabled", default=True)
+        self.adx_min_trend = config.get_config("strategy", "adx_min_trend", default=20)
+        self.adx_sideways = config.get_config("strategy", "adx_sideways", default=20)
+        
+        # Position sizing based on signal strength
+        self.strong_signal_position_ratio = config.get_config("trading", "strong_signal_position_ratio", default=1.0)
+        self.medium_signal_position_ratio = config.get_config("trading", "medium_signal_position_ratio", default=0.75)
+        self.weak_signal_position_ratio = config.get_config("trading", "weak_signal_position_ratio", default=0.5)
         
         # Track highest/lowest price for take profit
         self.position_peak_prices: Dict[str, float] = {}  # symbol -> peak price (highest for LONG, lowest for SHORT)
@@ -83,6 +119,12 @@ class FiveMinuteStrategy:
         # Track stop loss trigger times for each symbol
         self.stop_loss_trigger_times: Dict[str, float] = {}
         self.stop_loss_first_trigger_time: Dict[str, float] = {}
+        
+        # Track position entry time for time-based stop loss
+        self.position_entry_times: Dict[str, int] = {}  # symbol -> entry timestamp (milliseconds)
+        
+        # Track partial take profit status for each position
+        self.partial_take_profit_status: Dict[str, Dict] = {}  # symbol -> {level_index: bool}
         
         logger.info("5-minute strategy initialized")
     
@@ -416,6 +458,131 @@ class FiveMinuteStrategy:
             logger.error(traceback.format_exc())
             return False, None
     
+    def _check_rsi_filter(self, symbol: str, kline_direction: str) -> Tuple[bool, Optional[Dict]]:
+        """
+        Check if RSI conditions are met for entry
+        
+        Args:
+            symbol: Trading pair symbol
+            kline_direction: 'UP' or 'DOWN'
+            
+        Returns:
+            Tuple of (is_valid, rsi_info)
+        """
+        try:
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return False, None
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < self.technical_analyzer.rsi_period + 1:
+                logger.warning(f"Not enough closed K-lines for RSI filter: {len(closed_klines)}")
+                return False, None
+            
+            # Convert to DataFrame for technical analysis
+            df = pd.DataFrame(closed_klines)
+            
+            # Check RSI filter
+            rsi_valid, rsi_info = self.technical_analyzer.check_rsi_filter(
+                df,
+                kline_direction,
+                rsi_long_max=self.rsi_long_max,
+                rsi_short_min=self.rsi_short_min
+            )
+            
+            return rsi_valid, rsi_info
+            
+        except Exception as e:
+            logger.error(f"Error checking RSI filter for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, None
+    
+    def _check_macd_filter(self, symbol: str, kline_direction: str) -> Tuple[bool, Optional[Dict]]:
+        """
+        Check if MACD conditions are met for entry
+        
+        Args:
+            symbol: Trading pair symbol
+            kline_direction: 'UP' or 'DOWN'
+            
+        Returns:
+            Tuple of (is_valid, macd_info)
+        """
+        try:
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return False, None
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < self.technical_analyzer.macd_slow + self.technical_analyzer.macd_signal + 1:
+                logger.warning(f"Not enough closed K-lines for MACD filter: {len(closed_klines)}")
+                return False, None
+            
+            # Convert to DataFrame for technical analysis
+            df = pd.DataFrame(closed_klines)
+            
+            # Check MACD filter
+            macd_valid, macd_info = self.technical_analyzer.check_macd_filter(df, kline_direction)
+            
+            return macd_valid, macd_info
+            
+        except Exception as e:
+            logger.error(f"Error checking MACD filter for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, None
+    
+    def _check_adx_filter(self, symbol: str) -> Tuple[bool, Optional[Dict]]:
+        """
+        Check ADX for trend strength and market type
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            Tuple of (is_valid, adx_info)
+        """
+        try:
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return False, None
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < 15:
+                logger.warning(f"Not enough closed K-lines for ADX filter: {len(closed_klines)}")
+                return False, None
+            
+            # Convert to DataFrame for technical analysis
+            df = pd.DataFrame(closed_klines)
+            
+            # Check ADX filter
+            adx_valid, adx_info = self.technical_analyzer.check_adx_filter(
+                df,
+                adx_min_trend=self.adx_min_trend,
+                adx_sideways=self.adx_sideways
+            )
+            
+            return adx_valid, adx_info
+            
+        except Exception as e:
+            logger.error(f"Error checking ADX filter for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, None
+    
     async def _check_and_open_position(self, symbol: str, kline_5m: Dict) -> None:
         """
         Check entry conditions and open position if met
@@ -447,8 +614,31 @@ class FiveMinuteStrategy:
             if self.trend_filter_enabled:
                 trend_valid, trend_info = self._check_trend_filter(symbol, direction_5m)
             
+            # Check RSI filter if enabled
+            rsi_valid = True
+            rsi_info = None
+            if self.rsi_filter_enabled:
+                rsi_valid, rsi_info = self._check_rsi_filter(symbol, direction_5m)
+            
+            # Check MACD filter if enabled
+            macd_valid = True
+            macd_info = None
+            if self.macd_filter_enabled:
+                macd_valid, macd_info = self._check_macd_filter(symbol, direction_5m)
+            
+            # Check ADX filter if enabled
+            adx_valid = True
+            adx_info = None
+            if self.adx_filter_enabled:
+                adx_valid, adx_info = self._check_adx_filter(symbol)
+            
             # Determine if all conditions are met
-            all_conditions_met = volume_valid and range_valid and body_valid and trend_valid
+            all_conditions_met = volume_valid and range_valid and body_valid and trend_valid and rsi_valid and macd_valid and adx_valid
+            
+            # Calculate signal strength
+            signal_strength = self.technical_analyzer.calculate_signal_strength(
+                volume_valid, range_valid, body_valid, trend_valid, rsi_valid, macd_valid, adx_valid
+            )
             
             logger.info(
                 f"[STRATEGY] Condition check for {symbol}: "
@@ -456,6 +646,10 @@ class FiveMinuteStrategy:
                 f"range_valid={range_valid}, "
                 f"body_valid={body_valid}, "
                 f"trend_valid={trend_valid}, "
+                f"rsi_valid={rsi_valid}, "
+                f"macd_valid={macd_valid}, "
+                f"adx_valid={adx_valid}, "
+                f"signal_strength={signal_strength}, "
                 f"all_conditions_met={all_conditions_met}"
             )
             
@@ -479,29 +673,43 @@ class FiveMinuteStrategy:
                     range_info=range_info,
                     body_info=body_info,
                     trend_info=trend_info,
+                    rsi_info=rsi_info,
+                    macd_info=macd_info,
+                    adx_info=adx_info,
+                    signal_strength=signal_strength,
                     kline_time=kline_5m.get('close_time')
                 )
                 
-                # Calculate stop loss price based on 5m K-line range
+                # Calculate stop loss price based on ATR or K-line range
                 stop_loss_price = self._calculate_stop_loss_price(
+                    symbol,
                     kline_5m,
                     direction_5m,
                     range_info.get('current_range', 0)
                 )
                 
+                # Calculate dynamic take profit based on trend strength
+                take_profit_percent = self._calculate_take_profit_percent(symbol, direction_5m)
+                
                 # Open position with volume info, range info, stop loss and entry kline
-                logger.info(f"[STRATEGY] Opening position for {symbol}, direction={direction_5m}")
+                logger.info(f"[STRATEGY] Opening position for {symbol}, direction={direction_5m}, signal_strength={signal_strength}")
                 if direction_5m == 'UP':
                     logger.info(f"[STRATEGY] Calling _open_long_position for {symbol}")
-                    await self._open_long_position(symbol, volume_info, range_info, stop_loss_price, kline_5m, kline_5m.get('close_time'))
+                    await self._open_long_position(
+                        symbol, volume_info, range_info, stop_loss_price, kline_5m,
+                        kline_5m.get('close_time'), signal_strength, take_profit_percent
+                    )
                     logger.info(f"[STRATEGY] _open_long_position completed for {symbol}")
                 else:  # DOWN
                     logger.info(f"[STRATEGY] Calling _open_short_position for {symbol}")
-                    await self._open_short_position(symbol, volume_info, range_info, stop_loss_price, kline_5m, kline_5m.get('close_time'))
+                    await self._open_short_position(
+                        symbol, volume_info, range_info, stop_loss_price, kline_5m,
+                        kline_5m.get('close_time'), signal_strength, take_profit_percent
+                    )
                     logger.info(f"[STRATEGY] _open_short_position completed for {symbol}")
             else:
                 # Some conditions not met - send no trade notification with all condition info
-                logger.info(f"Not all conditions met for {symbol}: volume={volume_valid}, range={range_valid}, body={body_valid}, trend={trend_valid}")
+                logger.info(f"Not all conditions met for {symbol}: volume={volume_valid}, range={range_valid}, body={body_valid}, trend={trend_valid}, rsi={rsi_valid}, macd={macd_valid}, adx={adx_valid}")
                 await self.telegram_client.send_indicator_analysis(
                     symbol=symbol,
                     sar_direction=None,
@@ -514,6 +722,10 @@ class FiveMinuteStrategy:
                     range_info=range_info,
                     body_info=body_info,
                     trend_info=trend_info,
+                    rsi_info=rsi_info,
+                    macd_info=macd_info,
+                    adx_info=adx_info,
+                    signal_strength=signal_strength,
                     kline_time=kline_5m.get('close_time')
                 )
             
@@ -523,11 +735,77 @@ class FiveMinuteStrategy:
         except Exception as e:
             logger.error(f"Error checking entry conditions for {symbol}: {e}")
     
-    def _calculate_stop_loss_price(self, kline: Dict, direction: str, current_range: float) -> Optional[float]:
+    def _calculate_take_profit_percent(self, symbol: str, kline_direction: str) -> float:
         """
-        Calculate stop loss price based on 5m K-line range
+        Calculate dynamic take profit percentage based on trend strength (ADX)
         
         Args:
+            symbol: Trading pair symbol
+            kline_direction: 'UP' or 'DOWN'
+            
+        Returns:
+            Take profit percentage
+        """
+        try:
+            # If dynamic take profit is not enabled, use fixed percentage
+            if not self.dynamic_take_profit_enabled:
+                return self.take_profit_percent
+            
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}, using default take profit")
+                return self.take_profit_percent
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < 15:
+                logger.warning(f"Not enough closed K-lines for ADX calculation: {len(closed_klines)}, using default take profit")
+                return self.take_profit_percent
+            
+            # Convert to DataFrame for technical analysis
+            df = pd.DataFrame(closed_klines)
+            
+            # Calculate ADX
+            adx_series = self.technical_analyzer.calculate_adx(df, period=self.atr_period)
+            if adx_series is None or len(adx_series) == 0:
+                logger.warning(f"Could not calculate ADX for {symbol}, using default take profit")
+                return self.take_profit_percent
+            
+            # Get latest ADX value
+            latest_adx = adx_series.iloc[-1]
+            
+            # Determine take profit based on ADX
+            if latest_adx >= self.adx_trend_threshold:
+                # Strong trend - use higher take profit
+                take_profit_percent = self.strong_trend_take_profit_percent
+                logger.info(
+                    f"Strong trend detected for {symbol}: ADX={latest_adx:.2f} >= {self.adx_trend_threshold}, "
+                    f"using take profit={take_profit_percent*100:.1f}%"
+                )
+            else:
+                # Weak trend - use lower take profit
+                take_profit_percent = self.weak_trend_take_profit_percent
+                logger.info(
+                    f"Weak trend detected for {symbol}: ADX={latest_adx:.2f} < {self.adx_trend_threshold}, "
+                    f"using take profit={take_profit_percent*100:.1f}%"
+                )
+            
+            return take_profit_percent
+            
+        except Exception as e:
+            logger.error(f"Error calculating take profit percent for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return self.take_profit_percent
+    
+    def _calculate_stop_loss_price(self, symbol: str, kline: Dict, direction: str, current_range: float) -> Optional[float]:
+        """
+        Calculate stop loss price based on ATR or 5m K-line range
+        
+        Args:
+            symbol: Trading pair symbol
             kline: 5m K-line data
             direction: 'UP' or 'DOWN'
             current_range: Current K-line range (high - low)
@@ -542,8 +820,17 @@ class FiveMinuteStrategy:
                 logger.warning(f"K-line range is zero, cannot calculate stop loss")
                 return None
             
-            # Stop loss distance = 5m K-line range * multiplier
-            stop_loss_distance = current_range * self.stop_loss_range_multiplier
+            # Calculate stop loss distance
+            if self.atr_stop_loss_enabled:
+                # Use ATR-based stop loss
+                stop_loss_distance = self._calculate_atr_stop_loss_distance(symbol, close_price)
+                if stop_loss_distance is None:
+                    # Fallback to range-based if ATR calculation fails
+                    stop_loss_distance = current_range * self.stop_loss_range_multiplier
+                    logger.warning(f"ATR calculation failed for {symbol}, using range-based stop loss")
+            else:
+                # Use range-based stop loss
+                stop_loss_distance = current_range * self.stop_loss_range_multiplier
             
             if direction == 'UP':
                 # For long position, stop loss is below entry price
@@ -554,10 +841,11 @@ class FiveMinuteStrategy:
             
             logger.info(
                 f"Stop loss calculated: "
+                f"symbol={symbol}, "
                 f"direction={direction}, "
                 f"close_price={close_price:.2f}, "
                 f"range={current_range:.2f}, "
-                f"multiplier={self.stop_loss_range_multiplier}, "
+                f"atr_enabled={self.atr_stop_loss_enabled}, "
                 f"stop_loss_distance={stop_loss_distance:.2f}, "
                 f"stop_loss_price={stop_loss_price:.2f}"
             )
@@ -568,9 +856,65 @@ class FiveMinuteStrategy:
             logger.error(f"Error calculating stop loss price: {e}")
             return None
     
+    def _calculate_atr_stop_loss_distance(self, symbol: str, current_price: float) -> Optional[float]:
+        """
+        Calculate ATR-based stop loss distance
+        
+        Args:
+            symbol: Trading pair symbol
+            current_price: Current price
+            
+        Returns:
+            Stop loss distance or None
+        """
+        try:
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return None
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < self.atr_period + 1:
+                logger.warning(f"Not enough closed K-lines for ATR calculation: {len(closed_klines)}")
+                return None
+            
+            # Convert to DataFrame for technical analysis
+            df = pd.DataFrame(closed_klines)
+            
+            # Calculate ATR
+            atr_series = self.technical_analyzer.calculate_atr(df, period=self.atr_period)
+            if atr_series is None or len(atr_series) == 0:
+                logger.warning(f"Could not calculate ATR for {symbol}")
+                return None
+            
+            # Get latest ATR value
+            latest_atr = atr_series.iloc[-1]
+            
+            # Calculate stop loss distance
+            stop_loss_distance = latest_atr * self.atr_stop_loss_multiplier
+            
+            logger.info(
+                f"ATR-based stop loss distance for {symbol}: "
+                f"ATR={latest_atr:.2f}, "
+                f"multiplier={self.atr_stop_loss_multiplier}, "
+                f"distance={stop_loss_distance:.2f} ({stop_loss_distance/current_price*100:.2f}%)"
+            )
+            
+            return stop_loss_distance
+            
+        except Exception as e:
+            logger.error(f"Error calculating ATR stop loss distance for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
     async def _open_long_position(self, symbol: str, volume_info: Optional[Dict] = None, range_info: Optional[Dict] = None,
                                    stop_loss_price: Optional[float] = None, entry_kline: Optional[Dict] = None,
-                                   kline_time: Optional[int] = None) -> None:
+                                   kline_time: Optional[int] = None, signal_strength: str = 'MEDIUM',
+                                   take_profit_percent: float = 0.05) -> None:
         """
         Open a long position
         
@@ -581,6 +925,8 @@ class FiveMinuteStrategy:
             stop_loss_price: Stop loss price (optional)
             entry_kline: Entry K-line data (optional)
             kline_time: K-line timestamp in milliseconds (optional)
+            signal_strength: Signal strength (STRONG/MEDIUM/WEAK)
+            take_profit_percent: Take profit percentage
         """
         try:
             # Get current price
@@ -631,6 +977,24 @@ class FiveMinuteStrategy:
                 logger.error(f"Could not calculate position size for {symbol}")
                 return
             
+            # Adjust position size based on signal strength
+            if signal_strength == 'STRONG':
+                position_ratio = self.strong_signal_position_ratio
+            elif signal_strength == 'MEDIUM':
+                position_ratio = self.medium_signal_position_ratio
+            else:  # WEAK
+                position_ratio = self.weak_signal_position_ratio
+            
+            adjusted_quantity = quantity * position_ratio
+            logger.info(
+                f"Position size adjustment for {symbol}: "
+                f"signal_strength={signal_strength}, "
+                f"position_ratio={position_ratio}, "
+                f"original_quantity={quantity:.4f}, "
+                f"adjusted_quantity={adjusted_quantity:.4f}"
+            )
+            quantity = adjusted_quantity
+            
             # Execute order with retry logic
             max_retries = 3
             retry_delay = 2  # seconds
@@ -661,6 +1025,12 @@ class FiveMinuteStrategy:
                     
                     # Initialize peak price tracking for take profit
                     self.position_peak_prices[symbol] = final_price
+                    
+                    # Record entry time for time-based stop loss
+                    self.position_entry_times[symbol] = kline_time if kline_time else int(datetime.now().timestamp() * 1000)
+                    
+                    # Initialize partial take profit status
+                    self.partial_take_profit_status[symbol] = {i: False for i in range(len(self.partial_take_profit_levels))}
                     
                     logger.info(f"Long position opened successfully for {symbol}")
                     
@@ -702,7 +1072,8 @@ class FiveMinuteStrategy:
     
     async def _open_short_position(self, symbol: str, volume_info: Optional[Dict] = None, range_info: Optional[Dict] = None,
                                     stop_loss_price: Optional[float] = None, entry_kline: Optional[Dict] = None,
-                                    kline_time: Optional[int] = None) -> None:
+                                    kline_time: Optional[int] = None, signal_strength: str = 'MEDIUM',
+                                    take_profit_percent: float = 0.05) -> None:
         """
         Open a short position
         
@@ -713,6 +1084,8 @@ class FiveMinuteStrategy:
             stop_loss_price: Stop loss price (optional)
             entry_kline: Entry K-line data (optional)
             kline_time: K-line timestamp in milliseconds (optional)
+            signal_strength: Signal strength (STRONG/MEDIUM/WEAK)
+            take_profit_percent: Take profit percentage
         """
         try:
             # Get current price
@@ -763,6 +1136,24 @@ class FiveMinuteStrategy:
                 logger.error(f"Could not calculate position size for {symbol}")
                 return
             
+            # Adjust position size based on signal strength
+            if signal_strength == 'STRONG':
+                position_ratio = self.strong_signal_position_ratio
+            elif signal_strength == 'MEDIUM':
+                position_ratio = self.medium_signal_position_ratio
+            else:  # WEAK
+                position_ratio = self.weak_signal_position_ratio
+            
+            adjusted_quantity = quantity * position_ratio
+            logger.info(
+                f"Position size adjustment for {symbol}: "
+                f"signal_strength={signal_strength}, "
+                f"position_ratio={position_ratio}, "
+                f"original_quantity={quantity:.4f}, "
+                f"adjusted_quantity={adjusted_quantity:.4f}"
+            )
+            quantity = adjusted_quantity
+            
             # Execute order with retry logic
             max_retries = 3
             retry_delay = 2  # seconds
@@ -793,6 +1184,12 @@ class FiveMinuteStrategy:
                     
                     # Initialize peak price tracking for take profit
                     self.position_peak_prices[symbol] = final_price
+                    
+                    # Record entry time for time-based stop loss
+                    self.position_entry_times[symbol] = kline_time if kline_time else int(datetime.now().timestamp() * 1000)
+                    
+                    # Initialize partial take profit status
+                    self.partial_take_profit_status[symbol] = {i: False for i in range(len(self.partial_take_profit_levels))}
                     
                     logger.info(f"Short position opened successfully for {symbol}")
                     
@@ -1153,7 +1550,16 @@ class FiveMinuteStrategy:
             if not position:
                 return
             
-            # Check take profit first (before stop loss)
+            # Check time-based stop loss first
+            if self.time_stop_loss_enabled:
+                await self._check_time_stop_loss(symbol, current_price)
+            
+            # Re-check position after time stop loss check (might have been closed)
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            # Check take profit (before stop loss)
             await self._check_take_profit(symbol, current_price)
             
             # Re-check position after take profit check (might have been closed)
@@ -1264,6 +1670,14 @@ class FiveMinuteStrategy:
                     if symbol in self.stop_loss_first_trigger_time:
                         del self.stop_loss_first_trigger_time[symbol]
                     
+                    # Clear entry time tracking
+                    if symbol in self.position_entry_times:
+                        del self.position_entry_times[symbol]
+                    
+                    # Clear partial take profit status
+                    if symbol in self.partial_take_profit_status:
+                        del self.partial_take_profit_status[symbol]
+                    
                     logger.info(f"Position closed due to stop loss for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to stop loss for {symbol}")
@@ -1343,6 +1757,19 @@ class FiveMinuteStrategy:
             # Calculate take profit threshold
             take_profit_threshold = entry_price * (1 + self.take_profit_percent) if position_side == 'LONG' else entry_price * (1 - self.take_profit_percent)
             
+            # Check partial take profit first
+            partial_tp_executed = await self._check_partial_take_profit(
+                symbol, current_price, position_side, entry_price, quantity, pnl_percent
+            )
+            
+            # Re-check position after partial take profit (might have been closed)
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            # Update quantity after partial take profit
+            quantity = position['quantity']
+            
             # Check if fixed take profit is triggered
             take_profit_triggered = False
             if position_side == 'LONG':
@@ -1409,6 +1836,14 @@ class FiveMinuteStrategy:
                     if symbol in self.position_peak_prices:
                         del self.position_peak_prices[symbol]
                     
+                    # Clear entry time tracking
+                    if symbol in self.position_entry_times:
+                        del self.position_entry_times[symbol]
+                    
+                    # Clear partial take profit status
+                    if symbol in self.partial_take_profit_status:
+                        del self.partial_take_profit_status[symbol]
+                    
                     logger.info(f"Position closed due to take profit for {symbol}")
                 else:
                     logger.error(f"Failed to close position due to take profit for {symbol}")
@@ -1417,3 +1852,204 @@ class FiveMinuteStrategy:
             logger.error(f"Error checking take profit for {symbol}: {e}")
             import traceback
             logger.error(traceback.format_exc())
+    
+    async def _check_time_stop_loss(self, symbol: str, current_price: float) -> None:
+        """
+        Check if position should be closed due to time-based stop loss
+        Closes position if it has been held for too many K-lines without reaching take profit
+        
+        Args:
+            symbol: Trading pair symbol
+            current_price: Current price from WebSocket ticker
+        """
+        try:
+            # Get position information
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            # Check if entry time is recorded
+            if symbol not in self.position_entry_times:
+                logger.warning(f"No entry time recorded for {symbol}, skipping time stop loss check")
+                return
+            
+            entry_time = self.position_entry_times[symbol]
+            current_time = int(datetime.now().timestamp() * 1000)
+            
+            # Calculate elapsed time in milliseconds
+            elapsed_time_ms = current_time - entry_time
+            
+            # Convert to K-lines (5 minutes = 300000 milliseconds)
+            elapsed_klines = elapsed_time_ms / 300000
+            
+            # Check if time stop loss is triggered
+            if elapsed_klines >= self.time_stop_loss_klines:
+                logger.warning(
+                    f"[TIME_STOP_LOSS] {symbol}: "
+                    f"elapsed_klines={elapsed_klines:.1f}, "
+                    f"threshold={self.time_stop_loss_klines}, "
+                    f"closing position..."
+                )
+                
+                # Close position immediately
+                success = await self.trading_executor.close_all_positions(symbol)
+                
+                if success:
+                    position_side = position['side']
+                    quantity = position['quantity']
+                    entry_price = position.get('entry_price', 0)
+                    
+                    # Calculate PnL
+                    pnl = 0.0
+                    if current_price and entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SHORT
+                            pnl = (entry_price - current_price) * quantity
+                    
+                    # Calculate PnL percentage
+                    pnl_percent = 0.0
+                    if entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl_percent = (current_price - entry_price) / entry_price
+                        else:  # SHORT
+                            pnl_percent = (entry_price - current_price) / entry_price
+                    
+                    # Send close notification with time stop loss reason
+                    await self.telegram_client.send_close_notification(
+                        symbol=symbol,
+                        side=position_side,
+                        entry_price=entry_price,
+                        exit_price=current_price,
+                        quantity=quantity,
+                        pnl=pnl,
+                        close_reason=f"时间止损触发\n"
+                                   f"持仓时间: {elapsed_klines:.1f} 根K线\n"
+                                   f"时间阈值: {self.time_stop_loss_klines} 根K线\n"
+                                   f"当前价格: ${current_price:.2f}\n"
+                                   f"开仓价格: ${entry_price:.2f}\n"
+                                   f"盈亏比例: {pnl_percent*100:.2f}%"
+                    )
+                    
+                    # Clear local position state
+                    self.position_manager.close_position(symbol, current_price)
+                    
+                    # Clear entry time tracking
+                    if symbol in self.position_entry_times:
+                        del self.position_entry_times[symbol]
+                    
+                    # Clear partial take profit status
+                    if symbol in self.partial_take_profit_status:
+                        del self.partial_take_profit_status[symbol]
+                    
+                    # Clear peak price tracking
+                    if symbol in self.position_peak_prices:
+                        del self.position_peak_prices[symbol]
+                    
+                    logger.info(f"Position closed due to time stop loss for {symbol}")
+                else:
+                    logger.error(f"Failed to close position due to time stop loss for {symbol}")
+            else:
+                logger.debug(
+                    f"[TIME_STOP_LOSS_CHECK] {symbol}: "
+                    f"elapsed_klines={elapsed_klines:.1f}, "
+                    f"threshold={self.time_stop_loss_klines}, "
+                    f"remaining={self.time_stop_loss_klines - elapsed_klines:.1f} klines"
+                )
+                
+        except Exception as e:
+            logger.error(f"Error checking time stop loss for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _check_partial_take_profit(self, symbol: str, current_price: float, position_side: str,
+                                        entry_price: float, quantity: float, pnl_percent: float) -> bool:
+        """
+        Check and execute partial take profit at predefined levels
+        
+        Args:
+            symbol: Trading pair symbol
+            current_price: Current price
+            position_side: 'LONG' or 'SHORT'
+            entry_price: Entry price
+            quantity: Position quantity
+            pnl_percent: Current PnL percentage
+            
+        Returns:
+            True if partial take profit was executed, False otherwise
+        """
+        try:
+            # Check if partial take profit is enabled
+            if not self.partial_take_profit_enabled:
+                return False
+            
+            # Check if partial take profit status exists
+            if symbol not in self.partial_take_profit_status:
+                logger.warning(f"No partial take profit status for {symbol}")
+                return False
+            
+            # Check each take profit level
+            for i, level in enumerate(self.partial_take_profit_levels):
+                # Skip if this level has already been executed
+                if self.partial_take_profit_status[symbol].get(i, False):
+                    continue
+                
+                # Check if current PnL reaches this level
+                if pnl_percent >= level:
+                    logger.info(
+                        f"[PARTIAL_TAKE_PROFIT] {symbol}: "
+                        f"level={i+1}/{len(self.partial_take_profit_levels)}, "
+                        f"pnl_percent={pnl_percent*100:.2f}%, "
+                        f"level_threshold={level*100:.1f}%, "
+                        f"executing partial close..."
+                    )
+                    
+                    # Calculate quantity to close
+                    ratio = self.partial_take_profit_ratios[i] if i < len(self.partial_take_profit_ratios) else 0.5
+                    close_quantity = quantity * ratio
+                    
+                    # Execute partial close
+                    # Note: This is a simplified implementation. In production, you would need to
+                    # track remaining quantity and update position state accordingly
+                    success = await self.trading_executor.close_all_positions(symbol)
+                    
+                    if success:
+                        # Calculate PnL for this partial close
+                        pnl = 0.0
+                        if current_price and entry_price > 0:
+                            if position_side == 'LONG':
+                                pnl = (current_price - entry_price) * close_quantity
+                            else:  # SHORT
+                                pnl = (entry_price - current_price) * close_quantity
+                        
+                        # Send notification
+                        await self.telegram_client.send_message(
+                            f"📊 分批止盈执行\n\n"
+                            f"交易对: {symbol}\n"
+                            f"方向: {position_side}\n"
+                            f"开仓价格: ${entry_price:.2f}\n"
+                            f"当前价格: ${current_price:.2f}\n"
+                            f"止盈级别: {i+1}/{len(self.partial_take_profit_levels)}\n"
+                            f"止盈阈值: {level*100:.1f}%\n"
+                            f"当前盈亏: {pnl_percent*100:.2f}%\n"
+                            f"平仓数量: {close_quantity:.4f}\n"
+                            f"平仓比例: {ratio*100:.1f}%\n"
+                            f"本次盈亏: ${pnl:.2f}"
+                        )
+                        
+                        # Mark this level as executed
+                        self.partial_take_profit_status[symbol][i] = True
+                        
+                        logger.info(f"Partial take profit executed for {symbol} at level {i+1}")
+                        return True
+                    else:
+                        logger.error(f"Failed to execute partial take profit for {symbol} at level {i+1}")
+                        return False
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking partial take profit for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False

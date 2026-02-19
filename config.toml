@@ -39,27 +39,36 @@ bb_std = 2
 
 # Trading Strategy Configuration
 [strategy]
-# 5m K线交易策略
+# 5m K线交易策略 - 优化版本
 # Position size: 100% of account balance (full position)
 
 # K线 intervals for strategy
 check_interval = "5m"  # Check interval for opening position
 
-# Volume check parameters
-volume_ratio_threshold = 0.80  # Minimum volume ratio (current volume / average volume of last 5 klines)
+# Volume check parameters - 优化：提高阈值以过滤弱信号
+volume_ratio_threshold = 0.85  # Minimum volume ratio (current volume / average volume of last 5 klines) - 提高到85%
 
-# K-line body ratio check parameters
-body_ratio_threshold = 0.5  # Minimum body ratio (body / range), filters klines with too much resistance
+# K-line body ratio check parameters - 优化：提高阈值以过滤假突破
+body_ratio_threshold = 0.55  # Minimum body ratio (body / range), filters klines with too much resistance - 提高到55%
 shadow_ratio_threshold = 0.5  # Maximum shadow ratio (shadow / range), prevents single-sided shadows from being too long
 
-# K-line range check parameters
-range_ratio_threshold = 0.5  # Minimum range ratio (current range / average range of last 5 klines), ensures sufficient volatility
+# K-line range check parameters - 优化：提高阈值以确保足够的波动性
+range_ratio_threshold = 0.60  # Minimum range ratio (current range / average range of last 5 klines), ensures sufficient volatility - 提高到60%
 
-# Stop loss parameters
-stop_loss_range_multiplier = 0.8  # Moving stop loss distance = latest 5m K-line range * this multiplier
-stop_loss_min_distance_percent = 0.025  # Minimum stop loss distance as percentage of price (2.5% = 0.025) - 平衡型配置
-stop_loss_max_distance_percent = 0.03  # Maximum stop loss distance as percentage of price (3% = 0.03) - 防止止损距离过大
-engulfing_body_ratio_threshold = 0.85  # Minimum engulfing body ratio to trigger stop loss (85% = less sensitive)
+# Stop loss parameters - 优化：使用ATR动态止损，降低止损距离
+stop_loss_range_multiplier = 0.6  # Moving stop loss distance = latest 5m K-line range * this multiplier - 降低到0.6
+stop_loss_min_distance_percent = 0.015  # Minimum stop loss distance as percentage of price (1.5% = 0.015) - 降低到1.5%
+stop_loss_max_distance_percent = 0.025  # Maximum stop loss distance as percentage of price (2.5% = 0.025) - 降低到2.5%
+engulfing_body_ratio_threshold = 0.95  # Minimum engulfing body ratio to trigger stop loss (95% = less sensitive) - 提高到95%
+
+# ATR-based stop loss parameters (ATR动态止损参数)
+atr_stop_loss_enabled = true  # Enable ATR-based stop loss (启用ATR动态止损)
+atr_stop_loss_multiplier = 1.5  # ATR multiplier for stop loss distance (ATR倍数)
+atr_period = 14  # ATR period (ATR周期)
+
+# Time-based stop loss parameters (时间止损参数)
+time_stop_loss_enabled = true  # Enable time-based stop loss (启用时间止损)
+time_stop_loss_klines = 3  # Maximum number of klines to hold position without profit (最大持仓K线数)
 
 # Real-time stop loss optimization parameters (实时止损优化参数)
 # 优化后的配置，减少误触发同时保持及时止损
@@ -71,12 +80,23 @@ stop_loss_check_interval = 1  # Check interval in seconds (1 second)
 trailing_stop_enabled = false  # Enable trailing stop loss (移动止损开关) - 禁用移动止损，避免与实时监控止损冲突
 trailing_stop_kline_count = 5  # Number of recent klines to use for trailing stop (使用最近N根K线的最低/最高点) - 增加到5根K线
 
-# Take profit parameters (止盈参数)
-# 平衡型配置：止损2.5%，止盈3.5%，风险/收益比1:1.4，适合5分钟K线周期
+# Take profit parameters (止盈参数) - 优化：提高止盈比例，添加分批止盈
+# 优化配置：止损1.5%-2.5%，止盈5%，风险/收益比2:1以上，适合5分钟K线周期
 take_profit_enabled = true  # Enable take profit (止盈开关)
-take_profit_percent = 0.035  # Take profit threshold as percentage of entry price (3.5% = 0.035) - 平衡型配置
+take_profit_percent = 0.05  # Take profit threshold as percentage of entry price (5% = 0.05) - 提高到5%
 take_profit_trailing_enabled = true  # Enable trailing take profit after reaching take profit (移动止盈开关)
-take_profit_trailing_percent = 0.015  # Trailing take profit threshold (1.5% = 0.015) - 达到止盈后，价格回撤1.5%才平仓
+take_profit_trailing_percent = 0.02  # Trailing take profit threshold (2% = 0.02) - 提高到2%
+
+# Partial take profit parameters (分批止盈参数)
+partial_take_profit_enabled = true  # Enable partial take profit (启用分批止盈)
+partial_take_profit_levels = [0.03, 0.05]  # Take profit levels as percentages [3%, 5%]
+partial_take_profit_ratios = [0.5, 0.5]  # Ratios to close at each level [50%, 50%]
+
+# Dynamic take profit parameters (动态止盈参数)
+dynamic_take_profit_enabled = true  # Enable dynamic take profit based on trend strength (启用动态止盈)
+strong_trend_take_profit_percent = 0.07  # Take profit for strong trend (7%)
+weak_trend_take_profit_percent = 0.03  # Take profit for weak trend (3%)
+adx_trend_threshold = 25  # ADX threshold for trend strength (ADX趋势强度阈值)
 
 # Trend filter parameters (to avoid false breakouts in sideways markets)
 trend_filter_enabled = true  # Enable trend filter to avoid false breakouts
@@ -85,6 +105,20 @@ trend_filter_ma_period = 20  # MA period for trend filter (default: 20)
 # - For LONG: price must be ABOVE MA20 AND MA20 must be trending UP
 # - For SHORT: price must be BELOW MA20 AND MA20 must be trending DOWN
 # This helps avoid false breakouts in sideways markets
+
+# Additional indicator filters (额外指标过滤)
+rsi_filter_enabled = true  # Enable RSI filter (启用RSI过滤)
+rsi_long_max = 70  # Maximum RSI for long entry (做多时RSI最大值)
+rsi_short_min = 30  # Minimum RSI for short entry (做空时RSI最小值)
+
+macd_filter_enabled = true  # Enable MACD filter (启用MACD过滤)
+# MACD filter logic:
+# - For LONG: MACD histogram > 0 OR bullish crossover
+# - For SHORT: MACD histogram < 0 OR bearish crossover
+
+adx_filter_enabled = true  # Enable ADX filter for trend strength (启用ADX趋势强度过滤)
+adx_min_trend = 20  # Minimum ADX for trend market (趋势市场最小ADX)
+adx_sideways = 20  # ADX threshold for sideways market (震荡市场ADX阈值)
 
 # Trading Configuration
 [trading]
@@ -97,11 +131,16 @@ fee_rate = 0.0004  # 0.04% for market orders
 # 0.01 = 1% extra margin
 safety_margin = 0.01  # 1% safety margin
 
-# Risk Management
+# Risk Management - 优化：降低单笔风险
 # Maximum loss per trade as percentage of account balance
 # This limits the position size based on stop loss distance
-# Example: With 30% max loss and 0.5% stop loss distance, position size = 60x leverage
-max_loss_per_trade_percent = 0.30  # 30% maximum loss per trade
+# Example: With 15% max loss and 0.5% stop loss distance, position size = 30x leverage
+max_loss_per_trade_percent = 0.15  # 15% maximum loss per trade - 降低到15%
+
+# Position sizing based on signal strength (基于信号强度的仓位分级)
+strong_signal_position_ratio = 1.0  # 100% position for strong signals
+medium_signal_position_ratio = 0.75  # 75% position for medium signals
+weak_signal_position_ratio = 0.5  # 50% position for weak signals
 
 # Logging Configuration
 [logging]
