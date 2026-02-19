@@ -106,7 +106,9 @@ class TechnicalAnalyzer:
             MA series or None
         """
         try:
-            return talib.SMA(prices.values, timeperiod=period)
+            ma_array = talib.SMA(prices.values, timeperiod=period)
+            # Convert numpy array to pandas Series to support .iloc indexing
+            return pd.Series(ma_array, index=prices.index)
         except Exception as e:
             logger.error(f"Error calculating MA{period}: {e}")
             return None
@@ -123,7 +125,9 @@ class TechnicalAnalyzer:
             EMA series or None
         """
         try:
-            return talib.EMA(prices.values, timeperiod=period)
+            ema_array = talib.EMA(prices.values, timeperiod=period)
+            # Convert numpy array to pandas Series to support .iloc indexing
+            return pd.Series(ema_array, index=prices.index)
         except Exception as e:
             logger.error(f"Error calculating EMA{period}: {e}")
             return None
@@ -139,7 +143,9 @@ class TechnicalAnalyzer:
             RSI series or None
         """
         try:
-            return talib.RSI(prices.values, timeperiod=self.rsi_period)
+            rsi_array = talib.RSI(prices.values, timeperiod=self.rsi_period)
+            # Convert numpy array to pandas Series to support .iloc indexing
+            return pd.Series(rsi_array, index=prices.index)
         except Exception as e:
             logger.error(f"Error calculating RSI: {e}")
             return None
@@ -161,7 +167,8 @@ class TechnicalAnalyzer:
                 slowperiod=self.macd_slow,
                 signalperiod=self.macd_signal
             )
-            return macd, signal, hist
+            # Convert numpy arrays to pandas Series to support .iloc indexing
+            return pd.Series(macd, index=prices.index), pd.Series(signal, index=prices.index), pd.Series(hist, index=prices.index)
         except Exception as e:
             logger.error(f"Error calculating MACD: {e}")
             return None, None, None
@@ -183,7 +190,8 @@ class TechnicalAnalyzer:
                 nbdevup=self.bb_std,
                 nbdevdn=self.bb_std
             )
-            return upper, middle, lower
+            # Convert numpy arrays to pandas Series to support .iloc indexing
+            return pd.Series(upper, index=prices.index), pd.Series(middle, index=prices.index), pd.Series(lower, index=prices.index)
         except Exception as e:
             logger.error(f"Error calculating Bollinger Bands: {e}")
             return None, None, None
@@ -203,7 +211,9 @@ class TechnicalAnalyzer:
             high = df['high'].values
             low = df['low'].values
             close = df['close'].values
-            return talib.ATR(high, low, close, timeperiod=period)
+            atr_array = talib.ATR(high, low, close, timeperiod=period)
+            # Convert numpy array to pandas Series to support .iloc indexing
+            return pd.Series(atr_array, index=df.index)
         except Exception as e:
             logger.error(f"Error calculating ATR: {e}")
             return None
@@ -223,7 +233,9 @@ class TechnicalAnalyzer:
             high = df['high'].values
             low = df['low'].values
             close = df['close'].values
-            return talib.ADX(high, low, close, timeperiod=period)
+            adx_array = talib.ADX(high, low, close, timeperiod=period)
+            # Convert numpy array to pandas Series to support .iloc indexing
+            return pd.Series(adx_array, index=df.index)
         except Exception as e:
             logger.error(f"Error calculating ADX: {e}")
             return None
@@ -243,7 +255,8 @@ class TechnicalAnalyzer:
             low = df['low'].values
             close = df['close'].values
             slowk, slowd = talib.STOCH(high, low, close, fastk_period=14, slowk_period=3, slowd_period=3)
-            return slowk, slowd
+            # Convert numpy arrays to pandas Series to support .iloc indexing
+            return pd.Series(slowk, index=df.index), pd.Series(slowd, index=df.index)
         except Exception as e:
             logger.error(f"Error calculating Stochastic: {e}")
             return None, None
