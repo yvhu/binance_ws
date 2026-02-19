@@ -235,10 +235,7 @@ class FiveMinuteStrategy:
         # Initialize limit order monitor
         self.limit_order_monitor = LimitOrderMonitor(
             trading_executor=trading_executor,
-            price_away_threshold_percent=self.limit_order_price_away_threshold_percent,
-            timeout=self.limit_order_entry_timeout,
-            rapid_change_threshold_percent=self.limit_order_rapid_change_threshold_percent,
-            rapid_change_window=self.limit_order_rapid_change_window
+            config=config
         )
         
         # Set price callback for limit order monitor
