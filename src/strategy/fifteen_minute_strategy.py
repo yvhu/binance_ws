@@ -63,12 +63,21 @@ class FiveMinuteStrategy:
         
         # Trailing stop loss configuration
         self.trailing_stop_enabled = config.get_config("strategy", "trailing_stop_enabled", default=False)
-        self.trailing_stop_kline_count = config.get_config("strategy", "trailing_stop_kline_count", default=3)
+        self.trailing_stop_kline_count = config.get_config("strategy", "trailing_stop_kline_count", default=5)  # Increased from 3 to 5
         
         # Real-time stop loss optimization configuration
-        self.stop_loss_price_buffer_percent = config.get_config("strategy", "stop_loss_price_buffer_percent", default=0.001)  # 0.1% buffer
-        self.stop_loss_time_threshold = config.get_config("strategy", "stop_loss_time_threshold", default=3)  # 3 seconds
+        self.stop_loss_price_buffer_percent = config.get_config("strategy", "stop_loss_price_buffer_percent", default=0.002)  # Increased from 0.1% to 0.2%
+        self.stop_loss_time_threshold = config.get_config("strategy", "stop_loss_time_threshold", default=5)  # Increased from 3s to 5s
         self.stop_loss_check_interval = config.get_config("strategy", "stop_loss_check_interval", default=1)  # Check every 1 second
+        
+        # Take profit configuration
+        self.take_profit_enabled = config.get_config("strategy", "take_profit_enabled", default=True)
+        self.take_profit_percent = config.get_config("strategy", "take_profit_percent", default=0.015)  # 1.5% take profit
+        self.take_profit_trailing_enabled = config.get_config("strategy", "take_profit_trailing_enabled", default=True)
+        self.take_profit_trailing_percent = config.get_config("strategy", "take_profit_trailing_percent", default=0.005)  # 0.5% trailing after take profit
+        
+        # Track highest/lowest price for take profit
+        self.position_peak_prices: Dict[str, float] = {}  # symbol -> peak price (highest for LONG, lowest for SHORT)
         
         # Track stop loss trigger times for each symbol
         self.stop_loss_trigger_times: Dict[str, float] = {}
@@ -633,6 +642,9 @@ class FiveMinuteStrategy:
                     if position and stop_loss_price is not None:
                         position['stop_loss_price'] = stop_loss_price
                     
+                    # Initialize peak price tracking for take profit
+                    self.position_peak_prices[symbol] = final_price
+                    
                     logger.info(f"Long position opened successfully for {symbol}")
                     
                     # Send trade notification with volume info, range info, stop loss and position calculation info
@@ -745,6 +757,9 @@ class FiveMinuteStrategy:
                     position = self.position_manager.get_position(symbol)
                     if position and stop_loss_price is not None:
                         position['stop_loss_price'] = stop_loss_price
+                    
+                    # Initialize peak price tracking for take profit
+                    self.position_peak_prices[symbol] = final_price
                     
                     logger.info(f"Short position opened successfully for {symbol}")
                     
@@ -1091,8 +1106,9 @@ class FiveMinuteStrategy:
     
     async def check_stop_loss_on_price_update(self, symbol: str, current_price: float) -> None:
         """
-        Check stop loss when price is updated via WebSocket
+        Check stop loss and take profit when price is updated via WebSocket
         This provides real-time stop loss protection with price buffer and time threshold
+        Also checks for take profit conditions
         
         Args:
             symbol: Trading pair symbol
@@ -1100,6 +1116,14 @@ class FiveMinuteStrategy:
         """
         try:
             # Get position information
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            # Check take profit first (before stop loss)
+            await self._check_take_profit(symbol, current_price)
+            
+            # Re-check position after take profit check (might have been closed)
             position = self.position_manager.get_position(symbol)
             if not position:
                 return
@@ -1236,5 +1260,127 @@ class FiveMinuteStrategy:
             
         except Exception as e:
             logger.error(f"Error checking stop loss for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _check_take_profit(self, symbol: str, current_price: float) -> None:
+        """
+        Check if take profit should be triggered
+        Implements both fixed take profit and trailing take profit
+        
+        Args:
+            symbol: Trading pair symbol
+            current_price: Current price from WebSocket ticker
+        """
+        try:
+            # Get position information
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            position_side = position['side']
+            quantity = position['quantity']
+            entry_price = position.get('entry_price', 0)
+            
+            # Calculate current PnL percentage
+            pnl_percent = 0.0
+            if position_side == 'LONG':
+                pnl_percent = (current_price - entry_price) / entry_price if entry_price > 0 else 0
+            else:  # SHORT
+                pnl_percent = (entry_price - current_price) / entry_price if entry_price > 0 else 0
+            
+            # Initialize peak price tracking if not exists
+            if symbol not in self.position_peak_prices:
+                self.position_peak_prices[symbol] = current_price
+            
+            # Update peak price
+            if position_side == 'LONG':
+                # For long, track highest price
+                if current_price > self.position_peak_prices[symbol]:
+                    self.position_peak_prices[symbol] = current_price
+            else:  # SHORT
+                # For short, track lowest price
+                if current_price < self.position_peak_prices[symbol]:
+                    self.position_peak_prices[symbol] = current_price
+            
+            # Check if take profit is enabled
+            if not self.take_profit_enabled:
+                return
+            
+            # Calculate take profit threshold
+            take_profit_threshold = entry_price * (1 + self.take_profit_percent) if position_side == 'LONG' else entry_price * (1 - self.take_profit_percent)
+            
+            # Check if fixed take profit is triggered
+            take_profit_triggered = False
+            if position_side == 'LONG':
+                take_profit_triggered = current_price >= take_profit_threshold
+            else:  # SHORT
+                take_profit_triggered = current_price <= take_profit_threshold
+            
+            if take_profit_triggered:
+                # Check if trailing take profit is enabled
+                if self.take_profit_trailing_enabled:
+                    # Calculate trailing take profit threshold based on peak price
+                    trailing_threshold = self.position_peak_prices[symbol] * (1 - self.take_profit_trailing_percent) if position_side == 'LONG' else self.position_peak_prices[symbol] * (1 + self.take_profit_trailing_percent)
+                    
+                    # Only close if price drops below trailing threshold
+                    if position_side == 'LONG':
+                        if current_price >= trailing_threshold:
+                            logger.info(
+                                f"[TAKE_PROFIT_WAITING] {symbol}: "
+                                f"current={current_price:.2f} >= trailing={trailing_threshold:.2f}, "
+                                f"continuing to trail..."
+                            )
+                            return
+                    else:  # SHORT
+                        if current_price <= trailing_threshold:
+                            logger.info(
+                                f"[TAKE_PROFIT_WAITING] {symbol}: "
+                                f"current={current_price:.2f} <= trailing={trailing_threshold:.2f}, "
+                                f"continuing to trail..."
+                            )
+                            return
+                
+                # Close position for take profit
+                success = await self.trading_executor.close_all_positions(symbol)
+                
+                if success:
+                    # Calculate PnL
+                    pnl = 0.0
+                    if current_price and entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SHORT
+                            pnl = (entry_price - current_price) * quantity
+                    
+                    # Send close notification with take profit reason
+                    await self.telegram_client.send_close_notification(
+                        symbol=symbol,
+                        side=position_side,
+                        entry_price=entry_price,
+                        exit_price=current_price,
+                        quantity=quantity,
+                        pnl=pnl,
+                        close_reason=f"止盈触发\n"
+                                   f"当前价格: ${current_price:.2f}\n"
+                                   f"开仓价格: ${entry_price:.2f}\n"
+                                   f"盈亏比例: {pnl_percent*100:.2f}%\n"
+                                   f"止盈阈值: {self.take_profit_percent*100:.1f}%\n"
+                                   f"{'最高价' if position_side == 'LONG' else '最低价'}: ${self.position_peak_prices[symbol]:.2f}"
+                    )
+                    
+                    # Clear local position state
+                    self.position_manager.close_position(symbol, current_price)
+                    
+                    # Clear peak price tracking
+                    if symbol in self.position_peak_prices:
+                        del self.position_peak_prices[symbol]
+                    
+                    logger.info(f"Position closed due to take profit for {symbol}")
+                else:
+                    logger.error(f"Failed to close position due to take profit for {symbol}")
+            
+        except Exception as e:
+            logger.error(f"Error checking take profit for {symbol}: {e}")
             import traceback
             logger.error(traceback.format_exc())

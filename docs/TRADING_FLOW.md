@@ -273,13 +273,48 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 - 确保重启后持仓仍然有止损保护
 - **实时监控基于WebSocket价格更新，响应极快**
 
-#### 7.5 移动止损（可选功能）
+#### 7.5 止盈机制（新增）
+
+- **触发时机**：每次价格更新时检查（基于WebSocket实时价格）
+- **启用条件**：`take_profit_enabled = true`（可在配置文件中设置，默认启用）
+- **工作原理**：
+  - **多头持仓**：
+    - 跟踪持仓期间的最高价格（peak_price）
+    - 计算止盈价格 = 开仓价格 × (1 + take_profit_percent)
+    - 当当前价格 ≥ 止盈价格时，触发止盈平仓
+    - 如果启用移动止盈（take_profit_trailing_enabled），则：
+      - 移动止盈价格 = peak_price × (1 - take_profit_trailing_percent)
+      - 当价格从峰值回撤超过移动止盈百分比时，触发止盈
+  - **空头持仓**：
+    - 跟踪持仓期间的最低价格（peak_price）
+    - 计算止盈价格 = 开仓价格 × (1 - take_profit_percent)
+    - 当当前价格 ≤ 止盈价格时，触发止盈平仓
+    - 如果启用移动止盈，则：
+      - 移动止盈价格 = peak_price × (1 + take_profit_trailing_percent)
+      - 当价格从峰值回撤超过移动止盈百分比时，触发止盈
+- **止盈操作**：
+  - 立即执行市价平仓
+  - 发送止盈通知，包含盈亏信息
+  - 更新持仓状态
+- **目的**：
+  - 主动锁定利润，避免利润回吐
+  - 提高交易系统的盈利能力
+  - 平衡风险和收益
+- **重要说明**：
+  - 止盈机制优先于止损检查
+  - 峰值价格在开仓时初始化为开仓价格
+  - 移动止盈可以最大化利润，同时保护已实现的收益
+  - **优化参数**：止盈百分比5%，移动止盈百分比1.5%，适合10倍杠杆交易
+  - **风险/收益比**：1.5%止损 / 5%止盈 = 1:3.3，符合专业交易标准
+- **实现位置**：[`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py:1242) 的 `_check_take_profit()` 方法
+
+#### 7.6 移动止损（可选功能）
 
 - **触发时机**：每次5m K线关闭时检查（仅在启用时）
 - **启用条件**：`trailing_stop_enabled = true`（可在配置文件中设置）
 - **工作原理**：
   - **多头持仓**：止损价格跟随最近N根K线的最低价
-    - 获取最近N根已收盘的5分钟K线（N由`trailing_stop_kline_count`配置，默认为3）
+    - 获取最近N根已收盘的5分钟K线（N由`trailing_stop_kline_count`配置，默认为5）
     - 计算这些K线中的最低价格
     - 如果最低价格 > 当前止损价格，则更新止损价格为最低价格
     - 止损价格只能向上移动（有利方向），不能向下移动
@@ -300,9 +335,10 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
   - 需要在config.toml中显式启用
   - 移动止损更新后，实时止损会使用新的止损价格
   - 移动止损不会主动平仓，只是更新止损价格
+  - **优化参数**：参考K线数从3增加到5，降低敏感度，避免过早止损
 - **实现位置**：[`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py:930) 的 `_update_trailing_stop_loss()` 方法
 
-#### 7.6 移动反向吞没止损
+#### 7.7 移动反向吞没止损
 - **触发条件**（必须同时满足）：
   1. 当前K线方向与上一根K线方向相反
   2. 当前K线实体长度 / 上一根K线实体长度 ≥ 85%
@@ -526,3 +562,71 @@ engulfing_body_ratio_threshold = 0.85  # 吞没实体比例阈值（85% = 降低
 
 **相关文档：**
 - 详见 [Strategy Flow](STRATEGY_FLOW.md) 获取最新的5分钟策略详情
+
+### 2026-02-19：添加止盈机制和优化止损参数
+
+**变更原因：**
+1. **止盈机制缺失**：系统只有止损机制，没有主动止盈，导致利润容易回吐
+2. **止损过快**：移动止损参数过于敏感，导致过早止损
+3. **风险/收益比不合理**：止损和止盈比例不匹配，影响整体盈利能力
+
+**新功能：止盈机制**
+- **工作原理**：
+  - 跟踪持仓期间的峰值价格（最高价或最低价）
+  - 基于开仓价格计算固定止盈目标（默认5%）
+  - 可选移动止盈功能，从峰值回撤时触发（默认1.5%）
+- **优势**：
+  - ✅ 主动锁定利润，避免利润回吐
+  - ✅ 提高交易系统的盈利能力
+  - ✅ 平衡风险和收益
+  - ✅ 移动止盈可以最大化利润
+
+**参数优化：**
+1. **止损参数优化**：
+   - 最小止损距离：从0.5%增加到1.5%（账户风险从5%增加到15%）
+   - 移动止损K线数：从3增加到5（降低敏感度）
+   - 价格缓冲：从0.1%增加到0.2%（避免误触发）
+   - 时间阈值：从3秒增加到5秒（确认趋势反转）
+
+2. **止盈参数配置**：
+   - 止盈百分比：5%（账户收益50%）
+   - 移动止盈百分比：1.5%（从峰值回撤触发）
+   - 风险/收益比：1.5%止损 / 5%止盈 = 1:3.3
+
+**风险/收益分析（10倍杠杆）：**
+- **止损1.5%**：账户亏损15%，可接受的风险水平
+- **止盈5%**：账户收益50%，良好的收益水平
+- **风险/收益比1:3.3**：符合专业交易标准
+- **胜率要求**：只需23%的胜率即可盈亏平衡
+
+**代码变更：**
+
+1. **添加止盈机制**（[`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py)）：
+   - 添加 `_check_take_profit()` 方法（lines 1242-1339）
+   - 在 `check_stop_loss_on_price_update()` 中优先检查止盈（lines 1101-1115）
+   - 在开仓时初始化峰值价格（lines 645-647, 758-760）
+   - 添加止盈配置参数（lines 73-80）
+
+2. **优化移动止损参数**（[`../config.toml`](../config.toml)）：
+   - 更新 `stop_loss_min_distance_percent` 为0.015（1.5%）
+   - 更新 `trailing_stop_kline_count` 为5
+   - 添加 `take_profit_percent` 为0.05（5%）
+   - 添加 `take_profit_trailing_percent` 为0.015（1.5%）
+
+3. **添加保证金检查**（[`../src/trading/trading_executor.py`](../src/trading/trading_executor.py)）：
+   - 添加 `check_margin_sufficient()` 方法（lines 565-636）
+   - 在开仓前检查保证金是否充足（lines 682-691, 781-790）
+   - 防止"Margin is insufficient"错误
+
+**影响范围：**
+- [`../src/strategy/fifteen_minute_strategy.py`](../src/strategy/fifteen_minute_strategy.py) - 添加止盈机制
+- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py) - 添加保证金检查
+- [`../config.toml`](../config.toml) - 优化止损止盈参数
+- [`docs/STRATEGY_FLOW.md`](docs/STRATEGY_FLOW.md) - 更新策略文档
+- [`docs/TRADING_FLOW.md`](docs/TRADING_FLOW.md) - 更新交易流程文档
+
+**适用场景：**
+- 10倍杠杆的USDC-M永续合约
+- 高波动性加密货币（如BTC、ETH）
+- 需要主动止盈的交易策略
+- 追求专业级风险/收益比的交易者

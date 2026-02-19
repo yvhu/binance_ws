@@ -562,6 +562,79 @@ class TradingExecutor:
         
         return rounded_quantity
     
+    def check_margin_sufficient(
+        self,
+        symbol: str,
+        quantity: float,
+        current_price: float
+    ) -> tuple[bool, Optional[float], Optional[float]]:
+        """
+        Check if there is sufficient margin to open a position
+        
+        Args:
+            symbol: Trading pair symbol
+            quantity: Position quantity
+            current_price: Current price of the asset
+            
+        Returns:
+            Tuple of (is_sufficient, required_margin, available_balance)
+            - is_sufficient: True if margin is sufficient
+            - required_margin: Required margin for the position
+            - available_balance: Available balance in the account
+        """
+        try:
+            # Get available balance
+            balance = self.get_account_balance()
+            if balance is None:
+                logger.error("Failed to get account balance for margin check")
+                return False, None, None
+            
+            # Calculate position value
+            position_value = quantity * current_price
+            
+            # Calculate required margin (position value / leverage)
+            required_margin = position_value / self.leverage
+            
+            # Calculate opening fee
+            opening_fee = position_value * self.fee_rate
+            
+            # Calculate safety margin
+            safety_margin_amount = position_value * self.safety_margin
+            
+            # Total required = required margin + opening fee + safety margin
+            total_required = required_margin + opening_fee + safety_margin_amount
+            
+            # Check if balance is sufficient
+            is_sufficient = balance >= total_required
+            
+            logger.info(
+                f"Margin check for {symbol}:\n"
+                f"  Quantity: {quantity:.6f}\n"
+                f"  Current price: {current_price:.2f} USDC\n"
+                f"  Position value: {position_value:.2f} USDC\n"
+                f"  Required margin: {required_margin:.2f} USDC (leverage: {self.leverage}x)\n"
+                f"  Opening fee: {opening_fee:.4f} USDC\n"
+                f"  Safety margin: {safety_margin_amount:.4f} USDC\n"
+                f"  Total required: {total_required:.2f} USDC\n"
+                f"  Available balance: {balance:.2f} USDC\n"
+                f"  Margin sufficient: {is_sufficient}"
+            )
+            
+            if not is_sufficient:
+                logger.warning(
+                    f"⚠️ Insufficient margin for {symbol}: "
+                    f"required {total_required:.2f} USDC, available {balance:.2f} USDC "
+                    f"(shortage: {total_required - balance:.2f} USDC)"
+                )
+            
+            return is_sufficient, required_margin, balance
+            
+        except Exception as e:
+            logger.error(f"Error checking margin sufficiency for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, None, None
+    
     def open_long_position(self, symbol: str, quantity: float) -> Optional[Dict]:
         """
         Open a long position (BUY)
@@ -605,6 +678,18 @@ class TradingExecutor:
             # Use the recalculated quantity instead of the original one
             logger.info(f"Using recalculated quantity: {recalculated_quantity:.6f} (original: {quantity:.6f})")
             quantity = recalculated_quantity
+            
+            # Check if margin is sufficient before placing order
+            is_margin_sufficient, required_margin, available_balance = self.check_margin_sufficient(
+                symbol, quantity, current_price
+            )
+            
+            if not is_margin_sufficient:
+                logger.error(
+                    f"Cannot open long position for {symbol}: Insufficient margin. "
+                    f"Required: {required_margin:.2f} USDC, Available: {available_balance:.2f} USDC"
+                )
+                return None
             
             # Calculate position info for notification
             max_position_value = balance * self.leverage
@@ -704,6 +789,18 @@ class TradingExecutor:
             # Use the recalculated quantity instead of the original one
             logger.info(f"Using recalculated quantity: {recalculated_quantity:.6f} (original: {quantity:.6f})")
             quantity = recalculated_quantity
+            
+            # Check if margin is sufficient before placing order
+            is_margin_sufficient, required_margin, available_balance = self.check_margin_sufficient(
+                symbol, quantity, current_price
+            )
+            
+            if not is_margin_sufficient:
+                logger.error(
+                    f"Cannot open short position for {symbol}: Insufficient margin. "
+                    f"Required: {required_margin:.2f} USDC, Available: {available_balance:.2f} USDC"
+                )
+                return None
             
             # Calculate position info for notification
             max_position_value = balance * self.leverage
