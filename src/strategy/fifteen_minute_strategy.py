@@ -246,7 +246,7 @@ class FiveMinuteStrategy:
         
         Args:
             symbol: Trading pair symbol
-            current_kline: The current 5m K-line to check
+            current_kline: The current 5m K-line to check (may not be closed)
             
         Returns:
             Tuple of (is_valid, volume_info) where volume_info contains:
@@ -261,31 +261,51 @@ class FiveMinuteStrategy:
                 logger.warning(f"No 5m K-line data for {symbol}")
                 return False, {}
             
-            # Filter only closed K-lines to match Binance's calculation
-            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            # For real-time entry check, use all K-lines (including unclosed)
+            # For K-line close check, use only closed K-lines
+            is_closed = current_kline.get('is_closed', False)
             
-            if not closed_klines:
-                logger.warning(f"No closed 5m K-line data for {symbol}")
-                return False, {}
-            
-            # Find the index of current K-line in closed klines
-            current_open_time = current_kline['open_time']
-            current_index = -1
-            for i, k in enumerate(closed_klines):
-                if k['open_time'] == current_open_time:
-                    current_index = i
-                    break
-            
-            if current_index == -1:
-                logger.warning(f"Current K-line not found in closed klines for {symbol}")
-                return False, {}
-            
-            # Get closed K-lines including current (for MA calculation)
-            # Binance updates indicators after K-line closes, including the just-closed K-line
-            klines_for_ma = closed_klines[:current_index + 1]
+            if is_closed:
+                # K-line is closed, use only closed K-lines for calculation
+                closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+                
+                if not closed_klines:
+                    logger.warning(f"No closed 5m K-line data for {symbol}")
+                    return False, {}
+                
+                # Find the index of current K-line in closed klines
+                current_open_time = current_kline['open_time']
+                current_index = -1
+                for i, k in enumerate(closed_klines):
+                    if k['open_time'] == current_open_time:
+                        current_index = i
+                        break
+                
+                if current_index == -1:
+                    logger.warning(f"Current K-line not found in closed klines for {symbol}")
+                    return False, {}
+                
+                # Get closed K-lines including current (for MA calculation)
+                klines_for_ma = closed_klines[:current_index + 1]
+            else:
+                # K-line is not closed (real-time check), use all K-lines
+                # Find the index of current K-line in all klines
+                current_open_time = current_kline['open_time']
+                current_index = -1
+                for i, k in enumerate(all_klines):
+                    if k['open_time'] == current_open_time:
+                        current_index = i
+                        break
+                
+                if current_index == -1:
+                    logger.warning(f"Current K-line not found in all klines for {symbol}")
+                    return False, {}
+                
+                # Use all K-lines up to current (including unclosed current)
+                klines_for_ma = all_klines[:current_index + 1]
             
             if len(klines_for_ma) < 5:
-                logger.warning(f"Not enough closed K-lines for volume check: {len(klines_for_ma)} (need at least 5)")
+                logger.warning(f"Not enough K-lines for volume check: {len(klines_for_ma)} (need at least 5)")
                 return False, {}
             
             # Calculate average volumes including the current K-line
@@ -320,7 +340,7 @@ class FiveMinuteStrategy:
         
         Args:
             symbol: Trading pair symbol
-            current_kline: The current 5m K-line to check
+            current_kline: The current 5m K-line to check (may not be closed)
             
         Returns:
             Tuple of (is_valid, range_info) where range_info contains:
@@ -335,30 +355,51 @@ class FiveMinuteStrategy:
                 logger.warning(f"No 5m K-line data for {symbol}")
                 return False, {}
             
-            # Filter only closed K-lines
-            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            # For real-time entry check, use all K-lines (including unclosed)
+            # For K-line close check, use only closed K-lines
+            is_closed = current_kline.get('is_closed', False)
             
-            if not closed_klines:
-                logger.warning(f"No closed 5m K-line data for {symbol}")
-                return False, {}
-            
-            # Find the index of current K-line in closed klines
-            current_open_time = current_kline['open_time']
-            current_index = -1
-            for i, k in enumerate(closed_klines):
-                if k['open_time'] == current_open_time:
-                    current_index = i
-                    break
-            
-            if current_index == -1:
-                logger.warning(f"Current K-line not found in closed klines for {symbol}")
-                return False, {}
-            
-            # Get closed K-lines including current (for MA calculation)
-            klines_for_ma = closed_klines[:current_index + 1]
+            if is_closed:
+                # K-line is closed, use only closed K-lines for calculation
+                closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+                
+                if not closed_klines:
+                    logger.warning(f"No closed 5m K-line data for {symbol}")
+                    return False, {}
+                
+                # Find the index of current K-line in closed klines
+                current_open_time = current_kline['open_time']
+                current_index = -1
+                for i, k in enumerate(closed_klines):
+                    if k['open_time'] == current_open_time:
+                        current_index = i
+                        break
+                
+                if current_index == -1:
+                    logger.warning(f"Current K-line not found in closed klines for {symbol}")
+                    return False, {}
+                
+                # Get closed K-lines including current (for MA calculation)
+                klines_for_ma = closed_klines[:current_index + 1]
+            else:
+                # K-line is not closed (real-time check), use all K-lines
+                # Find the index of current K-line in all klines
+                current_open_time = current_kline['open_time']
+                current_index = -1
+                for i, k in enumerate(all_klines):
+                    if k['open_time'] == current_open_time:
+                        current_index = i
+                        break
+                
+                if current_index == -1:
+                    logger.warning(f"Current K-line not found in all klines for {symbol}")
+                    return False, {}
+                
+                # Use all K-lines up to current (including unclosed current)
+                klines_for_ma = all_klines[:current_index + 1]
             
             if len(klines_for_ma) < 5:
-                logger.warning(f"Not enough closed K-lines for range check: {len(klines_for_ma)} (need at least 5)")
+                logger.warning(f"Not enough K-lines for range check: {len(klines_for_ma)} (need at least 5)")
                 return False, {}
             
             # Calculate current range
