@@ -192,12 +192,59 @@ ml_retrain_interval = 24  # Retrain model every N hours (每N小时重新训练�
 [trading]
 # Fee rate (0.0002 = 0.02%, 0.0004 = 0.04%)
 # Binance futures default fee: 0.02% (maker) / 0.04% (taker)
-# Using taker fee for market orders
-fee_rate = 0.0004  # 0.04% for market orders
+# Using maker fee for limit orders (default)
+fee_rate = 0.0002  # 0.02% for limit orders (maker fee)
 
 # Safety margin (extra buffer to ensure order can be filled)
 # 0.003 = 0.3% extra margin (reduced for small balance accounts)
 safety_margin = 0.003  # 0.3% safety margin
+
+# Limit order configuration
+[trading.limit_order]
+# Enable limit orders
+enabled = true  # 启用限价单交易
+
+# Entry limit order configuration
+entry_limit_order_enabled = true  # 启用开仓限价单
+entry_price_offset_percent = 0.001  # 开仓价格偏移 0.1%
+entry_price_offset_max_percent = 0.002  # 最大偏移 0.2%
+entry_use_support_resistance = true  # 使用支撑/阻力位
+entry_support_resistance_lookback = 5  # 回看K线数
+
+# Entry monitoring
+entry_price_away_threshold = 0.005  # 价格远离阈值 0.5%
+entry_limit_order_timeout = 30  # 限价单超时时间（秒）
+entry_rapid_price_change_threshold = 0.003  # 快速价格变化阈值 0.3%
+entry_rapid_price_change_window = 5  # 快速变化时间窗口（秒）
+
+# Take profit limit order configuration
+take_profit_limit_order_enabled = true  # 启用止盈限价单
+take_profit_price_offset = 0.001  # 止盈价格偏移 0.1%
+take_profit_price_away_threshold = 0.005  # 止盈价格远离阈值 0.5%
+take_profit_limit_order_timeout = 60  # 止盈限价单超时时间（秒）
+
+# Stop loss configuration (always use market order)
+stop_loss_use_market_order = true  # 止损使用市价单
+emergency_close_threshold = 0.002  # 紧急平仓阈值 0.2%
+
+# Monitoring configuration
+monitor_check_interval = 1  # 监控检查间隔（秒）
+emergency_check_interval = 0.5  # 紧急监控检查间隔（秒）
+
+# 未完成订单处理策略
+action_on_timeout = "convert_to_market"  # 超时时的处理方式: "convert_to_market" (转换为市价单) 或 "cancel" (取消订单)
+action_on_signal_reversal = "cancel"   # 信号反转时的处理方式: "convert_to_market" 或 "cancel"
+cancel_on_new_signal = true             # 检测到新信号时是否取消旧的限价单
+max_pending_orders = 1                  # 每个交易对最大挂单数量
+cancel_on_kline_close = false           # K线关闭时是否取消未成交的限价单
+cancel_on_price_move_away = true        # 价格远离时是否取消限价单（如果action_on_timeout为cancel）
+
+# Risk control configuration (风险控制配置)
+max_price_deviation_percent = 0.005    # 最大价格偏差 0.5%
+max_stop_loss_distance_percent = 0.02  # 最大止损距离 2%
+min_stop_loss_distance_percent = 0.005 # 最小止损距离 0.5%
+volatility_threshold = 0.02             # 波动率阈值 2%
+volume_threshold_multiplier = 0.5       # 成交量阈值倍数 0.5x
 
 # Risk Management - 优化：降低单笔风险，优化仓位管理
 # Maximum loss per trade as percentage of account balance

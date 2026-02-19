@@ -10,6 +10,8 @@ from binance.enums import *
 from binance.exceptions import BinanceAPIException
 
 from ..config.config_manager import ConfigManager
+from ..utils.retry_decorator import async_retry, sync_retry, should_retry_exception, log_retry_attempt
+from .order_risk_control import OrderRiskControl
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,9 @@ class TradingExecutor:
         
         # 标记杠杆初始化状态
         self.leverage_initialized = False
+        
+        # 初始化订单风险控制
+        self.risk_control = OrderRiskControl(config)
     
     def _initialize_leverage(self) -> None:
         """Initialize leverage for all configured symbols"""
@@ -271,9 +276,11 @@ class TradingExecutor:
             logger.error(f"Failed to keep listen key alive: {e}")
             return False
     
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
     def get_account_balance(self) -> Optional[float]:
         """
         Get available balance (USDT or USDC) via REST API (fallback method)
+        With retry mechanism for network errors
         
         Returns:
             Available balance or None
@@ -300,9 +307,11 @@ class TradingExecutor:
             logger.error(f"Failed to get account balance: {e}")
             return None
     
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
     def get_symbol_info(self, symbol: str) -> Optional[Dict]:
         """
         Get trading pair information including min quantity and tick size
+        With retry mechanism for network errors
         
         Args:
             symbol: Trading pair symbol
@@ -561,6 +570,139 @@ class TradingExecutor:
         logger.info(f"Final quantity after rounding: {rounded_quantity:.6f}")
         
         return rounded_quantity
+    
+    def check_available_margin(self, symbol: str, quantity: float, price: float) -> tuple[bool, float, float]:
+        """
+        检查可用保证金是否充足
+        
+        Args:
+            symbol: 交易对
+            quantity: 数量
+            price: 价格
+            
+        Returns:
+            Tuple of (is_sufficient, required_margin, available_margin)
+        """
+        try:
+            # 获取账户余额
+            balance = self.get_account_balance()
+            if balance is None:
+                logger.error("Failed to get account balance for margin check")
+                return False, 0, 0
+            
+            # 计算持仓价值
+            position_value = quantity * price
+            
+            # 计算所需保证金
+            required_margin = position_value / self.leverage
+            
+            # 计算手续费
+            opening_fee = position_value * self.fee_rate
+            
+            # 计算安全边际
+            safety_margin = position_value * self.safety_margin
+            
+            # 总需求 = 保证金 + 手续费 + 安全边际
+            total_required = required_margin + opening_fee + safety_margin
+            
+            # 检查是否充足
+            is_sufficient = balance >= total_required
+            
+            logger.info(
+                f"Margin check for {symbol}:\n"
+                f"  Quantity: {quantity:.6f}\n"
+                f"  Price: {price:.2f} USDC\n"
+                f"  Position value: {position_value:.2f} USDC\n"
+                f"  Required margin: {required_margin:.2f} USDC\n"
+                f"  Opening fee: {opening_fee:.4f} USDC\n"
+                f"  Safety margin: {safety_margin:.4f} USDC\n"
+                f"  Total required: {total_required:.2f} USDC\n"
+                f"  Available balance: {balance:.2f} USDC\n"
+                f"  Sufficient: {is_sufficient}"
+            )
+            
+            return is_sufficient, required_margin, balance
+            
+        except Exception as e:
+            logger.error(f"Error checking available margin for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, 0, 0
+    
+    def optimize_order_quantity(
+        self,
+        symbol: str,
+        desired_quantity: float,
+        current_price: float
+    ) -> Optional[float]:
+        """
+        优化订单数量，确保在保证金范围内
+        
+        Args:
+            symbol: 交易对
+            desired_quantity: 期望数量
+            current_price: 当前价格
+            
+        Returns:
+            优化后的数量或None
+        """
+        try:
+            # 检查保证金是否充足
+            is_sufficient, required_margin, available_balance = self.check_available_margin(
+                symbol, desired_quantity, current_price
+            )
+            
+            if is_sufficient:
+                # 保证金充足，使用期望数量
+                logger.info(f"Margin sufficient for {symbol}, using desired quantity: {desired_quantity:.6f}")
+                return desired_quantity
+            
+            # 保证金不足，计算最大可用数量
+            logger.warning(f"Margin insufficient for {symbol}, optimizing quantity...")
+            
+            # 计算可用价值（扣除手续费和安全边际）
+            # 总价值 = 保证金 * 杠杆
+            # 可用价值 = (余额 - 手续费 - 安全边际) * 杠杆
+            # 但手续费和安全边际都基于价值，所以需要迭代计算
+            
+            # 简化计算：假设手续费和安全边际占总价值的比例
+            fee_and_safety_ratio = self.fee_rate + self.safety_margin
+            effective_leverage = self.leverage * (1 - fee_and_safety_ratio)
+            
+            # 可用价值 = 余额 * 有效杠杆
+            available_value = available_balance * effective_leverage
+            
+            # 最大数量 = 可用价值 / 价格
+            max_quantity = available_value / current_price
+            
+            # 四舍五入到交易对精度
+            rounded_quantity = self.round_quantity(max_quantity, symbol)
+            if rounded_quantity is None:
+                logger.error(f"Failed to round optimized quantity for {symbol}")
+                return None
+            
+            logger.info(
+                f"Optimized quantity for {symbol}:\n"
+                f"  Desired: {desired_quantity:.6f}\n"
+                f"  Optimized: {rounded_quantity:.6f}\n"
+                f"  Available balance: {available_balance:.2f} USDC\n"
+                f"  Available value: {available_value:.2f} USDC\n"
+                f"  Effective leverage: {effective_leverage:.2f}x"
+            )
+            
+            # 再次验证优化后的数量
+            is_sufficient, _, _ = self.check_available_margin(symbol, rounded_quantity, current_price)
+            if not is_sufficient:
+                logger.error(f"Optimized quantity still insufficient for {symbol}")
+                return None
+            
+            return rounded_quantity
+            
+        except Exception as e:
+            logger.error(f"Error optimizing order quantity for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
     
     def check_margin_sufficient(
         self,
@@ -973,9 +1115,11 @@ class TradingExecutor:
             logger.error(f"Failed to close short position for {symbol}: {e}")
             return None
     
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
     def get_position(self, symbol: str) -> Optional[Dict]:
         """
         Get current position for a symbol
+        With retry mechanism for network errors
         
         Args:
             symbol: Trading pair symbol
@@ -1104,9 +1248,11 @@ class TradingExecutor:
             logger.error(f"Failed to close all positions for {symbol}: {e}")
             return False
     
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
     def get_open_orders(self, symbol: str) -> Optional[list]:
         """
         Get all open orders for a symbol
+        With retry mechanism for network errors
         
         Args:
             symbol: Trading pair symbol
@@ -1121,9 +1267,11 @@ class TradingExecutor:
             logger.error(f"Failed to get open orders for {symbol}: {e}")
             return None
     
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
     def cancel_order(self, symbol: str, order_id: int) -> bool:
         """
         Cancel an order by order ID
+        With retry mechanism for network errors
         
         Args:
             symbol: Trading pair symbol
@@ -1141,10 +1289,12 @@ class TradingExecutor:
             logger.error(f"[CANCEL_ORDER] ✗ Failed to cancel order {order_id} for {symbol}: {e}")
             return False
     
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
     def cancel_all_orders(self, symbol: str) -> bool:
         """
         Cancel all open orders for a symbol
         Uses batch cancellation API for efficiency
+        With retry mechanism for network errors
         
         Args:
             symbol: Trading pair symbol
@@ -1161,9 +1311,11 @@ class TradingExecutor:
             logger.error(f"Failed to cancel all orders for {symbol}: {e}")
             return False
     
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
     def get_order_status(self, symbol: str, order_id: int) -> Optional[Dict]:
         """
         Get order status by order ID
+        With retry mechanism for network errors
         
         Args:
             symbol: Trading pair symbol
@@ -1209,3 +1361,788 @@ class TradingExecutor:
             logger.error(f"Error checking if order {order_id} is filled: {e}")
             return False
     
+    # ==================== Limit Order Methods ====================
+    
+    def open_long_position_limit(self, symbol: str, quantity: float, limit_price: float) -> Optional[Dict]:
+        """
+        使用限价单开多仓
+        
+        Args:
+            symbol: 交易对
+            quantity: 数量（已四舍五入）
+            limit_price: 限价单价格
+            
+        Returns:
+            订单结果字典或None
+        """
+        try:
+            # 确保杠杆已设置
+            if not self.ensure_leverage(symbol):
+                logger.error(f"Failed to ensure leverage for {symbol}")
+                return None
+            
+            # 优化订单数量，确保在保证金范围内
+            optimized_quantity = self.optimize_order_quantity(symbol, quantity, limit_price)
+            if optimized_quantity is None:
+                logger.error(f"Failed to optimize order quantity for {symbol}")
+                return None
+            
+            # 使用优化后的数量
+            if optimized_quantity != quantity:
+                logger.info(f"Using optimized quantity: {optimized_quantity:.6f} (original: {quantity:.6f})")
+                quantity = optimized_quantity
+            
+            # 检查保证金是否充足
+            is_margin_sufficient, required_margin, available_balance = self.check_margin_sufficient(
+                symbol, quantity, limit_price
+            )
+            
+            if not is_margin_sufficient:
+                logger.error(
+                    f"Cannot open long position for {symbol}: Insufficient margin. "
+                    f"Required: {required_margin:.2f} USDC, Available: {available_balance:.2f} USDC"
+                )
+                return None
+            
+            # 获取当前价格用于风险检查
+            try:
+                ticker = self.client.futures_symbol_ticker(symbol=symbol)
+                current_price = float(ticker['price'])
+            except Exception as e:
+                logger.error(f"Failed to get current price for risk check: {e}")
+                current_price = limit_price
+            
+            # 执行订单风险检查
+            is_risk_safe, risk_reason, risk_info = self.risk_control.check_order_risk(
+                symbol=symbol,
+                side='LONG',
+                order_price=limit_price,
+                current_price=current_price,
+                klines=None  # 如果有K线数据可以传入
+            )
+            
+            if not is_risk_safe:
+                logger.warning(
+                    f"Order risk check failed for {symbol}: {risk_reason}. "
+                    f"Risk info: {self.risk_control.get_risk_summary(risk_info)}"
+                )
+                return None
+            
+            logger.info(
+                f"Order risk check passed for {symbol}: {risk_reason}. "
+                f"Risk info: {self.risk_control.get_risk_summary(risk_info)}"
+            )
+            
+            # 下达限价单
+            logger.info(
+                f"[ORDER] Creating LIMIT order for {symbol}: "
+                f"side=BUY, quantity={quantity:.6f}, price={limit_price:.2f}"
+            )
+            
+            order = self.client.futures_create_order(
+                symbol=symbol,
+                side=SIDE_BUY,
+                type=ORDER_TYPE_LIMIT,
+                quantity=quantity,
+                price=limit_price,
+                timeInForce='GTC'  # Good Till Cancel
+            )
+            
+            logger.info(
+                f"[ORDER] LIMIT order created: orderId={order.get('orderId')}, "
+                f"status={order.get('status')}, type={order.get('type')}, "
+                f"price={order.get('price')}"
+            )
+            
+            logger.info(f"Long position limit order placed for {symbol}")
+            
+            return {
+                'order': order,
+                'final_quantity': quantity,
+                'final_price': limit_price
+            }
+            
+        except BinanceAPIException as e:
+            logger.error(f"Failed to open long position limit order for {symbol}: {e}")
+            return None
+    
+    def open_short_position_limit(self, symbol: str, quantity: float, limit_price: float) -> Optional[Dict]:
+        """
+        使用限价单开空仓
+        
+        Args:
+            symbol: 交易对
+            quantity: 数量（已四舍五入）
+            limit_price: 限价单价格
+            
+        Returns:
+            订单结果字典或None
+        """
+        try:
+            # 确保杠杆已设置
+            if not self.ensure_leverage(symbol):
+                logger.error(f"Failed to ensure leverage for {symbol}")
+                return None
+            
+            # 优化订单数量，确保在保证金范围内
+            optimized_quantity = self.optimize_order_quantity(symbol, quantity, limit_price)
+            if optimized_quantity is None:
+                logger.error(f"Failed to optimize order quantity for {symbol}")
+                return None
+            
+            # 使用优化后的数量
+            if optimized_quantity != quantity:
+                logger.info(f"Using optimized quantity: {optimized_quantity:.6f} (original: {quantity:.6f})")
+                quantity = optimized_quantity
+            
+            # 检查保证金是否充足
+            is_margin_sufficient, required_margin, available_balance = self.check_margin_sufficient(
+                symbol, quantity, limit_price
+            )
+            
+            if not is_margin_sufficient:
+                logger.error(
+                    f"Cannot open short position for {symbol}: Insufficient margin. "
+                    f"Required: {required_margin:.2f} USDC, Available: {available_balance:.2f} USDC"
+                )
+                return None
+            
+            # 获取当前价格用于风险检查
+            try:
+                ticker = self.client.futures_symbol_ticker(symbol=symbol)
+                current_price = float(ticker['price'])
+            except Exception as e:
+                logger.error(f"Failed to get current price for risk check: {e}")
+                current_price = limit_price
+            
+            # 执行订单风险检查
+            is_risk_safe, risk_reason, risk_info = self.risk_control.check_order_risk(
+                symbol=symbol,
+                side='SHORT',
+                order_price=limit_price,
+                current_price=current_price,
+                klines=None  # 如果有K线数据可以传入
+            )
+            
+            if not is_risk_safe:
+                logger.warning(
+                    f"Order risk check failed for {symbol}: {risk_reason}. "
+                    f"Risk info: {self.risk_control.get_risk_summary(risk_info)}"
+                )
+                return None
+            
+            logger.info(
+                f"Order risk check passed for {symbol}: {risk_reason}. "
+                f"Risk info: {self.risk_control.get_risk_summary(risk_info)}"
+            )
+            
+            # 下达限价单
+            logger.info(
+                f"[ORDER] Creating LIMIT order for {symbol}: "
+                f"side=SELL, quantity={quantity:.6f}, price={limit_price:.2f}"
+            )
+            
+            order = self.client.futures_create_order(
+                symbol=symbol,
+                side=SIDE_SELL,
+                type=ORDER_TYPE_LIMIT,
+                quantity=quantity,
+                price=limit_price,
+                timeInForce='GTC'  # Good Till Cancel
+            )
+            
+            logger.info(
+                f"[ORDER] LIMIT order created: orderId={order.get('orderId')}, "
+                f"status={order.get('status')}, type={order.get('type')}, "
+                f"price={order.get('price')}"
+            )
+            
+            logger.info(f"Short position limit order placed for {symbol}")
+            
+            return {
+                'order': order,
+                'final_quantity': quantity,
+                'final_price': limit_price
+            }
+            
+        except BinanceAPIException as e:
+            logger.error(f"Failed to open short position limit order for {symbol}: {e}")
+            return None
+    
+    def close_long_position_limit(self, symbol: str, limit_price: float) -> Optional[Dict]:
+        """
+        使用限价单平多仓
+        
+        Args:
+            symbol: 交易对
+            limit_price: 限价单价格
+            
+        Returns:
+            订单结果或None
+        """
+        try:
+            # 获取当前持仓
+            position = self.get_position(symbol)
+            if not position or float(position['positionAmt']) <= 0:
+                logger.warning(f"No long position to close for {symbol}")
+                return None
+            
+            quantity = abs(float(position['positionAmt']))
+            
+            # 四舍五入数量
+            rounded_quantity = self.round_quantity(quantity, symbol)
+            if rounded_quantity is None:
+                logger.error(f"Failed to round quantity for closing long position {symbol}")
+                return None
+            
+            logger.info(
+                f"Closing long position with limit order: "
+                f"quantity={quantity:.6f} -> rounded={rounded_quantity:.6f}, "
+                f"limit_price={limit_price:.2f}"
+            )
+            
+            # 下达限价单平仓
+            order = self.client.futures_create_order(
+                symbol=symbol,
+                side=SIDE_SELL,
+                type=ORDER_TYPE_LIMIT,
+                quantity=rounded_quantity,
+                price=limit_price,
+                reduceOnly=True,
+                timeInForce='GTC'
+            )
+            
+            logger.info(f"Long position limit close order placed for {symbol}: {order}")
+            return order
+            
+        except BinanceAPIException as e:
+            logger.error(f"Failed to close long position with limit order for {symbol}: {e}")
+            return None
+    
+    def close_short_position_limit(self, symbol: str, limit_price: float) -> Optional[Dict]:
+        """
+        使用限价单平空仓
+        
+        Args:
+            symbol: 交易对
+            limit_price: 限价单价格
+            
+        Returns:
+            订单结果或None
+        """
+        try:
+            # 获取当前持仓
+            position = self.get_position(symbol)
+            if not position or float(position['positionAmt']) >= 0:
+                logger.warning(f"No short position to close for {symbol}")
+                return None
+            
+            quantity = abs(float(position['positionAmt']))
+            
+            # 四舍五入数量
+            rounded_quantity = self.round_quantity(quantity, symbol)
+            if rounded_quantity is None:
+                logger.error(f"Failed to round quantity for closing short position {symbol}")
+                return None
+            
+            logger.info(
+                f"Closing short position with limit order: "
+                f"quantity={quantity:.6f} -> rounded={rounded_quantity:.6f}, "
+                f"limit_price={limit_price:.2f}"
+            )
+            
+            # 下达限价单平仓
+            order = self.client.futures_create_order(
+                symbol=symbol,
+                side=SIDE_BUY,
+                type=ORDER_TYPE_LIMIT,
+                quantity=rounded_quantity,
+                price=limit_price,
+                reduceOnly=True,
+                timeInForce='GTC'
+            )
+            
+            logger.info(f"Short position limit close order placed for {symbol}: {order}")
+            return order
+            
+        except BinanceAPIException as e:
+            logger.error(f"Failed to close short position with limit order for {symbol}: {e}")
+            return None
+    
+    def calculate_entry_limit_price(
+        self,
+        symbol: str,
+        current_price: float,
+        side: str,
+        klines: Optional[list] = None
+    ) -> Optional[float]:
+        """
+        计算开仓限价单价格
+        
+        Args:
+            symbol: 交易对
+            current_price: 当前价格
+            side: 'LONG' or 'SHORT'
+            klines: K线数据（用于计算支撑/阻力位）
+            
+        Returns:
+            限价单价格或None
+        """
+        try:
+            # 获取配置参数
+            price_offset_percent = self.config.get_config(
+                "trading.limit_order", "entry_price_offset_percent", default=0.001
+            )
+            price_offset_max_percent = self.config.get_config(
+                "trading.limit_order", "entry_price_offset_max_percent", default=0.002
+            )
+            use_support_resistance = self.config.get_config(
+                "trading.limit_order", "entry_use_support_resistance", default=True
+            )
+            lookback = self.config.get_config(
+                "trading.limit_order", "entry_support_resistance_lookback", default=5
+            )
+            
+            # 基础价格偏移
+            if side == 'LONG':
+                # 做多：等待价格回调
+                base_limit_price = current_price * (1 - price_offset_percent)
+            else:  # SHORT
+                # 做空：等待价格反弹
+                base_limit_price = current_price * (1 + price_offset_percent)
+            
+            # 如果使用支撑/阻力位
+            if use_support_resistance and klines and len(klines) >= lookback:
+                support_resistance_price = self._calculate_support_resistance_price(
+                    klines, side, lookback
+                )
+                
+                if support_resistance_price is not None:
+                    if side == 'LONG':
+                        # 做多：使用支撑位（取较小值）
+                        limit_price = min(base_limit_price, support_resistance_price)
+                    else:  # SHORT
+                        # 做空：使用阻力位（取较大值）
+                        limit_price = max(base_limit_price, support_resistance_price)
+                    
+                    logger.info(
+                        f"Using support/resistance price for {side} entry: "
+                        f"base={base_limit_price:.2f}, sr={support_resistance_price:.2f}, "
+                        f"final={limit_price:.2f}"
+                    )
+                else:
+                    limit_price = base_limit_price
+            else:
+                limit_price = base_limit_price
+            
+            # 确保价格不超过最大偏移
+            if side == 'LONG':
+                max_limit_price = current_price * (1 - price_offset_max_percent)
+                limit_price = min(limit_price, max_limit_price)
+            else:  # SHORT
+                max_limit_price = current_price * (1 + price_offset_max_percent)
+                limit_price = max(limit_price, max_limit_price)
+            
+            # 四舍五入价格
+            rounded_price = self.round_price(limit_price, symbol)
+            if rounded_price is None:
+                logger.error(f"Failed to round limit price for {symbol}")
+                return None
+            
+            logger.info(
+                f"Calculated entry limit price for {symbol} {side}: "
+                f"current={current_price:.2f}, limit={rounded_price:.2f}, "
+                f"offset={((rounded_price/current_price)-1)*100:.2f}%"
+            )
+            
+            return rounded_price
+            
+        except Exception as e:
+            logger.error(f"Error calculating entry limit price for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
+    def calculate_take_profit_limit_price(
+        self,
+        symbol: str,
+        entry_price: float,
+        side: str,
+        take_profit_percent: float
+    ) -> Optional[float]:
+        """
+        计算止盈限价单价格
+        
+        Args:
+            symbol: 交易对
+            entry_price: 入场价格
+            side: 'LONG' or 'SHORT'
+            take_profit_percent: 止盈百分比
+            
+        Returns:
+            止盈限价单价格或None
+        """
+        try:
+            # 获取配置参数
+            price_offset = self.config.get_config(
+                "trading.limit_order", "take_profit_price_offset", default=0.001
+            )
+            
+            # 计算止盈价格
+            if side == 'LONG':
+                # 做多止盈：入场价 * (1 + 止盈百分比 - 偏移)
+                limit_price = entry_price * (1 + take_profit_percent - price_offset)
+            else:  # SHORT
+                # 做空止盈：入场价 * (1 - 止盈百分比 + 偏移)
+                limit_price = entry_price * (1 - take_profit_percent + price_offset)
+            
+            # 四舍五入价格
+            rounded_price = self.round_price(limit_price, symbol)
+            if rounded_price is None:
+                logger.error(f"Failed to round take profit limit price for {symbol}")
+                return None
+            
+            logger.info(
+                f"Calculated take profit limit price for {symbol} {side}: "
+                f"entry={entry_price:.2f}, limit={rounded_price:.2f}, "
+                f"profit={take_profit_percent*100:.2f}%"
+            )
+            
+            return rounded_price
+            
+        except Exception as e:
+            logger.error(f"Error calculating take profit limit price for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
+    def _calculate_support_resistance_price(
+        self,
+        klines: list,
+        side: str,
+        lookback: int
+    ) -> Optional[float]:
+        """
+        计算支撑/阻力位价格
+        
+        Args:
+            klines: K线数据
+            side: 'LONG' or 'SHORT'
+            lookback: 回看K线数
+            
+        Returns:
+            支撑/阻力位价格或None
+        """
+        try:
+            if len(klines) < lookback:
+                return None
+            
+            # 获取最近N根K线
+            recent_klines = klines[-lookback:]
+            
+            if side == 'LONG':
+                # 做多：使用最低点作为支撑位
+                lows = [float(k['low']) for k in recent_klines]
+                support_price = min(lows)
+                return support_price
+            else:  # SHORT
+                # 做空：使用最高点作为阻力位
+                highs = [float(k['high']) for k in recent_klines]
+                resistance_price = max(highs)
+                return resistance_price
+            
+        except Exception as e:
+            logger.error(f"Error calculating support/resistance price: {e}")
+            return None
+    
+    
+    # ==================== Order Modification Methods ====================
+    
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
+    def modify_limit_order_price(
+        self,
+        symbol: str,
+        order_id: int,
+        new_price: float
+    ) -> Optional[Dict]:
+        """
+        修改限价单价格
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            new_price: 新价格
+            
+        Returns:
+            修改后的订单信息或None
+        """
+        try:
+            # 获取当前订单状态
+            current_order = self.get_order_status(symbol, order_id)
+            if not current_order:
+                logger.error(f"Cannot find order {order_id} for {symbol}")
+                return None
+            
+            # 检查订单状态
+            status = current_order.get('status', '')
+            if status in ['FILLED', 'CANCELED', 'EXPIRED', 'REJECTED']:
+                logger.warning(
+                    f"Cannot modify order {order_id} for {symbol}: "
+                    f"order is {status}"
+                )
+                return None
+            
+            # 获取订单数量
+            orig_qty = float(current_order.get('origQty', 0))
+            side = current_order.get('side', '')
+            
+            # 四舍五入新价格
+            rounded_price = self.round_price(new_price, symbol)
+            if rounded_price is None:
+                logger.error(f"Failed to round new price for {symbol}")
+                return None
+            
+            logger.info(
+                f"[MODIFY_ORDER] Modifying order {order_id} for {symbol}: "
+                f"old_price={current_order.get('price')}, new_price={rounded_price}, "
+                f"side={side}, quantity={orig_qty}"
+            )
+            
+            # 取消原订单
+            cancel_success = self.cancel_order(symbol, order_id)
+            if not cancel_success:
+                logger.error(f"Failed to cancel order {order_id} for modification")
+                return None
+            
+            # 等待取消完成
+            import time
+            time.sleep(0.5)
+            
+            # 重新下单
+            if side == 'BUY':
+                new_order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=SIDE_BUY,
+                    type=ORDER_TYPE_LIMIT,
+                    quantity=orig_qty,
+                    price=rounded_price,
+                    timeInForce='GTC'
+                )
+            else:  # SELL
+                new_order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=SIDE_SELL,
+                    type=ORDER_TYPE_LIMIT,
+                    quantity=orig_qty,
+                    price=rounded_price,
+                    timeInForce='GTC'
+                )
+            
+            logger.info(
+                f"[MODIFY_ORDER] ✓ Order modified successfully: "
+                f"old_order_id={order_id}, new_order_id={new_order.get('orderId')}"
+            )
+            
+            return new_order
+            
+        except BinanceAPIException as e:
+            logger.error(f"Failed to modify order price for {symbol}: {e}")
+            return None
+    
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
+    def modify_limit_order_quantity(
+        self,
+        symbol: str,
+        order_id: int,
+        new_quantity: float
+    ) -> Optional[Dict]:
+        """
+        修改限价单数量
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            new_quantity: 新数量
+            
+        Returns:
+            修改后的订单信息或None
+        """
+        try:
+            # 获取当前订单状态
+            current_order = self.get_order_status(symbol, order_id)
+            if not current_order:
+                logger.error(f"Cannot find order {order_id} for {symbol}")
+                return None
+            
+            # 检查订单状态
+            status = current_order.get('status', '')
+            if status in ['FILLED', 'CANCELED', 'EXPIRED', 'REJECTED']:
+                logger.warning(
+                    f"Cannot modify order {order_id} for {symbol}: "
+                    f"order is {status}"
+                )
+                return None
+            
+            # 获取已成交数量
+            executed_qty = float(current_order.get('executedQty', 0))
+            orig_qty = float(current_order.get('origQty', 0))
+            remaining_qty = orig_qty - executed_qty
+            
+            # 新数量不能小于已成交数量
+            if new_quantity < executed_qty:
+                logger.error(
+                    f"Cannot reduce quantity below executed amount: "
+                    f"new_quantity={new_quantity}, executed_qty={executed_qty}"
+                )
+                return None
+            
+            # 计算需要增加的数量
+            additional_qty = new_quantity - orig_qty
+            
+            # 四舍五入新数量
+            rounded_quantity = self.round_quantity(new_quantity, symbol)
+            if rounded_quantity is None:
+                logger.error(f"Failed to round new quantity for {symbol}")
+                return None
+            
+            logger.info(
+                f"[MODIFY_ORDER] Modifying order {order_id} quantity for {symbol}: "
+                f"old_qty={orig_qty}, new_qty={rounded_quantity}, "
+                f"executed_qty={executed_qty}, additional_qty={additional_qty}"
+            )
+            
+            # 如果新数量等于原数量，无需修改
+            if rounded_quantity == orig_qty:
+                logger.info(f"Quantity unchanged, no modification needed")
+                return current_order
+            
+            # 取消原订单
+            cancel_success = self.cancel_order(symbol, order_id)
+            if not cancel_success:
+                logger.error(f"Failed to cancel order {order_id} for modification")
+                return None
+            
+            # 等待取消完成
+            import time
+            time.sleep(0.5)
+            
+            # 重新下单
+            side = current_order.get('side', '')
+            price = float(current_order.get('price', 0))
+            
+            if side == 'BUY':
+                new_order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=SIDE_BUY,
+                    type=ORDER_TYPE_LIMIT,
+                    quantity=rounded_quantity,
+                    price=price,
+                    timeInForce='GTC'
+                )
+            else:  # SELL
+                new_order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=SIDE_SELL,
+                    type=ORDER_TYPE_LIMIT,
+                    quantity=rounded_quantity,
+                    price=price,
+                    timeInForce='GTC'
+                )
+            
+            logger.info(
+                f"[MODIFY_ORDER] ✓ Order quantity modified successfully: "
+                f"old_order_id={order_id}, new_order_id={new_order.get('orderId')}"
+            )
+            
+            return new_order
+            
+        except BinanceAPIException as e:
+            logger.error(f"Failed to modify order quantity for {symbol}: {e}")
+            return None
+    
+    def smart_adjust_limit_order_price(
+        self,
+        symbol: str,
+        order_id: int,
+        current_price: float,
+        side: str,
+        klines: Optional[list] = None
+    ) -> Optional[Dict]:
+        """
+        智能调整限价单价格（根据市场情况自动调整）
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            current_price: 当前价格
+            side: 'LONG' or 'SHORT'
+            klines: K线数据（可选）
+            
+        Returns:
+            修改后的订单信息或None
+        """
+        try:
+            # 获取当前订单状态
+            current_order = self.get_order_status(symbol, order_id)
+            if not current_order:
+                logger.error(f"Cannot find order {order_id} for {symbol}")
+                return None
+            
+            # 检查订单状态
+            status = current_order.get('status', '')
+            if status in ['FILLED', 'CANCELED', 'EXPIRED', 'REJECTED']:
+                logger.warning(
+                    f"Cannot adjust order {order_id} for {symbol}: "
+                    f"order is {status}"
+                )
+                return None
+            
+            # 获取当前订单价格
+            current_order_price = float(current_order.get('price', 0))
+            
+            # 计算价格偏差
+            price_deviation = abs(current_order_price - current_price) / current_price
+            
+            # 获取配置参数
+            price_away_threshold = self.config.get_config(
+                "trading.limit_order", "entry_price_away_threshold", default=0.005
+            )
+            
+            # 如果价格偏差在合理范围内，无需调整
+            if price_deviation <= price_away_threshold:
+                logger.info(
+                    f"Order {order_id} price is within threshold: "
+                    f"deviation={price_deviation*100:.2f}% (max: {price_away_threshold*100:.2f}%)"
+                )
+                return current_order
+            
+            # 计算新的限价单价格
+            new_limit_price = self.calculate_entry_limit_price(
+                symbol, current_price, side, klines
+            )
+            
+            if new_limit_price is None:
+                logger.error(f"Failed to calculate new limit price for {symbol}")
+                return None
+            
+            # 如果新价格与当前价格相同，无需调整
+            if abs(new_limit_price - current_order_price) < 0.0001:
+                logger.info(f"New price is same as current price, no adjustment needed")
+                return current_order
+            
+            logger.info(
+                f"[SMART_ADJUST] Adjusting order {order_id} price for {symbol}: "
+                f"old_price={current_order_price}, new_price={new_limit_price}, "
+                f"current_price={current_price}, deviation={price_deviation*100:.2f}%"
+            )
+            
+            # 修改订单价格
+            modified_order = self.modify_limit_order_price(symbol, order_id, new_limit_price)
+            
+            return modified_order
+            
+        except Exception as e:
+            logger.error(f"Error in smart adjust limit order price for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None

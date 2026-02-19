@@ -5,6 +5,7 @@ Implements the 5m K-line trading strategy with dynamic position management
 
 import asyncio
 import logging
+import time
 from typing import Optional, Dict, Tuple
 from datetime import datetime
 import pandas as pd
@@ -15,6 +16,8 @@ from ..indicators.sentiment_analyzer import SentimentAnalyzer
 from ..indicators.ml_predictor import MLPredictor
 from ..trading.position_manager import PositionManager
 from ..trading.trading_executor import TradingExecutor
+from ..trading.limit_order_monitor import LimitOrderMonitor
+from ..trading.order_persistence import OrderPersistence
 from ..binance.data_handler import BinanceDataHandler
 from ..telegram.telegram_client import TelegramClient
 from ..data.trade_logger import TradeLogger
@@ -198,6 +201,52 @@ class FiveMinuteStrategy:
         # Track partial take profit status for each position
         self.partial_take_profit_status: Dict[str, Dict] = {}  # symbol -> {level_index: bool}
         
+        # Limit order configuration
+        self.limit_order_enabled = config.get_config("trading.limit_order", "enabled", default=True)
+        self.limit_order_entry_enabled = config.get_config("trading.limit_order", "entry_enabled", default=True)
+        self.limit_order_take_profit_enabled = config.get_config("trading.limit_order", "take_profit_enabled", default=True)
+        self.limit_order_entry_price_offset_percent = config.get_config("trading.limit_order", "entry_price_offset_percent", default=0.001)
+        self.limit_order_take_profit_price_offset_percent = config.get_config("trading.limit_order", "take_profit_price_offset_percent", default=0.001)
+        self.limit_order_entry_timeout = config.get_config("trading.limit_order", "entry_limit_order_timeout", default=30)
+        self.limit_order_take_profit_timeout = config.get_config("trading.limit_order", "take_profit_limit_order_timeout", default=60)
+        self.limit_order_price_away_threshold_percent = config.get_config("trading.limit_order", "price_away_threshold_percent", default=0.002)
+        self.limit_order_rapid_change_threshold_percent = config.get_config("trading.limit_order", "rapid_change_threshold_percent", default=0.003)
+        self.limit_order_rapid_change_window = config.get_config("trading.limit_order", "rapid_change_window", default=5)
+        self.limit_order_use_support_resistance = config.get_config("trading.limit_order", "use_support_resistance", default=True)
+        self.limit_order_support_resistance_period = config.get_config("trading.limit_order", "support_resistance_period", default=20)
+        
+        # 未完成订单处理策略配置
+        self.limit_order_action_on_timeout = config.get_config("trading.limit_order", "action_on_timeout", default="convert_to_market")
+        self.limit_order_action_on_signal_reversal = config.get_config("trading.limit_order", "action_on_signal_reversal", default="cancel")
+        self.limit_order_cancel_on_new_signal = config.get_config("trading.limit_order", "cancel_on_new_signal", default=True)
+        self.limit_order_max_pending_orders = config.get_config("trading.limit_order", "max_pending_orders", default=1)
+        self.limit_order_cancel_on_kline_close = config.get_config("trading.limit_order", "cancel_on_kline_close", default=False)
+        self.limit_order_cancel_on_price_move_away = config.get_config("trading.limit_order", "cancel_on_price_move_away", default=True)
+        
+        # Track pending limit orders for each symbol
+        self.pending_limit_orders: Dict[str, Dict] = {}  # symbol -> {order_id, side, order_price, quantity, timestamp}
+        
+        # Initialize order persistence
+        self.order_persistence = OrderPersistence()
+        
+        # Load pending orders from database
+        self.pending_limit_orders = self.order_persistence.load_pending_orders()
+        
+        # Initialize limit order monitor
+        self.limit_order_monitor = LimitOrderMonitor(
+            trading_executor=trading_executor,
+            price_away_threshold_percent=self.limit_order_price_away_threshold_percent,
+            timeout=self.limit_order_entry_timeout,
+            rapid_change_threshold_percent=self.limit_order_rapid_change_threshold_percent,
+            rapid_change_window=self.limit_order_rapid_change_window
+        )
+        
+        # Set price callback for limit order monitor
+        self.limit_order_monitor.set_price_callback(self._get_current_price_for_monitor)
+        
+        # Sync orders with exchange on startup
+        asyncio.create_task(self._sync_orders_with_exchange())
+        
         logger.info("5-minute strategy initialized")
     
     async def on_5m_kline_update(self, kline_info: Dict) -> None:
@@ -233,6 +282,16 @@ class FiveMinuteStrategy:
         interval = kline_info['interval']
         
         logger.info(f"[STRATEGY] on_5m_kline_close called for {symbol} {interval}")
+        
+        # Check for signal reversal and handle pending orders
+        await self._check_signal_reversal(symbol, kline_info)
+        
+        # Check if pending orders should be cancelled on K-line close
+        if self.limit_order_cancel_on_kline_close and symbol in self.pending_limit_orders:
+            await self._check_and_cancel_pending_orders(
+                symbol,
+                "K线关闭，取消未成交限价单"
+            )
         
         # Check for stop losses if position exists
         if self.position_manager.has_position(symbol):
@@ -1660,20 +1719,38 @@ class FiveMinuteStrategy:
                     
                     # Open position with volume info, range info, stop loss and entry kline
                     logger.info(f"[STRATEGY] Opening position for {symbol}, direction={direction_5m}, signal_strength={signal_strength}")
+                    
+                    # Check if limit order is enabled for entry
+                    use_limit_order = self.limit_order_enabled and self.limit_order_entry_enabled
+                    
                     if direction_5m == 'UP':
-                        logger.info(f"[STRATEGY] Calling _open_long_position for {symbol}")
-                        await self._open_long_position(
-                            symbol, volume_info, range_info, stop_loss_price, kline_5m,
-                            kline_5m.get('close_time'), signal_strength, take_profit_percent
-                        )
-                        logger.info(f"[STRATEGY] _open_long_position completed for {symbol}")
+                        if use_limit_order:
+                            logger.info(f"[STRATEGY] Using limit order for long position on {symbol}")
+                            await self._open_long_position_with_limit_order(
+                                symbol, volume_info, range_info, stop_loss_price, kline_5m,
+                                kline_5m.get('close_time'), signal_strength, take_profit_percent
+                            )
+                        else:
+                            logger.info(f"[STRATEGY] Using market order for long position on {symbol}")
+                            await self._open_long_position(
+                                symbol, volume_info, range_info, stop_loss_price, kline_5m,
+                                kline_5m.get('close_time'), signal_strength, take_profit_percent
+                            )
+                        logger.info(f"[STRATEGY] Long position opening completed for {symbol}")
                     else:  # DOWN
-                        logger.info(f"[STRATEGY] Calling _open_short_position for {symbol}")
-                        await self._open_short_position(
-                            symbol, volume_info, range_info, stop_loss_price, kline_5m,
-                            kline_5m.get('close_time'), signal_strength, take_profit_percent
-                        )
-                        logger.info(f"[STRATEGY] _open_short_position completed for {symbol}")
+                        if use_limit_order:
+                            logger.info(f"[STRATEGY] Using limit order for short position on {symbol}")
+                            await self._open_short_position_with_limit_order(
+                                symbol, volume_info, range_info, stop_loss_price, kline_5m,
+                                kline_5m.get('close_time'), signal_strength, take_profit_percent
+                            )
+                        else:
+                            logger.info(f"[STRATEGY] Using market order for short position on {symbol}")
+                            await self._open_short_position(
+                                symbol, volume_info, range_info, stop_loss_price, kline_5m,
+                                kline_5m.get('close_time'), signal_strength, take_profit_percent
+                            )
+                        logger.info(f"[STRATEGY] Short position opening completed for {symbol}")
             else:
                 # Some conditions not met - send no trade notification with all condition info
                 logger.info(f"Not all conditions met for {symbol}: volume={volume_valid}, range={range_valid}, body={body_valid}, trend={trend_valid}, rsi={rsi_valid}, macd={macd_valid}, adx={adx_valid}, market_env={market_env_valid}, multi_timeframe={multi_timeframe_valid}")
@@ -3077,7 +3154,66 @@ class FiveMinuteStrategy:
                             )
                             return
                 
-                # Close position for take profit
+                # Check if limit order is enabled for take profit
+                use_limit_order = self.limit_order_enabled and self.limit_order_take_profit_enabled
+                
+                if use_limit_order:
+                    # Calculate limit order price for take profit
+                    limit_price = self.trading_executor.calculate_take_profit_limit_price(
+                        symbol=symbol,
+                        side=position_side,
+                        current_price=current_price,
+                        offset_percent=self.limit_order_take_profit_price_offset_percent
+                    )
+                    
+                    if limit_price:
+                        logger.info(
+                            f"[LIMIT_ORDER_TAKE_PROFIT] {symbol}: "
+                            f"current_price={current_price:.2f}, "
+                            f"limit_price={limit_price:.2f}, "
+                            f"offset={((limit_price - current_price) / current_price * 100):.3f}%, "
+                            f"quantity={quantity:.4f}"
+                        )
+                        
+                        # Execute limit order for take profit
+                        if position_side == 'LONG':
+                            result = self.trading_executor.close_long_position_limit(
+                                symbol=symbol,
+                                quantity=quantity,
+                                price=limit_price
+                            )
+                        else:  # SHORT
+                            result = self.trading_executor.close_short_position_limit(
+                                symbol=symbol,
+                                quantity=quantity,
+                                price=limit_price
+                            )
+                        
+                        if result:
+                            # Start monitoring the limit order
+                            monitor_task = asyncio.create_task(
+                                self.limit_order_monitor.start_monitor(
+                                    symbol=symbol,
+                                    order_id=result['order']['orderId'],
+                                    side=position_side,
+                                    order_price=limit_price,
+                                    quantity=quantity,
+                                    stop_loss_price=None,
+                                    take_profit_percent=0,
+                                    volume_info=None,
+                                    range_info=None,
+                                    entry_kline=None,
+                                    kline_time=None,
+                                    signal_strength='MEDIUM',
+                                    is_take_profit=True
+                                )
+                            )
+                            logger.info(f"Limit order placed for take profit and monitoring started for {symbol}")
+                            return
+                        else:
+                            logger.warning(f"Failed to place limit order for take profit on {symbol}, falling back to market order")
+                
+                # Close position for take profit (market order fallback)
                 success = await self.trading_executor.close_all_positions(symbol)
                 
                 if success:
@@ -3740,3 +3876,842 @@ class FiveMinuteStrategy:
             
         except Exception as e:
             logger.error(f"Error logging signal for {symbol}: {e}")
+    
+    def _get_current_price_for_monitor(self, symbol: str) -> Optional[float]:
+        """
+        Get current price for limit order monitor
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            Current price or None
+        """
+        try:
+            return self.data_handler.get_current_price(symbol)
+        except Exception as e:
+            logger.error(f"Error getting current price for monitor: {e}")
+            return None
+    
+    async def _open_long_position_with_limit_order(self, symbol: str, volume_info: Optional[Dict] = None,
+                                                   range_info: Optional[Dict] = None, stop_loss_price: Optional[float] = None,
+                                                   entry_kline: Optional[Dict] = None, kline_time: Optional[int] = None,
+                                                   signal_strength: str = 'MEDIUM', take_profit_percent: float = 0.05) -> None:
+        """
+        Open a long position using limit order
+        
+        Args:
+            symbol: Trading pair symbol
+            volume_info: Volume information dictionary (optional)
+            range_info: Range information dictionary (optional)
+            stop_loss_price: Stop loss price (optional)
+            entry_kline: Entry K-line data (optional)
+            kline_time: K-line timestamp in milliseconds (optional)
+            signal_strength: Signal strength (STRONG/MEDIUM/WEAK)
+            take_profit_percent: Take profit percentage
+        """
+        try:
+            # Get current price
+            current_price = self.data_handler.get_current_price(symbol)
+            if current_price is None:
+                logger.error(f"Could not get current price for {symbol}")
+                return
+            
+            # Calculate stop loss distance percentage for risk-based position sizing
+            stop_loss_distance_percent = None
+            if stop_loss_price is not None and current_price > 0:
+                calculated_stop_loss_distance = current_price - stop_loss_price
+                min_stop_loss_distance = current_price * self.stop_loss_min_distance_percent
+                actual_stop_loss_distance = max(calculated_stop_loss_distance, min_stop_loss_distance)
+                max_stop_loss_distance = current_price * self.stop_loss_max_distance_percent
+                actual_stop_loss_distance = min(actual_stop_loss_distance, max_stop_loss_distance)
+                stop_loss_distance_percent = actual_stop_loss_distance / current_price
+                
+                if actual_stop_loss_distance != calculated_stop_loss_distance:
+                    stop_loss_price = current_price - actual_stop_loss_distance
+            
+            # Check drawdown protection before opening position
+            can_trade, drawdown_reason = self._check_drawdown_protection()
+            if not can_trade:
+                logger.warning(f"[DRAWDOWN_PROTECTION] Cannot open position for {symbol}: {drawdown_reason}")
+                await self.telegram_client.send_message(
+                    f"🛑 回撤保护阻止开仓\n\n"
+                    f"交易对: {symbol}\n"
+                    f"原因: {drawdown_reason}"
+                )
+                return
+            
+            # Calculate position size with risk management
+            quantity = self.trading_executor.calculate_position_size(
+                current_price,
+                symbol,
+                stop_loss_distance_percent=stop_loss_distance_percent
+            )
+            if quantity is None:
+                logger.error(f"Could not calculate position size for {symbol}")
+                return
+            
+            # Get position ratio based on signal strength and drawdown protection
+            position_ratio = self._get_position_ratio(signal_strength)
+            adjusted_quantity = quantity * position_ratio
+            quantity = adjusted_quantity
+            
+            # Check if there are pending orders and cancel if configured
+            if self.limit_order_cancel_on_new_signal and symbol in self.pending_limit_orders:
+                await self._check_and_cancel_pending_orders(
+                    symbol,
+                    "检测到新信号，取消旧限价单"
+                )
+            
+            # Check max pending orders
+            if symbol in self.pending_limit_orders and len(self.pending_limit_orders[symbol]) >= self.limit_order_max_pending_orders:
+                logger.warning(f"Max pending orders reached for {symbol}, cancelling oldest order")
+                oldest_order_id = next(iter(self.pending_limit_orders[symbol]))
+                await self._convert_limit_to_market(
+                    symbol,
+                    oldest_order_id,
+                    self.pending_limit_orders[symbol][oldest_order_id],
+                    "达到最大挂单数量"
+                )
+            
+            # Calculate limit order price
+            limit_price = self.trading_executor.calculate_entry_limit_price(
+                symbol=symbol,
+                side='LONG',
+                current_price=current_price,
+                offset_percent=self.limit_order_entry_price_offset_percent,
+                use_support_resistance=self.limit_order_use_support_resistance,
+                period=self.limit_order_support_resistance_period
+            )
+            
+            if limit_price is None:
+                logger.warning(f"Could not calculate limit price for {symbol}, falling back to market order")
+                await self._open_long_position(symbol, volume_info, range_info, stop_loss_price, entry_kline,
+                                               kline_time, signal_strength, take_profit_percent)
+                return
+            
+            logger.info(
+                f"[LIMIT_ORDER] {symbol}: "
+                f"current_price={current_price:.2f}, "
+                f"limit_price={limit_price:.2f}, "
+                f"offset={((limit_price - current_price) / current_price * 100):.3f}%, "
+                f"quantity={quantity:.4f}"
+            )
+            
+            # Execute limit order
+            result = self.trading_executor.open_long_position_limit(
+                symbol=symbol,
+                quantity=quantity,
+                price=limit_price
+            )
+            
+            if result:
+                order = result.get('order')
+                final_quantity = result.get('final_quantity', quantity)
+                final_price = result.get('final_price', limit_price)
+                
+                # Record pending order
+                import time
+                if symbol not in self.pending_limit_orders:
+                    self.pending_limit_orders[symbol] = {}
+                
+                order_info = {
+                    'side': 'LONG',
+                    'order_price': limit_price,
+                    'original_quantity': final_quantity,      # 原始数量
+                    'filled_quantity': 0,                     # 已成交数量
+                    'remaining_quantity': final_quantity,     # 剩余数量
+                    'avg_fill_price': 0,                      # 平均成交价
+                    'partial_fills': [],                      # 部分成交记录
+                    'timestamp': time.time(),
+                    'stop_loss_price': stop_loss_price,
+                    'take_profit_percent': take_profit_percent,
+                    'volume_info': volume_info,
+                    'range_info': range_info,
+                    'entry_kline': entry_kline,
+                    'kline_time': kline_time,
+                    'signal_strength': signal_strength
+                }
+                
+                self.pending_limit_orders[symbol][order['orderId']] = order_info
+                
+                # Save to persistence
+                self.order_persistence.save_order(order['orderId'], symbol, order_info)
+                
+                # Start monitoring the limit order
+                monitor_task = asyncio.create_task(
+                    self.limit_order_monitor.start_monitor(
+                        symbol=symbol,
+                        order_id=order['orderId'],
+                        side='LONG',
+                        order_price=limit_price,
+                        quantity=final_quantity,
+                        stop_loss_price=stop_loss_price,
+                        take_profit_percent=take_profit_percent,
+                        volume_info=volume_info,
+                        range_info=range_info,
+                        entry_kline=entry_kline,
+                        kline_time=kline_time,
+                        signal_strength=signal_strength
+                    )
+                )
+                
+                logger.info(f"Limit order placed and monitoring started for {symbol}")
+            else:
+                logger.error(f"Failed to place limit order for {symbol}, falling back to market order")
+                await self._open_long_position(symbol, volume_info, range_info, stop_loss_price, entry_kline,
+                                               kline_time, signal_strength, take_profit_percent)
+                
+        except Exception as e:
+            logger.error(f"Error opening long position with limit order for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _open_short_position_with_limit_order(self, symbol: str, volume_info: Optional[Dict] = None,
+                                                    range_info: Optional[Dict] = None, stop_loss_price: Optional[float] = None,
+                                                    entry_kline: Optional[Dict] = None, kline_time: Optional[int] = None,
+                                                    signal_strength: str = 'MEDIUM', take_profit_percent: float = 0.05) -> None:
+        """
+        Open a short position using limit order
+        
+        Args:
+            symbol: Trading pair symbol
+            volume_info: Volume information dictionary (optional)
+            range_info: Range information dictionary (optional)
+            stop_loss_price: Stop loss price (optional)
+            entry_kline: Entry K-line data (optional)
+            kline_time: K-line timestamp in milliseconds (optional)
+            signal_strength: Signal strength (STRONG/MEDIUM/WEAK)
+            take_profit_percent: Take profit percentage
+        """
+        try:
+            # Get current price
+            current_price = self.data_handler.get_current_price(symbol)
+            if current_price is None:
+                logger.error(f"Could not get current price for {symbol}")
+                return
+            
+            # Calculate stop loss distance percentage for risk-based position sizing
+            stop_loss_distance_percent = None
+            if stop_loss_price is not None and current_price > 0:
+                calculated_stop_loss_distance = stop_loss_price - current_price
+                min_stop_loss_distance = current_price * self.stop_loss_min_distance_percent
+                actual_stop_loss_distance = max(calculated_stop_loss_distance, min_stop_loss_distance)
+                max_stop_loss_distance = current_price * self.stop_loss_max_distance_percent
+                actual_stop_loss_distance = min(actual_stop_loss_distance, max_stop_loss_distance)
+                stop_loss_distance_percent = actual_stop_loss_distance / current_price
+                
+                if actual_stop_loss_distance != calculated_stop_loss_distance:
+                    stop_loss_price = current_price + actual_stop_loss_distance
+            
+            # Check drawdown protection before opening position
+            can_trade, drawdown_reason = self._check_drawdown_protection()
+            if not can_trade:
+                logger.warning(f"[DRAWDOWN_PROTECTION] Cannot open position for {symbol}: {drawdown_reason}")
+                await self.telegram_client.send_message(
+                    f"🛑 回撤保护阻止开仓\n\n"
+                    f"交易对: {symbol}\n"
+                    f"原因: {drawdown_reason}"
+                )
+                return
+            
+            # Calculate position size with risk management
+            quantity = self.trading_executor.calculate_position_size(
+                current_price,
+                symbol,
+                stop_loss_distance_percent=stop_loss_distance_percent
+            )
+            if quantity is None:
+                logger.error(f"Could not calculate position size for {symbol}")
+                return
+            
+            # Get position ratio based on signal strength and drawdown protection
+            position_ratio = self._get_position_ratio(signal_strength)
+            adjusted_quantity = quantity * position_ratio
+            quantity = adjusted_quantity
+            
+            # Check if there are pending orders and cancel if configured
+            if self.limit_order_cancel_on_new_signal and symbol in self.pending_limit_orders:
+                await self._check_and_cancel_pending_orders(
+                    symbol,
+                    "检测到新信号，取消旧限价单"
+                )
+            
+            # Check max pending orders
+            if symbol in self.pending_limit_orders and len(self.pending_limit_orders[symbol]) >= self.limit_order_max_pending_orders:
+                logger.warning(f"Max pending orders reached for {symbol}, cancelling oldest order")
+                oldest_order_id = next(iter(self.pending_limit_orders[symbol]))
+                await self._convert_limit_to_market(
+                    symbol,
+                    oldest_order_id,
+                    self.pending_limit_orders[symbol][oldest_order_id],
+                    "达到最大挂单数量"
+                )
+            
+            # Calculate limit order price
+            limit_price = self.trading_executor.calculate_entry_limit_price(
+                symbol=symbol,
+                side='SHORT',
+                current_price=current_price,
+                offset_percent=self.limit_order_entry_price_offset_percent,
+                use_support_resistance=self.limit_order_use_support_resistance,
+                period=self.limit_order_support_resistance_period
+            )
+            
+            if limit_price is None:
+                logger.warning(f"Could not calculate limit price for {symbol}, falling back to market order")
+                await self._open_short_position(symbol, volume_info, range_info, stop_loss_price, entry_kline,
+                                                kline_time, signal_strength, take_profit_percent)
+                return
+            
+            logger.info(
+                f"[LIMIT_ORDER] {symbol}: "
+                f"current_price={current_price:.2f}, "
+                f"limit_price={limit_price:.2f}, "
+                f"offset={((limit_price - current_price) / current_price * 100):.3f}%, "
+                f"quantity={quantity:.4f}"
+            )
+            
+            # Execute limit order
+            result = self.trading_executor.open_short_position_limit(
+                symbol=symbol,
+                quantity=quantity,
+                price=limit_price
+            )
+            
+            if result:
+                order = result.get('order')
+                final_quantity = result.get('final_quantity', quantity)
+                final_price = result.get('final_price', limit_price)
+                
+                # Record pending order
+                import time
+                if symbol not in self.pending_limit_orders:
+                    self.pending_limit_orders[symbol] = {}
+                
+                order_info = {
+                    'side': 'SHORT',
+                    'order_price': limit_price,
+                    'original_quantity': final_quantity,      # 原始数量
+                    'filled_quantity': 0,                     # 已成交数量
+                    'remaining_quantity': final_quantity,     # 剩余数量
+                    'avg_fill_price': 0,                      # 平均成交价
+                    'partial_fills': [],                      # 部分成交记录
+                    'timestamp': time.time(),
+                    'stop_loss_price': stop_loss_price,
+                    'take_profit_percent': take_profit_percent,
+                    'volume_info': volume_info,
+                    'range_info': range_info,
+                    'entry_kline': entry_kline,
+                    'kline_time': kline_time,
+                    'signal_strength': signal_strength
+                }
+                
+                self.pending_limit_orders[symbol][order['orderId']] = order_info
+                
+                # Save to persistence
+                self.order_persistence.save_order(order['orderId'], symbol, order_info)
+                
+                # Start monitoring the limit order
+                monitor_task = asyncio.create_task(
+                    self.limit_order_monitor.start_monitor(
+                        symbol=symbol,
+                        order_id=order['orderId'],
+                        side='SHORT',
+                        order_price=limit_price,
+                        quantity=final_quantity,
+                        stop_loss_price=stop_loss_price,
+                        take_profit_percent=take_profit_percent,
+                        volume_info=volume_info,
+                        range_info=range_info,
+                        entry_kline=entry_kline,
+                        kline_time=kline_time,
+                        signal_strength=signal_strength
+                    )
+                )
+                
+                logger.info(f"Limit order placed and monitoring started for {symbol}")
+            else:
+                logger.error(f"Failed to place limit order for {symbol}, falling back to market order")
+                await self._open_short_position(symbol, volume_info, range_info, stop_loss_price, entry_kline,
+                                                kline_time, signal_strength, take_profit_percent)
+                
+        except Exception as e:
+            logger.error(f"Error opening short position with limit order for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def emergency_close_position(self, symbol: str, reason: str) -> bool:
+        """
+        Emergency close position - uses market order immediately
+        This is used when limit order monitoring detects critical conditions
+        
+        Args:
+            symbol: Trading pair symbol
+            reason: Reason for emergency close
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.warning(f"[EMERGENCY_CLOSE] {symbol}: {reason}")
+            
+            # Get position information
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                logger.warning(f"No position found for {symbol}")
+                return False
+            
+            position_side = position['side']
+            quantity = position['quantity']
+            entry_price = position.get('entry_price', 0)
+            
+            # Cancel all pending orders for this symbol
+            import asyncio
+            await asyncio.to_thread(self.trading_executor.cancel_all_orders, symbol)
+            
+            # Close position with market order
+            success = await self.trading_executor.close_all_positions(symbol)
+            
+            if success:
+                current_price = self.data_handler.get_current_price(symbol)
+                
+                # Calculate PnL
+                pnl = 0.0
+                if current_price and entry_price > 0:
+                    if position_side == 'LONG':
+                        pnl = (current_price - entry_price) * quantity
+                    else:  # SHORT
+                        pnl = (entry_price - current_price) * quantity
+                
+                # Send emergency close notification
+                await self.telegram_client.send_message(
+                    f"🚨 紧急平仓\n\n"
+                    f"交易对: {symbol}\n"
+                    f"方向: {position_side}\n"
+                    f"原因: {reason}\n"
+                    f"当前价格: ${current_price:.2f if current_price else 'N/A'}\n"
+                    f"开仓价格: ${entry_price:.2f}\n"
+                    f"盈亏: ${pnl:.2f}"
+                )
+                
+                # Update trade result for drawdown protection
+                self._update_trade_result(pnl)
+                
+                # Log trade data
+                self._log_trade(symbol, position, current_price if current_price else 0, f"Emergency Close: {reason}")
+                
+                # Clear local position state
+                self.position_manager.close_position(symbol, current_price if current_price else 0)
+                
+                # Clear tracking state
+                if symbol in self.position_peak_prices:
+                    del self.position_peak_prices[symbol]
+                if symbol in self.position_entry_times:
+                    del self.position_entry_times[symbol]
+                if symbol in self.partial_take_profit_status:
+                    del self.partial_take_profit_status[symbol]
+                if symbol in self.stop_loss_first_trigger_time:
+                    del self.stop_loss_first_trigger_time[symbol]
+                
+                logger.info(f"Emergency close completed for {symbol}")
+                return True
+            else:
+                logger.error(f"Failed to emergency close position for {symbol}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error in emergency close for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
+    async def _check_and_cancel_pending_orders(self, symbol: str, reason: str) -> None:
+        """
+        Check and cancel pending limit orders for a symbol
+        
+        Args:
+            symbol: Trading pair symbol
+            reason: Reason for cancellation
+        """
+        try:
+            if symbol not in self.pending_limit_orders:
+                return
+            
+            pending_orders = self.pending_limit_orders[symbol]
+            if not pending_orders:
+                return
+            
+            logger.info(f"[CANCEL_PENDING_ORDERS] {symbol}: {reason}")
+            
+            # Cancel all pending orders
+            import asyncio
+            await asyncio.to_thread(self.trading_executor.cancel_all_orders, symbol)
+            
+            # Send notification
+            await self.telegram_client.send_message(
+                f"🚫 取消限价单\n\n"
+                f"交易对: {symbol}\n"
+                f"原因: {reason}\n"
+                f"取消订单数: {len(pending_orders)}"
+            )
+            
+            # Clear pending orders
+            del self.pending_limit_orders[symbol]
+            
+        except Exception as e:
+            logger.error(f"Error canceling pending orders for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _check_signal_reversal(self, symbol: str, current_kline: Dict) -> None:
+        """
+        Check if signal has reversed and handle pending orders accordingly
+        
+        Args:
+            symbol: Trading pair symbol
+            current_kline: Current K-line data
+        """
+        try:
+            # Check if there are pending orders
+            if symbol not in self.pending_limit_orders:
+                return
+            
+            pending_orders = self.pending_limit_orders[symbol]
+            if not pending_orders:
+                return
+            
+            # Get current K-line direction
+            current_direction = self.technical_analyzer.get_kline_direction(current_kline)
+            if current_direction is None:
+                return
+            
+            # Check each pending order
+            for order_id, order_info in pending_orders.items():
+                order_side = order_info.get('side')
+                
+                # Check if signal has reversed
+                signal_reversed = False
+                if order_side == 'LONG' and current_direction == 'DOWN':
+                    signal_reversed = True
+                elif order_side == 'SHORT' and current_direction == 'UP':
+                    signal_reversed = True
+                
+                if signal_reversed:
+                    logger.warning(
+                        f"[SIGNAL_REVERSAL] {symbol}: "
+                        f"Order side={order_side}, current direction={current_direction}, "
+                        f"signal reversed"
+                    )
+                    
+                    # Handle based on configuration
+                    if self.limit_order_action_on_signal_reversal == "cancel":
+                        await self._check_and_cancel_pending_orders(
+                            symbol, 
+                            f"信号反转: {order_side} -> {current_direction}"
+                        )
+                    elif self.limit_order_action_on_signal_reversal == "convert_to_market":
+                        # Convert to market order
+                        await self._convert_limit_to_market(symbol, order_id, order_info, "信号反转")
+                    
+                    break  # Only need to check one order
+                    
+        except Exception as e:
+            logger.error(f"Error checking signal reversal for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _convert_limit_to_market(self, symbol: str, order_id: int, order_info: Dict, reason: str) -> bool:
+        """
+        Convert a limit order to market order
+        
+        Args:
+            symbol: Trading pair symbol
+            order_id: Order ID to convert
+            order_info: Order information
+            reason: Reason for conversion
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info(f"[CONVERT_TO_MARKET] {symbol}: order_id={order_id}, reason={reason}")
+            
+            # Cancel the limit order
+            import asyncio
+            cancel_result = await asyncio.to_thread(
+                self.trading_executor.cancel_order,
+                symbol,
+                order_id
+            )
+            
+            if not cancel_result:
+                logger.error(f"Failed to cancel limit order {order_id} for {symbol}")
+                return False
+            
+            # Execute market order
+            side = order_info.get('side')
+            quantity = order_info.get('quantity')
+            
+            if side == 'LONG':
+                result = self.trading_executor.open_long_position(symbol, quantity)
+            else:  # SHORT
+                result = self.trading_executor.open_short_position(symbol, quantity)
+            
+            if result:
+                # Remove from pending orders
+                if symbol in self.pending_limit_orders and order_id in self.pending_limit_orders[symbol]:
+                    del self.pending_limit_orders[symbol][order_id]
+                
+                # Send notification
+                await self.telegram_client.send_message(
+                    f"🔄 限价单转市价单\n\n"
+                    f"交易对: {symbol}\n"
+                    f"方向: {side}\n"
+                    f"原因: {reason}\n"
+                    f"数量: {quantity:.4f}"
+                )
+                
+                logger.info(f"Successfully converted limit order to market order for {symbol}")
+                return True
+            else:
+                logger.error(f"Failed to execute market order for {symbol}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error converting limit order to market for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
+    async def _sync_orders_with_exchange(self):
+        """与交易所同步订单状态"""
+        try:
+            logger.info("Starting order synchronization with exchange...")
+            
+            for symbol in list(self.pending_limit_orders.keys()):
+                try:
+                    # 获取交易所的未完成订单
+                    open_orders = await asyncio.to_thread(
+                        self.trading_executor.get_open_orders,
+                        symbol
+                    )
+                    
+                    if open_orders is None:
+                        logger.warning(f"Failed to get open orders for {symbol}")
+                        continue
+                    
+                    exchange_order_ids = {order['orderId'] for order in open_orders}
+                    local_order_ids = set(self.pending_limit_orders[symbol].keys())
+                    
+                    # 处理本地有但交易所没有的订单（可能已成交或取消）
+                    for order_id in local_order_ids - exchange_order_ids:
+                        logger.info(f"Order {order_id} not found in exchange, checking status...")
+                        
+                        # 尝试获取订单状态
+                        order_status = await asyncio.to_thread(
+                            self.trading_executor.get_order_status,
+                            symbol,
+                            order_id
+                        )
+                        
+                        if order_status == 'FILLED':
+                            logger.info(f"Order {order_id} was filled, updating status")
+                            self.order_persistence.update_order_status(order_id, 'FILLED')
+                            del self.pending_limit_orders[symbol][order_id]
+                        elif order_status == 'CANCELED':
+                            logger.info(f"Order {order_id} was cancelled, updating status")
+                            self.order_persistence.update_order_status(order_id, 'CANCELLED')
+                            del self.pending_limit_orders[symbol][order_id]
+                        else:
+                            logger.warning(f"Order {order_id} status unknown: {order_status}, removing from tracking")
+                            self.order_persistence.update_order_status(order_id, 'UNKNOWN')
+                            del self.pending_limit_orders[symbol][order_id]
+                    
+                    # 处理交易所有但本地没有的订单（程序重启前创建的）
+                    for order_id in exchange_order_ids - local_order_ids:
+                        logger.info(f"Found new order {order_id} in exchange, adding to tracking")
+                        
+                        # 从交易所获取订单详情
+                        order_detail = await asyncio.to_thread(
+                            self.trading_executor.get_order,
+                            symbol,
+                            order_id
+                        )
+                        
+                        if order_detail:
+                            self._add_order_to_tracking(symbol, order_detail)
+                    
+                    logger.info(f"Order synchronization completed for {symbol}")
+                    
+                except Exception as e:
+                    logger.error(f"Error syncing orders for {symbol}: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+            
+            logger.info("Order synchronization with exchange completed")
+            
+        except Exception as e:
+            logger.error(f"Error in order synchronization: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def _add_order_to_tracking(self, symbol: str, order_detail: Dict):
+        """添加订单到跟踪"""
+        try:
+            order_id = order_detail['orderId']
+            
+            # 构建订单信息
+            order_info = {
+                'side': 'LONG' if order_detail['side'] == 'BUY' else 'SHORT',
+                'order_price': float(order_detail['price']),
+                'quantity': float(order_detail['origQty']),
+                'timestamp': order_detail['time'] / 1000,  # 转换为秒
+                'stop_loss_price': None,
+                'take_profit_percent': 0.05,
+                'volume_info': {},
+                'range_info': {},
+                'entry_kline': None,
+                'kline_time': None,
+                'signal_strength': 'MEDIUM'
+            }
+            
+            # 添加到跟踪
+            if symbol not in self.pending_limit_orders:
+                self.pending_limit_orders[symbol] = {}
+            
+            self.pending_limit_orders[symbol][order_id] = order_info
+            
+            # 保存到持久化
+            self.order_persistence.save_order(order_id, symbol, order_info)
+            
+            logger.info(f"Order {order_id} added to tracking for {symbol}")
+            
+        except Exception as e:
+            logger.error(f"Error adding order to tracking: {e}")
+    
+    async def handle_partial_fill(self, symbol: str, order_id: int, fill_info: Dict):
+        """
+        处理部分成交
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            fill_info: 成交信息
+        """
+        try:
+            if symbol not in self.pending_limit_orders:
+                logger.warning(f"Symbol {symbol} not in pending orders")
+                return
+            
+            if order_id not in self.pending_limit_orders[symbol]:
+                logger.warning(f"Order {order_id} not found in pending orders for {symbol}")
+                return
+            
+            order = self.pending_limit_orders[symbol][order_id]
+            fill_qty = float(fill_info['executedQty'])
+            fill_price = float(fill_info['price'])
+            
+            # 更新成交信息
+            order['filled_quantity'] += fill_qty
+            order['remaining_quantity'] -= fill_qty
+            
+            # 计算平均成交价
+            if order['filled_quantity'] > 0:
+                total_value = order['avg_fill_price'] * (order['filled_quantity'] - fill_qty)
+                total_value += fill_price * fill_qty
+                order['avg_fill_price'] = total_value / order['filled_quantity']
+            
+            # 记录部分成交
+            order['partial_fills'].append({
+                'quantity': fill_qty,
+                'price': fill_price,
+                'time': datetime.now().isoformat()
+            })
+            
+            # 更新持久化
+            self.order_persistence.save_order(order_id, symbol, order)
+            
+            # 发送部分成交通知
+            await self.telegram_client.send_message(
+                f"📊 部分成交\n\n"
+                f"交易对: {symbol}\n"
+                f"订单ID: {order_id}\n"
+                f"成交数量: {fill_qty:.4f}\n"
+                f"成交价格: ${fill_price:.2f}\n"
+                f"已成交: {order['filled_quantity']:.4f}\n"
+                f"剩余: {order['remaining_quantity']:.4f}\n"
+                f"平均价: ${order['avg_fill_price']:.2f}"
+            )
+            
+            logger.info(
+                f"Partial fill for {symbol} order {order_id}: "
+                f"filled={fill_qty:.4f}, total_filled={order['filled_quantity']:.4f}, "
+                f"remaining={order['remaining_quantity']:.4f}"
+            )
+            
+            # 如果完全成交，处理持仓
+            if order['remaining_quantity'] <= 0.0001:  # 考虑精度
+                await self.on_order_fully_filled(symbol, order_id)
+                
+        except Exception as e:
+            logger.error(f"Error handling partial fill: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def on_order_fully_filled(self, symbol: str, order_id: int):
+        """
+        订单完全成交时的处理
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+        """
+        try:
+            order = self.pending_limit_orders[symbol][order_id]
+            
+            # 更新订单状态
+            self.order_persistence.update_order_status(order_id, 'FILLED')
+            
+            # 创建持仓
+            self.position_manager.open_position(
+                symbol=symbol,
+                side=order['side'],
+                entry_price=order['avg_fill_price'],
+                quantity=order['filled_quantity'],
+                entry_kline=order.get('entry_kline')
+            )
+            
+            # 设置止损
+            position = self.position_manager.get_position(symbol)
+            if position and order.get('stop_loss_price'):
+                position['stop_loss_price'] = order['stop_loss_price']
+            
+            # 初始化跟踪
+            self.position_peak_prices[symbol] = order['avg_fill_price']
+            self.position_entry_times[symbol] = order.get('kline_time', int(time.time() * 1000))
+            self.partial_take_profit_status[symbol] = {i: False for i in range(len(self.partial_take_profit_levels))}
+            
+            # 发送成交通知
+            await self.telegram_client.send_trade_notification(
+                symbol=symbol,
+                side=order['side'],
+                price=order['avg_fill_price'],
+                quantity=order['filled_quantity'],
+                leverage=self.config.leverage,
+                volume_info=order.get('volume_info'),
+                range_info=order.get('range_info'),
+                stop_loss_price=order.get('stop_loss_price'),
+                position_calc_info=None,
+                kline_time=order.get('kline_time')
+            )
+            
+            # 清理订单跟踪
+            del self.pending_limit_orders[symbol][order_id]
+            
+            logger.info(f"Order {order_id} fully filled for {symbol}")
+            
+        except Exception as e:
+            logger.error(f"Error handling fully filled order: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
