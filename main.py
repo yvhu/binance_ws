@@ -250,6 +250,9 @@ class BinanceTelegramBot:
             # Store data
             self.data_handler.process_kline(kline_info)
             
+            # 实时检查反向吞没止损（即使K线未关闭）
+            if interval == '5m' and self.position_manager.has_position(symbol):
+                await self.strategy._check_engulfing_stop_loss_realtime(symbol, kline_info)
             
             # Only process closed klines for trading logic
             if not is_closed:

@@ -1391,6 +1391,155 @@ class FiveMinuteStrategy:
             import traceback
             logger.error(traceback.format_exc())
     
+    async def _check_engulfing_stop_loss_realtime(self, symbol: str, current_kline: Dict) -> None:
+        """
+        实时检查反向吞没止损（不等待K线关闭）
+        当检测到吞没形态时立即平仓，响应更快
+        
+        Args:
+            symbol: 交易对
+            current_kline: 当前K线（可能未关闭）
+        """
+        try:
+            # 获取持仓信息
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return
+            
+            position_side = position['side']
+            
+            # 获取最近的K线数据
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines or len(all_klines) < 2:
+                return
+            
+            # 获取上一根已关闭的K线
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            if len(closed_klines) < 1:
+                logger.debug(f"No closed klines for {symbol}, skipping realtime engulfing check")
+                return
+            
+            previous_kline = closed_klines[-1]
+            
+            # 判断当前K线方向（即使未关闭）
+            current_direction = self.technical_analyzer.get_kline_direction(current_kline)
+            if current_direction is None:
+                return
+            
+            # 判断上一根K线方向
+            previous_direction = self.technical_analyzer.get_kline_direction(previous_kline)
+            if previous_direction is None:
+                return
+            
+            # 检查是否形成反向吞没
+            if current_direction == previous_direction:
+                logger.debug(f"Current kline direction {current_direction} is same as previous direction {previous_direction}, no engulfing")
+                return
+            
+            # 计算实体比例
+            previous_body = abs(previous_kline['close'] - previous_kline['open'])
+            current_body = abs(current_kline['close'] - current_kline['open'])
+            
+            if previous_body == 0:
+                logger.warning(f"Previous kline body is zero, cannot calculate engulfing ratio")
+                return
+            
+            engulfing_ratio = current_body / previous_body
+            
+            # 检查真正的吞没形态
+            is_true_engulfing = False
+            if current_direction == 'UP' and previous_direction == 'DOWN':
+                # 当前是阳线，上一根是阴线
+                # 真正的吞没：当前开盘价 < 上一根收盘价 且 当前收盘价 > 上一根开盘价
+                is_true_engulfing = (
+                    current_kline['open'] < previous_kline['close'] and
+                    current_kline['close'] > previous_kline['open']
+                )
+            elif current_direction == 'DOWN' and previous_direction == 'UP':
+                # 当前是阴线，上一根是阳线
+                # 真正的吞没：当前开盘价 > 上一根收盘价 且 当前收盘价 < 上一根开盘价
+                is_true_engulfing = (
+                    current_kline['open'] > previous_kline['close'] and
+                    current_kline['close'] < previous_kline['open']
+                )
+            
+            if not is_true_engulfing:
+                logger.debug(
+                    f"Engulfing ratio {engulfing_ratio:.2f} meets threshold but not a true engulfing pattern: "
+                    f"current_direction={current_direction}, previous_direction={previous_direction}, "
+                    f"current_open={current_kline['open']:.2f}, current_close={current_kline['close']:.2f}, "
+                    f"previous_open={previous_kline['open']:.2f}, previous_close={previous_kline['close']:.2f}"
+                )
+                return
+            
+            # 如果满足条件，立即平仓
+            if engulfing_ratio >= self.engulfing_body_ratio_threshold:
+                logger.warning(
+                    f"[REALTIME_ENGULFING_STOP_LOSS] {symbol}: "
+                    f"previous_direction={previous_direction}, current_direction={current_direction}, "
+                    f"previous_body={previous_body:.2f}, current_body={current_body:.2f}, "
+                    f"engulfing_ratio={engulfing_ratio:.2f}, threshold={self.engulfing_body_ratio_threshold}"
+                )
+                
+                # 立即平仓
+                success = await self.trading_executor.close_all_positions(symbol)
+                
+                if success:
+                    # 获取持仓详情用于通知
+                    entry_price = position.get('entry_price', 0)
+                    quantity = position.get('quantity', 0)
+                    current_price = self.data_handler.get_current_price(symbol)
+                    
+                    # 计算盈亏
+                    pnl = 0.0
+                    if current_price and entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SHORT
+                            pnl = (entry_price - current_price) * quantity
+                    
+                    # 发送平仓通知
+                    await self.telegram_client.send_close_notification(
+                        symbol=symbol,
+                        side=position_side,
+                        entry_price=entry_price,
+                        exit_price=current_price if current_price else 0,
+                        quantity=quantity,
+                        pnl=pnl,
+                        close_reason=f"实时反向吞没止损触发\n"
+                                   f"上一根K线方向: {previous_direction}\n"
+                                   f"当前K线方向: {current_direction}\n"
+                                   f"上一根K线实体: {previous_body:.2f}\n"
+                                   f"当前K线实体: {current_body:.2f}\n"
+                                   f"吞没比例: {engulfing_ratio*100:.2f}%\n"
+                                   f"阈值: {self.engulfing_body_ratio_threshold*100:.0f}%\n"
+                                   f"⚡ 实时监控，未等待K线关闭"
+                    )
+                    
+                    # 清除本地持仓状态
+                    self.position_manager.close_position(symbol, current_price if current_price else 0)
+                    
+                    # 清除相关状态
+                    if symbol in self.position_peak_prices:
+                        del self.position_peak_prices[symbol]
+                    if symbol in self.position_entry_times:
+                        del self.position_entry_times[symbol]
+                    if symbol in self.partial_take_profit_status:
+                        del self.partial_take_profit_status[symbol]
+                    
+                    logger.info(f"Position closed due to realtime engulfing stop loss for {symbol}")
+                else:
+                    logger.error(f"Failed to close position due to realtime engulfing stop loss for {symbol}")
+            else:
+                logger.debug(
+                    f"Engulfing ratio {engulfing_ratio:.2f} below threshold {self.engulfing_body_ratio_threshold}, no stop loss"
+                )
+                
+        except Exception as e:
+            logger.error(f"Error checking realtime engulfing stop loss for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
     async def _update_trailing_stop_loss(self, symbol: str, current_kline: Dict) -> None:
         """
         Update trailing stop loss based on recent K-line highs/lows
