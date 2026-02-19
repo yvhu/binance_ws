@@ -67,7 +67,7 @@ stop_loss_time_threshold = 5  # Time threshold in seconds to confirm stop loss t
 stop_loss_check_interval = 1  # Check interval in seconds (1 second)
 
 # Trailing stop loss parameters (移动止损参数)
-trailing_stop_enabled = true  # Enable trailing stop loss (移动止损开关)
+trailing_stop_enabled = false  # Enable trailing stop loss (移动止损开关) - 禁用移动止损，避免与实时监控止损冲突
 trailing_stop_kline_count = 5  # Number of recent klines to use for trailing stop (使用最近N根K线的最低/最高点) - 增加到5根K线
 
 # Take profit parameters (止盈参数)
