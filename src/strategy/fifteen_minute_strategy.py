@@ -564,10 +564,6 @@ class FiveMinuteStrategy:
             kline: Current K-line (may not be closed)
         """
         try:
-            # Check if early entry is enabled
-            if not self.early_entry_enabled:
-                return
-            
             # Check if position already exists
             if self.position_manager.has_position(symbol):
                 return
