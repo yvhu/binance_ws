@@ -675,7 +675,7 @@ class FiveMinuteStrategy:
                     f"交易对: {symbol}\n"
                     f"方向: {direction}\n"
                     f"信号强度: {signal_strength}\n"
-                    f"当前价格: ${current_price:.2f}\n"
+                    f"当前价格: ${current_price:.2f if current_price else 'N/A'}\n"
                     f"止损价格: ${stop_loss_price:.2f if stop_loss_price else 'N/A'}\n"
                     f"止盈比例: {self.take_profit_percent*100:.1f}%\n"
                     f"⚡ WebSocket实时数据"
