@@ -792,6 +792,12 @@ class FiveMinuteStrategy:
                     logger.warning(f"Could not calculate MA for {symbol} {interval}")
                     continue
                 
+                # Ensure ma is a pandas Series (not numpy array)
+                import numpy as np
+                if isinstance(ma, np.ndarray):
+                    logger.warning(f"MA is numpy array, converting to Series for {symbol} {interval}")
+                    ma = pd.Series(ma, index=df.index)
+                
                 # Get latest MA and price
                 latest_ma = ma.iloc[-1]
                 latest_price = df['close'].iloc[-1]
