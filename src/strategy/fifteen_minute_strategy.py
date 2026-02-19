@@ -2743,118 +2743,37 @@ class FiveMinuteStrategy:
                 holding_time_minutes = (current_time - entry_time) / 60000  # Convert to minutes
             
             # Log trade
-            self.trade_logger.log_trade(
-                trade_id=f"{symbol}_{int(datetime.now().timestamp())}",
-                timestamp=datetime.now(),
-                side=side,
-                entry_price=entry_price,
-                entry_time=datetime.fromtimestamp(entry_time / 1000) if entry_time > 0 else datetime.now(),
-                entry_reason='Strategy Signal',
-                exit_price=exit_price,
-                exit_time=datetime.now(),
-                close_reason=close_reason,
-                pnl=pnl,
-                pnl_percent=pnl_percent,
-                holding_time_minutes=holding_time_minutes,
-                signal_strength='MEDIUM',
-                market_type='UNKNOWN',
-                rsi=0,
-                adx=0,
-                macd=0,
-                macd_signal=0,
-                macd_hist=0,
-                atr=0,
-                volume_ratio=0,
-                body_ratio=0,
-                shadow_ratio=0,
-                ema_20=0,
-                ema_50=0,
-                ema_200=0,
-                higher_trend='SIDEWAYS',
-                lower_trend='5m',
-                sentiment_score=50,
-                sentiment_label='NEUTRAL',
-                ml_prediction='NEUTRAL',
-                ml_confidence=0
-            )
+            self.trade_logger.log_trade({
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'side': side,
+                'entry_price': entry_price,
+                'exit_price': exit_price,
+                'quantity': quantity,
+                'pnl': pnl,
+                'pnl_percent': pnl_percent,
+                'holding_time_minutes': holding_time_minutes,
+                'entry_time': datetime.fromtimestamp(entry_time / 1000).isoformat() if entry_time > 0 else datetime.now().isoformat(),
+                'exit_time': datetime.now().isoformat(),
+                'close_reason': close_reason,
+                'signal_strength': 'MEDIUM',
+                'stop_loss_price': 0,
+                'take_profit_percent': 0,
+                'volume_ratio': 0,
+                'body_ratio': 0,
+                'range_ratio': 0,
+                'rsi': 0,
+                'macd': 0,
+                'adx': 0,
+                'market_type': 'UNKNOWN',
+                'trend_strength': 'SIDEWAYS',
+                'position_ratio': 0,
+                'leverage': 0
+            })
             
         except Exception as e:
             logger.error(f"Error logging trade for {symbol}: {e}")
     
-    def _log_trade(self, symbol: str, position: Dict, exit_price: float, close_reason: str) -> None:
-        """
-        Log trade data to CSV file
-        
-        Args:
-            symbol: Trading pair symbol
-            position: Position information
-            exit_price: Exit price
-            close_reason: Reason for closing position
-        """
-        try:
-            entry_price = position.get('entry_price', 0)
-            quantity = position.get('quantity', 0)
-            side = position.get('side', 'UNKNOWN')
-            
-            # Calculate PnL
-            pnl = 0.0
-            if exit_price and entry_price > 0:
-                if side == 'LONG':
-                    pnl = (exit_price - entry_price) * quantity
-                else:  # SHORT
-                    pnl = (entry_price - exit_price) * quantity
-            
-            # Calculate PnL percentage
-            pnl_percent = 0.0
-            if entry_price > 0 and quantity > 0:
-                pnl_percent = (pnl / (entry_price * quantity)) * 100
-            
-            # Calculate holding time
-            entry_time = position.get('entry_time', 0)
-            holding_time_minutes = 0
-            if entry_time > 0:
-                import time
-                current_time = int(time.time() * 1000)
-                holding_time_minutes = (current_time - entry_time) / 60000  # Convert to minutes
-            
-            # Log trade
-            self.trade_logger.log_trade(
-                trade_id=f"{symbol}_{int(datetime.now().timestamp())}",
-                timestamp=datetime.now(),
-                side=side,
-                entry_price=entry_price,
-                entry_time=datetime.fromtimestamp(entry_time / 1000) if entry_time > 0 else datetime.now(),
-                entry_reason='Strategy Signal',
-                exit_price=exit_price,
-                exit_time=datetime.now(),
-                close_reason=close_reason,
-                pnl=pnl,
-                pnl_percent=pnl_percent,
-                holding_time_minutes=holding_time_minutes,
-                signal_strength='MEDIUM',
-                market_type='UNKNOWN',
-                rsi=0,
-                adx=0,
-                macd=0,
-                macd_signal=0,
-                macd_hist=0,
-                atr=0,
-                volume_ratio=0,
-                body_ratio=0,
-                shadow_ratio=0,
-                ema_20=0,
-                ema_50=0,
-                ema_200=0,
-                higher_trend='SIDEWAYS',
-                lower_trend='5m',
-                sentiment_score=50,
-                sentiment_label='NEUTRAL',
-                ml_prediction='NEUTRAL',
-                ml_confidence=0
-            )
-            
-        except Exception as e:
-            logger.error(f"Error logging trade for {symbol}: {e}")
     
     def _log_signal(self, symbol: str, direction: str, current_price: float, kline: Dict,
                     signal_strength: str, volume_info: Dict, range_info: Dict, body_info: Dict,
@@ -2947,40 +2866,33 @@ class FiveMinuteStrategy:
             ml_confidence = ml_info.get('confidence', 0) if ml_info else 0
             
             # Log signal
-            self.trade_logger.log_trade(
-                trade_id=f"{symbol}_{signal_type}_{int(datetime.now().timestamp())}",
-                timestamp=datetime.now(),
-                side='LONG' if direction == 'UP' else 'SHORT',
-                entry_price=current_price,
-                entry_time=datetime.now(),
-                entry_reason=f'{signal_type} Signal',
-                exit_price=current_price,
-                exit_time=datetime.now(),
-                close_reason=signal_type,
-                pnl=0,  # No actual PnL for signals
-                pnl_percent=0,
-                holding_time_minutes=0,
-                signal_strength=signal_strength,
-                market_type=market_type,
-                rsi=rsi_value,
-                adx=adx_value,
-                macd=macd_value,
-                macd_signal=macd_signal_value,
-                macd_hist=macd_hist_value,
-                atr=atr_value,
-                volume_ratio=volume_ratio,
-                body_ratio=body_ratio,
-                shadow_ratio=shadow_ratio,
-                ema_20=ema_20,
-                ema_50=ema_50,
-                ema_200=ema_200,
-                higher_trend=higher_trend,
-                lower_trend='5m',
-                sentiment_score=sentiment_score,
-                sentiment_label=sentiment_label,
-                ml_prediction=ml_prediction,
-                ml_confidence=ml_confidence
-            )
+            self.trade_logger.log_trade({
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'side': 'LONG' if direction == 'UP' else 'SHORT',
+                'entry_price': current_price,
+                'exit_price': current_price,
+                'quantity': 0,
+                'pnl': 0,
+                'pnl_percent': 0,
+                'holding_time_minutes': 0,
+                'entry_time': datetime.now().isoformat(),
+                'exit_time': datetime.now().isoformat(),
+                'close_reason': signal_type,
+                'signal_strength': signal_strength,
+                'stop_loss_price': 0,
+                'take_profit_percent': 0,
+                'volume_ratio': volume_ratio,
+                'body_ratio': body_ratio,
+                'range_ratio': 0,
+                'rsi': rsi_value,
+                'macd': macd_value,
+                'adx': adx_value,
+                'market_type': market_type,
+                'trend_strength': higher_trend,
+                'position_ratio': 0,
+                'leverage': 0
+            })
             
         except Exception as e:
             logger.error(f"Error logging signal for {symbol}: {e}")
