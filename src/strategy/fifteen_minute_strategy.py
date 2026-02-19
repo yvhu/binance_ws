@@ -3588,10 +3588,12 @@ class FiveMinuteStrategy:
             return False
     
     async def _sync_orders_with_exchange(self):
-        """与交易所同步订单状态"""
+        """与交易所同步订单状态和持仓状态"""
         try:
-            pass
+            # 首先同步持仓状态
+            await self._sync_positions_with_exchange()
             
+            # 然后同步订单状态
             for symbol in list(self.pending_limit_orders.keys()):
                 try:
                     # 获取交易所的未完成订单
@@ -3654,6 +3656,79 @@ class FiveMinuteStrategy:
             
         except Exception as e:
             logger.error(f"Error in order synchronization: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _sync_positions_with_exchange(self):
+        """与交易所同步持仓状态，初始化跟踪数据"""
+        try:
+            import time
+            
+            # 获取所有配置的交易对
+            symbols = self.config.binance_symbols
+            
+            for symbol in symbols:
+                try:
+                    # 从交易所获取持仓信息
+                    position = await asyncio.to_thread(
+                        self.trading_executor.get_position,
+                        symbol
+                    )
+                    
+                    if position is None:
+                        # 没有持仓，跳过
+                        continue
+                    
+                    position_amt = float(position.get('positionAmt', 0))
+                    
+                    if position_amt == 0:
+                        # 持仓数量为0，跳过
+                        continue
+                    
+                    # 有持仓，检查本地是否已有跟踪数据
+                    if symbol not in self.position_entry_times:
+                        # 初始化持仓入场时间
+                        # 使用当前时间作为默认值（因为无法从交易所获取准确的入场时间）
+                        self.position_entry_times[symbol] = int(time.time() * 1000)
+                        logger.info(f"Initialized entry time for existing position {symbol}")
+                    
+                    if symbol not in self.partial_take_profit_status:
+                        # 初始化分批止盈状态
+                        self.partial_take_profit_status[symbol] = {i: False for i in range(len(self.partial_take_profit_levels))}
+                        logger.info(f"Initialized partial take profit status for existing position {symbol}")
+                    
+                    if symbol not in self.position_peak_prices:
+                        # 初始化峰值价格跟踪
+                        current_price = self.data_handler.get_current_price(symbol)
+                        if current_price:
+                            self.position_peak_prices[symbol] = current_price
+                            logger.info(f"Initialized peak price for existing position {symbol}: {current_price}")
+                    
+                    # 确保position_manager中也有这个持仓
+                    if not self.position_manager.has_position(symbol):
+                        # 从交易所数据重建持仓信息
+                        entry_price = float(position.get('entryPrice', 0))
+                        quantity = abs(position_amt)
+                        side = 'LONG' if position_amt > 0 else 'SHORT'
+                        
+                        self.position_manager.open_position(
+                            symbol=symbol,
+                            side=side,
+                            entry_price=entry_price,
+                            quantity=quantity,
+                            entry_kline=None
+                        )
+                        logger.info(f"Reconstructed position {symbol} from exchange: {side} {quantity} @ {entry_price}")
+                    
+                except Exception as e:
+                    logger.error(f"Error syncing position for {symbol}: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+            
+            logger.info("Position synchronization completed")
+            
+        except Exception as e:
+            logger.error(f"Error in position synchronization: {e}")
             import traceback
             logger.error(traceback.format_exc())
     
