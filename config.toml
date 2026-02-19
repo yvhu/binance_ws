@@ -52,16 +52,6 @@ early_entry_enabled = true  # Enable real-time entry (启用实时开仓)
 # - No waiting for K-line closure
 # - Immediate response to market changes
 
-# Entry confirmation parameters (入场确认参数) - 5分钟日内交易优化
-entry_confirmation_enabled = false  # Enable entry confirmation mechanism (启用入场确认机制) - 禁用，直接交易
-entry_confirmation_type = "price"  # Confirmation type: "price" (价格确认), "volume" (成交量确认), "both" (两者都确认)
-entry_confirmation_wait_klines = 1  # Number of klines to wait for confirmation (等待确认的K线数)
-entry_confirmation_price_threshold = 0.001  # Price confirmation threshold (0.1% = 0.001) - 降低到0.1%
-entry_confirmation_volume_threshold = 1.05  # Volume confirmation threshold (1.05 = 105%) - 降低到105%
-# Entry confirmation logic:
-# - Disabled for 5m intraday trading to reduce latency
-# - Direct entry when conditions are met
-
 # Volume check parameters - 5分钟日内交易优化
 volume_ratio_threshold = 1.1  # Minimum volume ratio (current volume / average volume of last 5 klines) - 降低到110%
 
@@ -107,12 +97,6 @@ partial_take_profit_enabled = true  # Enable partial take profit (启用分批�
 partial_take_profit_levels = [0.015, 0.025]  # Take profit levels as percentages [1.5%, 2.5%] - 调整为1.5%和2.5%
 partial_take_profit_ratios = [0.5, 0.5]  # Ratios to close at each level [50%, 50%]
 
-# Dynamic take profit parameters (动态止盈参数) - 5分钟日内交易优化：禁用
-dynamic_take_profit_enabled = false  # Enable dynamic take profit based on trend strength (启用动态止盈) - 禁用，简化
-strong_trend_take_profit_percent = 0.12  # Take profit for strong trend (12%)
-weak_trend_take_profit_percent = 0.05  # Take profit for weak trend (5%)
-adx_trend_threshold = 25  # ADX threshold for trend strength (ADX趋势强度阈值)
-
 # Trend filter parameters (to avoid false breakouts in sideways markets) - 5分钟日内交易优化
 trend_filter_enabled = true  # Enable trend filter to avoid false breakouts
 trend_filter_ma_period = 7  # MA period for trend filter (default: 7) - 使用MA7，更敏感
@@ -125,61 +109,6 @@ trend_filter_ma_period = 7  # MA period for trend filter (default: 7) - 使用MA
 rsi_filter_enabled = true  # Enable RSI filter (启用RSI过滤)
 rsi_long_max = 70  # Maximum RSI for long entry (做多时RSI最大值) - 放宽到70
 rsi_short_min = 30  # Minimum RSI for short entry (做空时RSI最小值) - 放宽到30
-
-macd_filter_enabled = false  # Enable MACD filter (启用MACD过滤) - 禁用，简化
-# MACD filter logic:
-# - For LONG: MACD histogram > 0 OR bullish crossover
-# - For SHORT: MACD histogram < 0 OR bearish crossover
-
-adx_filter_enabled = false  # Enable ADX filter for trend strength (启用ADX趋势强度过滤) - 禁用，简化
-adx_min_trend = 25  # Minimum ADX for trend market (趋势市场最小ADX)
-adx_sideways = 20  # ADX threshold for sideways market (震荡市场ADX阈值)
-
-# Market environment recognition parameters (市场环境识别参数) - 5分钟日内交易优化：禁用
-market_env_filter_enabled = false  # Enable market environment filter (启用市场环境过滤) - 禁用，简化
-market_env_allow_ranging = false  # Allow trading in ranging markets (允许在震荡市交易)
-market_env_min_confidence = 70  # Minimum confidence score for market environment (市场环境最小信心分数)
-market_env_adx_trend_threshold = 25  # ADX threshold for trend market (趋势市场ADX阈值)
-market_env_adx_strong_threshold = 40  # ADX threshold for strong trend (强趋势ADX阈值)
-# Market environment recognition logic:
-# - Uses ADX, MA direction, and volatility to identify market type
-# - Trending market: ADX >= 25, MA aligned with price direction
-# - Ranging market: ADX < 25, price oscillating around MA
-# - Confidence score: 0-100, based on multiple factors
-# - Low confidence (<70%) reduces signal strength
-
-# Multi-timeframe analysis parameters (多周期分析参数) - 5分钟日内交易优化：禁用
-multi_timeframe_enabled = false  # Enable multi-timeframe analysis (启用多周期分析) - 禁用，5分钟交易不需要
-multi_timeframe_intervals = ["15m", "1h"]  # Timeframes to analyze (分析的时间周期)
-multi_timeframe_require_alignment = true  # Require trend alignment across timeframes (要求多周期趋势一致)
-multi_timeframe_min_aligned = 2  # Minimum number of timeframes that must align (至少需要多少个周期一致)
-# Multi-timeframe analysis logic:
-# - Analyzes trend direction on 15m and 1h timeframes
-# - Only opens position if trends align across timeframes
-# - Helps filter out false signals and improves win rate
-# - Example: 5m LONG signal + 15m UP trend + 1h UP trend = Strong LONG signal
-
-# Sentiment indicator parameters (情绪指标参数)
-sentiment_filter_enabled = false  # Enable sentiment filter (启用情绪指标过滤)
-sentiment_min_fear = 25  # Minimum fear level to allow long entry (做多时最小恐惧值)
-sentiment_max_greed = 75  # Maximum greed level to allow long entry (做多时最大贪婪值)
-sentiment_min_greed = 56  # Minimum greed level to allow short entry (做空时最小贪婪值)
-sentiment_max_fear = 44  # Maximum fear level to allow short entry (做空时最大恐惧值)
-
-# Machine Learning predictor parameters (机器学习预测器参数)
-ml_filter_enabled = false  # Enable ML filter (启用机器学习过滤)
-ml_min_confidence = 0.6  # Minimum confidence required for ML prediction (ML预测所需最小置信度)
-ml_train_on_startup = true  # Train ML model on startup (启动时训练ML模型)
-ml_retrain_interval = 24  # Retrain model every N hours (每N小时重新训练模型)
-# Sentiment indicator logic:
-# - Fear and Greed Index ranges from 0 (Extreme Fear) to 100 (Extreme Greed)
-# - 0-24: Extreme Fear (极度恐惧) - Good for LONG entry
-# - 25-44: Fear (恐惧) - Good for LONG entry
-# - 45-55: Neutral (中性) - No restriction
-# - 56-75: Greed (贪婪) - Good for SHORT entry
-# - 76-100: Extreme Greed (极度贪婪) - Good for SHORT entry
-# - LONG entry: Only when sentiment <= sentiment_max_greed (avoid extreme greed)
-# - SHORT entry: Only when sentiment >= sentiment_min_greed (avoid extreme fear)
 
 # Trading Configuration
 [trading]

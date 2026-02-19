@@ -117,28 +117,22 @@ PositionManager.sync_from_exchange(symbols)
     ↓
 For each symbol:
     ↓
-    Query position from Binance API
+Query position from Binance API
     ↓
-    If position exists (positionAmt != 0):
-        ↓
-        Sync to local position manager
-        ↓
-        Check if stop loss order exists
-        ↓
-        If no stop loss order:
-            ↓
-            Calculate stop loss price based on:
-            ├── Current price
-            ├── Latest 5m K-line range
-            └── Strategy config (stop_loss_range_multiplier, stop_loss_min_distance_percent)
-            ↓
-            Create STOP_MARKET order
-            ↓
-            Log success/failure
-        ↓
-    Else (no position on exchange):
-        ↓
-        Remove local position if exists
+If position exists (positionAmt != 0):
+    ↓
+    Sync to local position manager
+    ↓
+    Calculate stop loss price based on:
+    ├── Current price
+    ├── Latest 5m K-line range
+    └── Strategy config (stop_loss_range_multiplier, stop_loss_min_distance_percent)
+    ↓
+    Store stop loss price in position info
+    ↓
+Else (no position on exchange):
+    ↓
+    Remove local position if exists
 ```
 
 ### 3.5.2 Stop Loss Price Calculation
@@ -151,19 +145,24 @@ Calculate current range = high - low
     ↓
 Calculate stop loss distance:
     ├── If range > 0: distance = range × stop_loss_range_multiplier (0.8)
-    └── If range == 0: distance = price × stop_loss_min_distance_percent (0.3%)
+    └── If range == 0: distance = price × stop_loss_min_distance_percent (2.5%)
+    ↓
+Limit maximum stop loss distance:
+    ├── max_distance = price × stop_loss_max_distance_percent (3.0%)
+    └── actual_distance = min(max(calculated_distance, min_distance), max_distance)
     ↓
 Calculate stop loss price:
-    ├── LONG: stop_loss_price = current_price - distance
-    └── SHORT: stop_loss_price = current_price + distance
+    ├── LONG: stop_loss_price = current_price - actual_distance
+    └── SHORT: stop_loss_price = current_price + actual_distance
 ```
 
 ### 3.5.3 Purpose
 - Avoid "logic empty but real has position" risk after restart
-- Ensure all positions have stop loss protection
+- Ensure all positions have stop loss protection (stored in memory)
 - Automatically recover from errors where position opened but stop loss failed
 - Reduce need for manual intervention
 - Provide automatic recovery mechanism
+- **Real-time monitoring**: Stop loss is checked on every price update via WebSocket
 
 ### 3.5.4 Implementation
 - Location: [`../src/trading/position_manager.py`](../src/trading/position_manager.py:139)
@@ -326,19 +325,41 @@ Send opening notification to Telegram
 
 ## 6. Closing Position Execution Flow
 
-### 6.1 Stop Loss Trigger
+### 6.1 Stop Loss Trigger (Real-time Monitoring)
 ```
-Fixed stop loss triggered
+Real-time price update via WebSocket
     ↓
-STOP_MARKET order executes
+Check if stop loss price is reached
     ↓
-Position closed automatically
+If stop loss triggered:
+    ↓
+    Execute market closing order immediately
+    ↓
+    Calculate profit/loss
+    ↓
+    PositionManager.close_position()
+    ↓
+    Send closing notification to Telegram
+
+OR
+
+Real-time engulfing stop loss triggered
+    ↓
+TradingExecutor.close_all_positions()
+    ↓
+Get current positions
+    ↓
+Send market closing order
+    ↓
+Calculate profit/loss
+    ↓
+PositionManager.close_position()
     ↓
 Send closing notification to Telegram
 
 OR
 
-Engulfing stop loss triggered
+Real-time trend reversal detected
     ↓
 TradingExecutor.close_all_positions()
     ↓
@@ -527,59 +548,49 @@ If stop loss price hit:
 3. **Notification Flow**: All events → TelegramClient → Telegram
 4. **Error Handling**: All errors logged and sent to Telegram
 5. **Position Management**: Full position (100%) with configurable leverage
-6. **Risk Control**: Fixed stop loss (0.8) + Engulfing stop loss (0.85)
-7. **Strategy**: 5-minute K-line based trading strategy
-8. **Order Management**: Proper handling of both regular orders and conditional (algo) orders
+6. **Risk Control**: Real-time stop loss (2.5%-3%) + Real-time engulfing stop loss (85%) + Real-time trend reversal (90%)
+7. **Strategy**: 5-minute K-line based trading strategy with **real-time entry and exit**
+8. **Real-time Monitoring**: All checks performed on WebSocket updates, not waiting for K-line closure
 
 ## Order Management Details
 
 ### Order Types
 
-1. **Regular Orders**:
-   - Market orders for opening/closing positions
+1. **Market Orders**:
+   - Used for opening/closing positions
    - Identified by `orderId`
    - Cancelled using `futures_cancel_order`
 
-2. **Conditional Orders (Algo Orders)**:
-   - Stop loss orders (STOP_MARKET type)
-   - Identified by `algoId`
-   - Cancelled using dedicated endpoint `DELETE /fapi/v1/algo/order`
-   - Have `algoType: CONDITIONAL` and `algoStatus: NEW`
+2. **No Conditional Orders**:
+   - Stop loss is implemented via real-time monitoring
+   - No STOP_MARKET orders are created
+   - Stop loss price is stored in memory and checked on every price update
 
 ### Order Cancellation Strategy
 
-1. **Batch Cancellation** (Preferred):
+1. **Batch Cancellation**:
    - Use `futures_cancel_all_open_orders` API
-   - Cancels all orders (regular + conditional) in one call
+   - Cancels all orders in one call
    - Most efficient method
 
 2. **Individual Cancellation** (Fallback):
    - For regular orders: use `orderId` with `futures_cancel_order`
-   - For conditional orders: use `algoId` with `/fapi/v1/algo/order` endpoint
    - Used only if batch cancellation fails
 
 ### Implementation
 
 - [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:975) - `cancel_all_orders()`
-- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1111) - `cancel_algo_order()`
-- [`../src/trading/trading_executor.py`](../src/trading/trading_executor.py:1087) - `get_open_algo_orders()`
 
 ### Critical Safety Checks
 
 1. **Before Setting Leverage**:
-   - Cancel all orders (including conditional orders)
+   - Cancel all orders
    - Wait for cancellation to complete
    - Verify all orders are cancelled
    - Retry if orders still exist
 
-2. **Before Creating New Stop Loss**:
-   - Check for existing stop loss orders (both regular and conditional)
-   - Cancel all existing stop loss orders
-   - Verify cancellation success
-   - Only create new stop loss after confirmation
-
-3. **Startup Position Sync**:
+2. **Startup Position Sync**:
    - Query positions from exchange
-   - Check for stop loss orders
-   - Create missing stop loss orders
+   - Calculate and store stop loss price in memory
    - Ensure all positions have protection
+   - Real-time monitoring will check stop loss on every price update
