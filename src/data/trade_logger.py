@@ -75,26 +75,22 @@ class TradeLogger:
         """初始化CSV文件并写入表头"""
         # 交易记录表头
         trades_headers = [
-            "timestamp", "symbol", "side", "entry_price", "exit_price", 
+            "timestamp", "symbol", "side", "entry_price", "exit_price",
             "quantity", "pnl", "pnl_percent", "holding_time_minutes",
             "entry_time", "exit_time", "close_reason",
             "signal_strength", "stop_loss_price", "take_profit_percent",
             "volume_ratio", "body_ratio", "range_ratio",
             "rsi", "macd", "adx", "market_type", "trend_strength",
-            "multi_timeframe_aligned", "sentiment", "ml_confidence",
-            "entry_confirmed", "position_ratio", "leverage"
+            "position_ratio", "leverage"
         ]
         
         # 信号记录表头
         signals_headers = [
             "timestamp", "symbol", "direction", "signal_strength",
             "volume_valid", "range_valid", "body_valid",
-            "trend_valid", "rsi_valid", "macd_valid", "adx_valid",
-            "market_env_valid", "multi_timeframe_valid", "sentiment_valid", "ml_valid",
+            "trend_valid", "rsi_valid",
             "volume_ratio", "body_ratio", "range_ratio",
-            "rsi", "macd", "adx", "market_type", "trend_strength",
-            "multi_timeframe_aligned", "sentiment", "ml_confidence",
-            "entry_confirmed", "confirmation_type", "confirmation_result"
+            "rsi", "macd", "adx", "market_type", "trend_strength"
         ]
         
         # 指标记录表头
@@ -154,10 +150,6 @@ class TradeLogger:
                 trade_data.get("adx", 0),
                 trade_data.get("market_type", ""),
                 trade_data.get("trend_strength", ""),
-                trade_data.get("multi_timeframe_aligned", False),
-                trade_data.get("sentiment", ""),
-                trade_data.get("ml_confidence", 0),
-                trade_data.get("entry_confirmed", False),
                 trade_data.get("position_ratio", 0),
                 trade_data.get("leverage", 0)
             ]
@@ -198,12 +190,6 @@ class TradeLogger:
                 signal_data.get("body_valid", False),
                 signal_data.get("trend_valid", False),
                 signal_data.get("rsi_valid", False),
-                signal_data.get("macd_valid", False),
-                signal_data.get("adx_valid", False),
-                signal_data.get("market_env_valid", False),
-                signal_data.get("multi_timeframe_valid", False),
-                signal_data.get("sentiment_valid", False),
-                signal_data.get("ml_valid", False),
                 signal_data.get("volume_ratio", 0),
                 signal_data.get("body_ratio", 0),
                 signal_data.get("range_ratio", 0),
@@ -211,13 +197,7 @@ class TradeLogger:
                 signal_data.get("macd", 0),
                 signal_data.get("adx", 0),
                 signal_data.get("market_type", ""),
-                signal_data.get("trend_strength", ""),
-                signal_data.get("multi_timeframe_aligned", False),
-                signal_data.get("sentiment", ""),
-                signal_data.get("ml_confidence", 0),
-                signal_data.get("entry_confirmed", False),
-                signal_data.get("confirmation_type", ""),
-                signal_data.get("confirmation_result", "")
+                signal_data.get("trend_strength", "")
             ]
             
             # 写入CSV
