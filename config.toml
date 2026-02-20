@@ -43,3 +43,12 @@ margin_type = "cross"
 stop_loss_roi = -0.40  # 投资回报率 -40% 止损
 # 条件单类型：'CONDITIONAL' 为条件单
 algo_type = "CONDITIONAL"
+
+# 信号确认配置
+[signal_confirmation]
+# 是否启用信号确认
+enabled = true
+# 确认时间点（秒），例如 [30, 60] 表示在30秒和60秒时确认
+confirmation_times = [30, 60, 90]
+# 确认次数要求，例如 3 表示需要在所有确认时间点都确认
+required_confirmations = 3

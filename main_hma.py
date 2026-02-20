@@ -37,10 +37,19 @@ class HMABreakoutBot:
         # 初始化策略
         hma_params = self.config.hma_strategy_config
         
+        # 获取信号确认配置
+        confirmation_config = self.config.config.get('signal_confirmation', {})
+        confirmation_enabled = confirmation_config.get('enabled', True)
+        confirmation_times = confirmation_config.get('confirmation_times', [30, 60])
+        required_confirmations = confirmation_config.get('required_confirmations', 2)
+        
         self.strategy = HMABreakoutStrategy(
             hma1=hma_params['hma1'],
             hma2=hma_params['hma2'],
-            hma3=hma_params['hma3']
+            hma3=hma_params['hma3'],
+            confirmation_enabled=confirmation_enabled,
+            confirmation_times=confirmation_times,
+            required_confirmations=required_confirmations
         )
         
         # 初始化仓位管理器
@@ -245,6 +254,9 @@ class HMABreakoutBot:
             if is_closed:
                 await self._process_strategy()
             
+            # 检查信号确认（每次K线更新都检查）
+            await self._check_signal_confirmation()
+            
         except Exception as e:
             self.logger.error(f"处理 K 线失败: {e}")
     
@@ -277,6 +289,38 @@ class HMABreakoutBot:
             
         except Exception as e:
             self.logger.error(f"处理策略失败: {e}")
+    
+    async def _check_signal_confirmation(self) -> None:
+        """检查信号确认"""
+        try:
+            # 检查是否有待确认的信号
+            if self.strategy.pending_confirmation is None:
+                return
+            
+            # 检查信号确认
+            confirmed_signal = self.strategy.check_signal_confirmation(self.kline_manager)
+            
+            if confirmed_signal:
+                # 信号已确认，执行交易
+                signal_type = confirmed_signal['signal_type']
+                current_price = self.kline_manager.get_latest_kline().close
+                
+                self.logger.info(f"信号已确认，执行交易: {signal_type}")
+                
+                # 检查当前持仓
+                has_position = self.position_manager.has_position()
+                current_position_type = self.position_manager.get_position_type()
+                
+                # 处理确认后的信号
+                if signal_type == 'LONG':
+                    await self._handle_long_signal(current_price, has_position, current_position_type, is_color_changed=True)
+                elif signal_type == 'SHORT':
+                    await self._handle_short_signal(current_price, has_position, current_position_type, is_color_changed=True)
+                elif signal_type == 'CLOSE':
+                    await self._handle_close_signal(current_price, has_position)
+            
+        except Exception as e:
+            self.logger.error(f"检查信号确认失败: {e}")
     
     async def _handle_long_signal(self, current_price: float,
                                   has_position: bool,
