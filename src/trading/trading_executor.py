@@ -746,8 +746,9 @@ class TradingExecutor:
                 price_protect=True
             )
             
-            if stop_order and 'orderId' in stop_order:
-                order_id = stop_order['orderId']
+            # 条件单返回的是 algoId 而不是 orderId
+            if stop_order and 'algoId' in stop_order:
+                order_id = stop_order['algoId']
                 logger.info(f"设置止损条件单成功: {symbol} 止损价={rounded_stop_price:.8f} "
                            f"ROI={stop_loss_roi:.2%} 订单ID={order_id}")
                 
@@ -763,6 +764,7 @@ class TradingExecutor:
                 return order_id
             else:
                 logger.error(f"止损条件单创建失败，未返回订单ID")
+                logger.error(f"返回的订单信息: {stop_order}")
                 return None
             
         except BinanceAPIException as e:
