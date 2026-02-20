@@ -309,9 +309,22 @@ class TradingExecutor:
             )
             
             logger.info(f"开多仓成功: {symbol} 数量={rounded_quantity:.8f}")
+            logger.info(f"订单响应: {order}")
             
             # 获取成交价格
-            entry_price = float(order['avgPrice']) if 'avgPrice' in order else None
+            # 市价单可能没有 avgPrice，尝试从多个字段获取
+            entry_price = None
+            if 'avgPrice' in order and order['avgPrice']:
+                entry_price = float(order['avgPrice'])
+            elif 'cummulativeQuoteQty' in order and 'executedQty' in order:
+                # 计算平均价格 = 总成交金额 / 总成交数量
+                cum_quote = float(order['cummulativeQuoteQty'])
+                exec_qty = float(order['executedQty'])
+                if exec_qty > 0:
+                    entry_price = cum_quote / exec_qty
+            
+            logger.info(f"获取到的入场价格: {entry_price}")
+            
             if entry_price:
                 # 设置止损单（使用调整后的数量）
                 self._set_stop_loss_order(
@@ -321,6 +334,8 @@ class TradingExecutor:
                     entry_price=entry_price,
                     stop_loss_roi=stop_loss_roi
                 )
+            else:
+                logger.error("无法获取入场价格，无法设置止损单")
             
             return order
             
@@ -355,9 +370,22 @@ class TradingExecutor:
             )
             
             logger.info(f"开空仓成功: {symbol} 数量={rounded_quantity:.8f}")
+            logger.info(f"订单响应: {order}")
             
             # 获取成交价格
-            entry_price = float(order['avgPrice']) if 'avgPrice' in order else None
+            # 市价单可能没有 avgPrice，尝试从多个字段获取
+            entry_price = None
+            if 'avgPrice' in order and order['avgPrice']:
+                entry_price = float(order['avgPrice'])
+            elif 'cummulativeQuoteQty' in order and 'executedQty' in order:
+                # 计算平均价格 = 总成交金额 / 总成交数量
+                cum_quote = float(order['cummulativeQuoteQty'])
+                exec_qty = float(order['executedQty'])
+                if exec_qty > 0:
+                    entry_price = cum_quote / exec_qty
+            
+            logger.info(f"获取到的入场价格: {entry_price}")
+            
             if entry_price:
                 # 设置止损单（使用调整后的数量）
                 self._set_stop_loss_order(
@@ -367,6 +395,8 @@ class TradingExecutor:
                     entry_price=entry_price,
                     stop_loss_roi=stop_loss_roi
                 )
+            else:
+                logger.error("无法获取入场价格，无法设置止损单")
             
             return order
             
