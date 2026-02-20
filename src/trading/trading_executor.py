@@ -408,22 +408,48 @@ class TradingExecutor:
             # 打印完整的账户信息用于调试
             logger.info(f"完整账户信息: {account}")
             
-            # 检查关键字段是否存在
-            if 'totalWalletBalance' not in account:
-                logger.error(f"API返回数据缺少 totalWalletBalance 字段")
-                logger.error(f"可用字段: {list(account.keys())}")
-                return None
+            # 从 assets 数组中查找 USDC 或 USDT 的可用余额
+            available_balance = 0.0
+            total_wallet_balance = 0.0
+            asset_name = 'USDT'  # 默认资产名称
+            
+            if 'assets' in account:
+                for asset in account['assets']:
+                    asset_name_check = asset.get('asset', 'N/A')
+                    asset_available = float(asset.get('availableBalance', 0))
+                    asset_wallet_balance = float(asset.get('walletBalance', 0))
+                    
+                    logger.debug(f"检查资产: {asset_name_check} = 可用:{asset_available:.8f}, 钱包:{asset_wallet_balance:.8f}")
+                    
+                    # 优先使用 USDC，如果没有则使用 USDT
+                    if asset_name_check == 'USDC' and asset_available > 0:
+                        available_balance = asset_available
+                        total_wallet_balance = asset_wallet_balance
+                        asset_name = 'USDC'
+                        logger.info(f"使用 USDC 余额: 可用={available_balance:.8f}, 钱包={total_wallet_balance:.8f}")
+                    elif asset_name_check == 'USDT' and asset_available > 0 and available_balance == 0:
+                        available_balance = asset_available
+                        total_wallet_balance = asset_wallet_balance
+                        asset_name = 'USDT'
+                        logger.info(f"使用 USDT 余额: 可用={available_balance:.8f}, 钱包={total_wallet_balance:.8f}")
+            
+            # 如果没有找到可用余额，尝试使用 totalWalletBalance 和 availableBalance 字段
+            if available_balance == 0 and 'totalWalletBalance' in account:
+                total_wallet_balance = float(account['totalWalletBalance'])
+                available_balance = float(account['availableBalance'])
+                logger.info(f"使用 API 返回的总余额字段: 总={total_wallet_balance:.8f}, 可用={available_balance:.8f}")
             
             account_info = {
-                'total_wallet_balance': float(account['totalWalletBalance']),
-                'available_balance': float(account['availableBalance']),
-                'total_position_initial_margin': float(account['totalPositionInitialMargin']),
-                'total_unrealized_profit': float(account['totalUnrealizedProfit']),
-                'total_margin_balance': float(account['totalMarginBalance'])
+                'total_wallet_balance': total_wallet_balance,
+                'available_balance': available_balance,
+                'total_position_initial_margin': float(account.get('totalPositionInitialMargin', 0)),
+                'total_unrealized_profit': float(account.get('totalUnrealizedProfit', 0)),
+                'total_margin_balance': float(account.get('totalMarginBalance', 0)),
+                'asset_name': asset_name
             }
             
-            logger.info(f"账户总余额: {account_info['total_wallet_balance']:.2f}")
-            logger.info(f"可用余额: {account_info['available_balance']:.2f}")
+            logger.info(f"账户总余额: {account_info['total_wallet_balance']:.8f} {asset_name}")
+            logger.info(f"可用余额: {account_info['available_balance']:.8f} {asset_name}")
             
             return account_info
         except BinanceAPIException as e:
