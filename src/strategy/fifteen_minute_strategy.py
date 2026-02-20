@@ -3280,11 +3280,8 @@ class FiveMinuteStrategy:
             # Calculate limit order price
             limit_price = self.trading_executor.calculate_entry_limit_price(
                 symbol=symbol,
-                side='LONG',
                 current_price=current_price,
-                offset_percent=self.limit_order_entry_price_offset_percent,
-                use_support_resistance=self.limit_order_use_support_resistance,
-                period=self.limit_order_support_resistance_period
+                side='LONG'
             )
             
             if limit_price is None:
@@ -3452,11 +3449,8 @@ class FiveMinuteStrategy:
             # Calculate limit order price
             limit_price = self.trading_executor.calculate_entry_limit_price(
                 symbol=symbol,
-                side='SHORT',
                 current_price=current_price,
-                offset_percent=self.limit_order_entry_price_offset_percent,
-                use_support_resistance=self.limit_order_use_support_resistance,
-                period=self.limit_order_support_resistance_period
+                side='SHORT'
             )
             
             if limit_price is None:
