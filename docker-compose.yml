@@ -18,6 +18,7 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data
       - ./src:/app/src
+      - ./main_hma.py:/app/main_hma.py:ro
     
     # Network mode (use host for better connectivity)
     network_mode: host
