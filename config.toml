@@ -53,7 +53,7 @@ early_entry_enabled = true  # Enable real-time entry (启用实时开仓)
 # - Immediate response to market changes
 
 # Volume check parameters - 5分钟日内交易优化
-volume_ratio_threshold = 1.1  # Minimum volume ratio (current volume / average volume of last 5 klines) - 降低到110%
+volume_ratio_threshold = 1.2  # Minimum volume ratio (current volume / average volume of last 5 klines) - 提高到120%以过滤弱信号
 
 # K-line body ratio check parameters - 5分钟日内交易优化
 body_ratio_threshold = 0.4  # Minimum body ratio (body / range), filters klines with too much resistance - 降低到40%
@@ -75,7 +75,7 @@ atr_period = 14  # ATR period (ATR周期)
 
 # Time-based stop loss parameters (时间止损参数) - 5分钟日内交易优化
 time_stop_loss_enabled = true  # Enable time-based stop loss (启用时间止损)
-time_stop_loss_klines = 3  # Maximum number of klines to hold position without profit (最大持仓K线数) - 缩短到3根K线（15分钟）
+time_stop_loss_klines = 5  # Maximum number of klines to hold position without profit (最大持仓K线数) - 增加到5根K线（25分钟）
 
 # Real-time stop loss optimization parameters (实时止损优化参数) - 5分钟日内交易优化
 stop_loss_price_buffer_percent = 0.001  # Price buffer to avoid false triggers (0.1% = 0.001) - 降低到0.1%
@@ -105,10 +105,24 @@ trend_filter_ma_period = 7  # MA period for trend filter (default: 7) - 使用MA
 # - For SHORT: price must be BELOW MA7 AND MA7 must be trending DOWN
 # This helps avoid false breakouts in sideways markets
 
+# Sideways market filter (横盘市场过滤) - 新增
+sideways_market_filter_enabled = true  # 启用横盘市场过滤
+sideways_market_adx_threshold = 20  # ADX阈值，低于此值视为横盘市场
+min_trend_strength = 0.3  # 最小趋势强度要求
+
+# Signal quality filter (信号质量过滤) - 新增
+signal_confirmation_enabled = true  # 启用信号确认
+signal_confirmation_klines = 2  # 需要2根K线确认信号
+min_signal_strength = "MEDIUM"  # 只接受MEDIUM以上信号
+
+# Volume confirmation (成交量确认) - 新增
+volume_confirmation_enabled = true  # 启用成交量确认
+volume_confirmation_klines = 3  # 需要3根K线成交量确认
+
 # Additional indicator filters (额外指标过滤) - 5分钟日内交易优化：只保留核心过滤器
 rsi_filter_enabled = true  # Enable RSI filter (启用RSI过滤)
-rsi_long_max = 70  # Maximum RSI for long entry (做多时RSI最大值) - 放宽到70
-rsi_short_min = 30  # Minimum RSI for short entry (做空时RSI最小值) - 放宽到30
+rsi_long_max = 65  # Maximum RSI for long entry (做多时RSI最大值) - 降低到65以避免超买
+rsi_short_min = 35  # Minimum RSI for short entry (做空时RSI最小值) - 提高到35以避免超卖
 
 # Trading Configuration
 [trading]
@@ -128,14 +142,14 @@ enabled = true  # 启用限价单交易
 
 # Entry limit order configuration
 entry_limit_order_enabled = true  # 启用开仓限价单
-entry_price_offset_percent = 0.001  # 开仓价格偏移 0.1%
-entry_price_offset_max_percent = 0.002  # 最大偏移 0.2%
+entry_price_offset_percent = 0.002  # 开仓价格偏移 0.2% - 增加以提高成交率
+entry_price_offset_max_percent = 0.003  # 最大偏移 0.3% - 增加以提高成交率
 entry_use_support_resistance = true  # 使用支撑/阻力位
 entry_support_resistance_lookback = 5  # 回看K线数
 
 # Entry monitoring
 entry_price_away_threshold = 0.005  # 价格远离阈值 0.5%
-entry_limit_order_timeout = 30  # 限价单超时时间（秒）
+entry_limit_order_timeout = 60  # 限价单超时时间（秒）- 增加到60秒以提高成交率
 entry_rapid_price_change_threshold = 0.003  # 快速价格变化阈值 0.3%
 entry_rapid_price_change_window = 5  # 快速变化时间窗口（秒）
 

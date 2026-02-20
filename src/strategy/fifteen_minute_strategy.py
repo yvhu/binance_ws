@@ -103,6 +103,20 @@ class FiveMinuteStrategy:
         self.rsi_long_max = config.get_config("strategy", "rsi_long_max", default=70)
         self.rsi_short_min = config.get_config("strategy", "rsi_short_min", default=30)
         
+        # Sideways market filter (横盘市场过滤)
+        self.sideways_market_filter_enabled = config.get_config("strategy", "sideways_market_filter_enabled", default=True)
+        self.sideways_market_adx_threshold = config.get_config("strategy", "sideways_market_adx_threshold", default=20)
+        self.min_trend_strength = config.get_config("strategy", "min_trend_strength", default=0.3)
+        
+        # Signal confirmation (信号确认)
+        self.signal_confirmation_enabled = config.get_config("strategy", "signal_confirmation_enabled", default=True)
+        self.signal_confirmation_klines = config.get_config("strategy", "signal_confirmation_klines", default=2)
+        self.min_signal_strength = config.get_config("strategy", "min_signal_strength", default="MEDIUM")
+        
+        # Volume confirmation (成交量确认)
+        self.volume_confirmation_enabled = config.get_config("strategy", "volume_confirmation_enabled", default=True)
+        self.volume_confirmation_klines = config.get_config("strategy", "volume_confirmation_klines", default=3)
+        
         # Position sizing based on signal strength
         self.strong_signal_position_ratio = config.get_config("trading", "strong_signal_position_ratio", default=1.0)
         self.medium_signal_position_ratio = config.get_config("trading", "medium_signal_position_ratio", default=0.75)
@@ -595,6 +609,225 @@ class FiveMinuteStrategy:
             logger.error(traceback.format_exc())
             return False, None
     
+    def _check_sideways_market_filter(self, symbol: str, kline_direction: str) -> Tuple[bool, Optional[Dict]]:
+        """
+        Check if the market is in sideways mode and filter out weak signals
+        
+        Args:
+            symbol: Trading pair symbol
+            kline_direction: 'UP' or 'DOWN'
+            
+        Returns:
+            Tuple of (is_valid, sideways_info)
+        """
+        try:
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return False, None
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < self.technical_analyzer.rsi_period + 1:
+                logger.warning(f"Not enough closed K-lines for sideways market filter: {len(closed_klines)}")
+                return False, None
+            
+            # Convert to DataFrame for technical analysis
+            df = pd.DataFrame(closed_klines)
+            
+            # Calculate ADX
+            adx_series = self.technical_analyzer.calculate_adx(df, period=14)
+            if adx_series is None or len(adx_series) == 0:
+                logger.warning(f"Could not calculate ADX for {symbol}")
+                return False, None
+            
+            # Get latest ADX value
+            latest_adx = adx_series.iloc[-1]
+            
+            # Check if market is in sideways mode (ADX below threshold)
+            is_sideways = latest_adx < self.sideways_market_adx_threshold
+            
+            # Calculate trend strength
+            trend_strength = 0.0
+            if len(closed_klines) >= self.trend_filter_ma_period:
+                ma_series = self.technical_analyzer.calculate_ma(df['close'], self.trend_filter_ma_period)
+                if len(ma_series) > 0:
+                    latest_ma = ma_series.iloc[-1]
+                    latest_price = df['close'].iloc[-1]
+                    trend_strength = abs(latest_price - latest_ma) / latest_ma if latest_ma > 0 else 0
+            
+            # Filter out sideways market signals
+            if is_sideways:
+                logger.info(
+                    f"[SIDEWAYS_MARKET_FILTER] {symbol}: "
+                    f"ADX={latest_adx:.2f} < {self.sideways_market_adx_threshold}, "
+                    f"trend_strength={trend_strength:.3f}, "
+                    f"market is sideways, filtering signal"
+                )
+                return False, {
+                    'adx_value': latest_adx,
+                    'is_sideways': is_sideways,
+                    'trend_strength': trend_strength,
+                    'threshold': self.sideways_market_adx_threshold
+                }
+            
+            # Check minimum trend strength
+            if trend_strength < self.min_trend_strength:
+                logger.info(
+                    f"[TREND_STRENGTH_FILTER] {symbol}: "
+                    f"trend_strength={trend_strength:.3f} < {self.min_trend_strength}, "
+                    f"trend too weak, filtering signal"
+                )
+                return False, {
+                    'adx_value': latest_adx,
+                    'is_sideways': is_sideways,
+                    'trend_strength': trend_strength,
+                    'threshold': self.min_trend_strength
+                }
+            
+            return True, {
+                'adx_value': latest_adx,
+                'is_sideways': is_sideways,
+                'trend_strength': trend_strength,
+                'threshold': self.sideways_market_adx_threshold
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking sideways market filter for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False, None
+    
+    def _check_signal_confirmation(self, symbol: str, direction: str, current_kline: Dict) -> bool:
+        """
+        Check if signal is confirmed by multiple K-lines
+        
+        Args:
+            symbol: Trading pair symbol
+            direction: 'UP' or 'DOWN'
+            current_kline: Current K-line
+            
+        Returns:
+            True if signal is confirmed, False otherwise
+        """
+        try:
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return False
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < self.signal_confirmation_klines:
+                logger.warning(f"Not enough closed K-lines for signal confirmation: {len(closed_klines)}")
+                return False
+            
+            # Get recent K-lines for confirmation
+            recent_klines = closed_klines[-self.signal_confirmation_klines:]
+            
+            # Check if all recent K-lines have the same direction
+            confirmed_count = 0
+            for kline in recent_klines:
+                kline_direction = self.technical_analyzer.get_kline_direction(kline)
+                if kline_direction == direction:
+                    confirmed_count += 1
+            
+            # Check if enough K-lines confirm the signal
+            confirmation_ratio = confirmed_count / len(recent_klines)
+            min_confirmation_ratio = 0.7  # Require 70% confirmation
+            
+            if confirmation_ratio < min_confirmation_ratio:
+                logger.info(
+                    f"[SIGNAL_CONFIRMATION] {symbol}: "
+                    f"direction={direction}, "
+                    f"confirmed={confirmed_count}/{len(recent_klines)} ({confirmation_ratio*100:.1f}%), "
+                    f"required={min_confirmation_ratio*100:.1f}%, "
+                    f"signal not confirmed"
+                )
+                return False
+            
+            logger.info(
+                f"[SIGNAL_CONFIRMATION] {symbol}: "
+                f"direction={direction}, "
+                f"confirmed={confirmed_count}/{len(recent_klines)} ({confirmation_ratio*100:.1f}%), "
+                f"signal confirmed"
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking signal confirmation for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
+    def _check_volume_confirmation(self, symbol: str) -> bool:
+        """
+        Check if volume is confirmed by multiple K-lines
+        
+        Args:
+            symbol: Trading pair symbol
+            
+        Returns:
+            True if volume is confirmed, False otherwise
+        """
+        try:
+            # Get all 5m K-lines
+            all_klines = self.data_handler.get_klines(symbol, "5m")
+            if not all_klines:
+                logger.warning(f"No 5m K-line data for {symbol}")
+                return False
+            
+            # Filter only closed K-lines
+            closed_klines = [k for k in all_klines if k.get('is_closed', False)]
+            
+            if len(closed_klines) < self.volume_confirmation_klines:
+                logger.warning(f"Not enough closed K-lines for volume confirmation: {len(closed_klines)}")
+                return False
+            
+            # Get recent K-lines for confirmation
+            recent_klines = closed_klines[-self.volume_confirmation_klines:]
+            
+            # Calculate average volume for recent K-lines
+            recent_volumes = [k['volume'] for k in recent_klines]
+            avg_recent_volume = sum(recent_volumes) / len(recent_volumes)
+            
+            # Calculate average volume for previous K-lines
+            if len(closed_klines) > self.volume_confirmation_klines * 2:
+                previous_klines = closed_klines[-(self.volume_confirmation_klines * 2):-self.volume_confirmation_klines]
+                previous_volumes = [k['volume'] for k in previous_klines]
+                avg_previous_volume = sum(previous_volumes) / len(previous_volumes)
+                
+                # Check if recent volume is higher than previous volume
+                volume_ratio = avg_recent_volume / avg_previous_volume if avg_previous_volume > 0 else 0
+                
+                if volume_ratio < 1.1:  # Require 10% volume increase
+                    logger.info(
+                        f"[VOLUME_CONFIRMATION] {symbol}: "
+                        f"volume_ratio={volume_ratio:.2f} < 1.1, "
+                        f"volume not confirmed"
+                    )
+                    return False
+                
+                logger.info(
+                    f"[VOLUME_CONFIRMATION] {symbol}: "
+                    f"volume_ratio={volume_ratio:.2f} >= 1.1, "
+                    f"volume confirmed"
+                )
+                return True
+            else:
+                # Not enough historical data, skip confirmation
+                return True
+            
+        except Exception as e:
+            logger.error(f"Error checking volume confirmation for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
     async def _check_early_entry(self, symbol: str, kline: Dict) -> None:
         """
         实时检查开仓条件（WebSocket实时数据）
@@ -635,8 +868,33 @@ class FiveMinuteStrategy:
             if self.rsi_filter_enabled:
                 rsi_valid, rsi_info = self._check_rsi_filter(symbol, direction)
             
+            # Check sideways market filter if enabled
+            sideways_valid = True
+            sideways_info = None
+            if self.sideways_market_filter_enabled:
+                sideways_valid, sideways_info = self._check_sideways_market_filter(symbol, direction)
+            
+            # Check signal confirmation if enabled
+            signal_confirmed = True
+            if self.signal_confirmation_enabled:
+                signal_confirmed = self._check_signal_confirmation(symbol, direction, kline)
+            
+            # Check volume confirmation if enabled
+            volume_confirmed = True
+            if self.volume_confirmation_enabled:
+                volume_confirmed = self._check_volume_confirmation(symbol)
+            
             # Determine if all conditions are met
-            all_conditions_met = volume_valid and range_valid and body_valid and trend_valid and rsi_valid
+            all_conditions_met = (
+                volume_valid and
+                range_valid and
+                body_valid and
+                trend_valid and
+                rsi_valid and
+                sideways_valid and
+                signal_confirmed and
+                volume_confirmed
+            )
             
             # Calculate signal strength
             signal_strength = self.technical_analyzer.calculate_signal_strength(
@@ -859,8 +1117,33 @@ class FiveMinuteStrategy:
             if self.rsi_filter_enabled:
                 rsi_valid, rsi_info = self._check_rsi_filter(symbol, direction_5m)
             
+            # Check sideways market filter if enabled
+            sideways_valid = True
+            sideways_info = None
+            if self.sideways_market_filter_enabled:
+                sideways_valid, sideways_info = self._check_sideways_market_filter(symbol, direction_5m)
+            
+            # Check signal confirmation if enabled
+            signal_confirmed = True
+            if self.signal_confirmation_enabled:
+                signal_confirmed = self._check_signal_confirmation(symbol, direction_5m, kline_5m)
+            
+            # Check volume confirmation if enabled
+            volume_confirmed = True
+            if self.volume_confirmation_enabled:
+                volume_confirmed = self._check_volume_confirmation(symbol)
+            
             # Determine if all conditions are met
-            all_conditions_met = volume_valid and range_valid and body_valid and trend_valid and rsi_valid
+            all_conditions_met = (
+                volume_valid and
+                range_valid and
+                body_valid and
+                trend_valid and
+                rsi_valid and
+                sideways_valid and
+                signal_confirmed and
+                volume_confirmed
+            )
             
             # Calculate signal strength
             signal_strength = self.technical_analyzer.calculate_signal_strength(
