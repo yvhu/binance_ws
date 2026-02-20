@@ -97,31 +97,40 @@ class TradingExecutor:
         try:
             account = self.client.futures_account_balance()
             
-            # 如果指定了交易对，提取基础货币
+            # 打印所有资产用于调试
+            logger.debug(f"账户所有资产: {account}")
+            
+            # 确定保证金资产（根据交易对后缀）
             asset_name = 'USDT'  # 默认查询USDT
             if symbol:
-                # 从交易对中提取基础货币（如BTCUSDC -> BTC）
-                if symbol.endswith('USDT'):
-                    asset_name = 'USDT'
+                if symbol.endswith('USDC'):
+                    asset_name = 'USDC'
                 elif symbol.endswith('BUSD'):
                     asset_name = 'BUSD'
-                elif symbol.endswith('USDC'):
-                    asset_name = 'USDC'
-                else:
-                    # 对于其他交易对，提取基础货币（如BTCUSDC -> BTC）
-                    # 去掉USDC后缀
-                    base_asset = symbol.replace('USDC', '').replace('USDT', '').replace('BUSD', '')
-                    if base_asset:
-                        asset_name = base_asset
+                elif symbol.endswith('USDT'):
+                    asset_name = 'USDT'
+            
+            logger.debug(f"查询资产: {asset_name}")
             
             # 查找指定资产余额
             for asset in account:
+                logger.debug(f"检查资产: {asset['asset']} = {asset['balance']}")
                 if asset['asset'] == asset_name:
                     balance = float(asset['balance'])
                     logger.info(f"账户余额: {balance:.8f} {asset_name}")
                     return balance
             
-            logger.warning(f"未找到 {asset_name} 余额")
+            # 如果没找到指定资产，尝试返回总余额
+            logger.warning(f"未找到 {asset_name} 余额，尝试返回总余额")
+            total_balance = 0.0
+            for asset in account:
+                total_balance += float(asset['balance'])
+            
+            if total_balance > 0:
+                logger.info(f"账户总余额: {total_balance:.8f}")
+                return total_balance
+            
+            logger.warning(f"账户无余额")
             return 0.0
         except BinanceAPIException as e:
             logger.error(f"获取账户余额失败: {e}")
@@ -388,13 +397,22 @@ class TradingExecutor:
         """
         try:
             account = self.client.futures_account()
-            return {
+            
+            # 打印完整的账户信息用于调试
+            logger.debug(f"完整账户信息: {account}")
+            
+            account_info = {
                 'total_wallet_balance': float(account['totalWalletBalance']),
                 'available_balance': float(account['availableBalance']),
                 'total_position_initial_margin': float(account['totalPositionInitialMargin']),
                 'total_unrealized_profit': float(account['totalUnrealizedProfit']),
                 'total_margin_balance': float(account['totalMarginBalance'])
             }
+            
+            logger.info(f"账户总余额: {account_info['total_wallet_balance']:.2f}")
+            logger.info(f"可用余额: {account_info['available_balance']:.2f}")
+            
+            return account_info
         except BinanceAPIException as e:
             logger.error(f"获取账户信息失败: {e}")
             return None

@@ -115,7 +115,9 @@ class HMABreakoutBot:
             # 获取账户信息
             account_info = self.trading_executor.get_account_info()
             if account_info:
-                self.logger.info(f"账户余额: {account_info['total_wallet_balance']:.2f} USDT")
+                # 根据交易对确定保证金资产
+                margin_asset = 'USDC' if self.symbol.endswith('USDC') else 'USDT'
+                self.logger.info(f"账户余额: {account_info['total_wallet_balance']:.2f} {margin_asset}")
             
             # 检查当前持仓
             position_info = self.trading_executor.get_position_info(self.symbol)
@@ -447,12 +449,15 @@ class HMABreakoutBot:
             account_info = self.trading_executor.get_account_info()
             balance = account_info['total_wallet_balance'] if account_info else 0
             
+            # 根据交易对确定保证金资产
+            margin_asset = 'USDC' if self.symbol.endswith('USDC') else 'USDT'
+            
             details = {
                 "交易对": self.symbol,
                 "K线周期": self.interval,
                 "杠杆": f"{self.config.trading_config['leverage']}倍",
                 "策略": "HMA Breakout",
-                "账户余额": f"{balance:.2f} USDT",
+                "账户余额": f"{balance:.2f} {margin_asset}",
                 "止损": f"{self.config.trading_config['stop_loss_roi']:.0%}"
             }
             
@@ -499,6 +504,9 @@ class HMABreakoutBot:
         try:
             emoji = "🟢" if close_info['roi'] > 0 else "🔴"
             
+            # 根据交易对确定保证金资产
+            margin_asset = 'USDC' if self.symbol.endswith('USDC') else 'USDT'
+            
             message = f"""
 {emoji} 平仓通知
 
@@ -507,7 +515,7 @@ class HMABreakoutBot:
 入场价格: {close_info['entry_price']:.2f}
 平仓价格: {close_info['close_price']:.2f}
 盈亏: {close_info['roi']:.2%}
-盈亏金额: {close_info['pnl']:.2f} USDT
+盈亏金额: {close_info['pnl']:.2f} {margin_asset}
 原因: {reason}
 """
             
