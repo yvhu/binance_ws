@@ -256,9 +256,10 @@ class HMABreakoutBot:
                 return
             
             signal_type = signal['signal_type']
+            is_color_changed = signal.get('is_color_changed', False)
             current_price = self.kline_manager.get_latest_kline().close
             
-            self.logger.info(f"收到信号: {signal_type}, 价格: {current_price:.2f}")
+            self.logger.info(f"收到信号: {signal_type}, 颜色反转: {is_color_changed}, 价格: {current_price:.2f}")
             
             # 检查当前持仓
             has_position = self.position_manager.has_position()
@@ -266,55 +267,69 @@ class HMABreakoutBot:
             
             # 处理信号
             if signal_type == 'LONG':
-                await self._handle_long_signal(current_price, has_position, current_position_type)
+                await self._handle_long_signal(current_price, has_position, current_position_type, is_color_changed)
             elif signal_type == 'SHORT':
-                await self._handle_short_signal(current_price, has_position, current_position_type)
+                await self._handle_short_signal(current_price, has_position, current_position_type, is_color_changed)
             elif signal_type == 'CLOSE':
                 await self._handle_close_signal(current_price, has_position)
             
         except Exception as e:
             self.logger.error(f"处理策略失败: {e}")
     
-    async def _handle_long_signal(self, current_price: float, 
-                                  has_position: bool, 
-                                  current_position_type: Optional[PositionType]) -> None:
+    async def _handle_long_signal(self, current_price: float,
+                                  has_position: bool,
+                                  current_position_type: Optional[PositionType],
+                                  is_color_changed: bool) -> None:
         """处理多头信号"""
         try:
             if has_position:
                 if current_position_type == PositionType.SHORT:
                     # 有空仓，先平空仓
-                    self.logger.info("收到多头信号，先平空仓")
+                    self.logger.info("收到多头信号（颜色反转），先平空仓")
                     await self._close_position(current_price, "信号反转")
-                
-                # 有多仓，保持仓位
-                self.logger.info("已有多仓，保持仓位")
+                    # 平仓后开多仓
+                    self.logger.info("平空仓后，开多仓")
+                    await self._open_long_position(current_price)
+                else:
+                    # 有多仓，保持仓位
+                    self.logger.info("已有多仓，保持仓位")
                 return
             
-            # 无持仓，开多仓
-            self.logger.info("开多仓")
-            await self._open_long_position(current_price)
+            # 无持仓，只有在颜色反转时才能开多仓
+            if is_color_changed:
+                self.logger.info("颜色反转，开多仓")
+                await self._open_long_position(current_price)
+            else:
+                self.logger.info("颜色未反转，不开仓")
             
         except Exception as e:
             self.logger.error(f"处理多头信号失败: {e}")
     
-    async def _handle_short_signal(self, current_price: float, 
-                                   has_position: bool, 
-                                   current_position_type: Optional[PositionType]) -> None:
+    async def _handle_short_signal(self, current_price: float,
+                                   has_position: bool,
+                                   current_position_type: Optional[PositionType],
+                                   is_color_changed: bool) -> None:
         """处理空头信号"""
         try:
             if has_position:
                 if current_position_type == PositionType.LONG:
                     # 有多仓，先平多仓
-                    self.logger.info("收到空头信号，先平多仓")
+                    self.logger.info("收到空头信号（颜色反转），先平多仓")
                     await self._close_position(current_price, "信号反转")
-                
-                # 有空仓，保持仓位
-                self.logger.info("已有空仓，保持仓位")
+                    # 平仓后开空仓
+                    self.logger.info("平多仓后，开空仓")
+                    await self._open_short_position(current_price)
+                else:
+                    # 有空仓，保持仓位
+                    self.logger.info("已有空仓，保持仓位")
                 return
             
-            # 无持仓，开空仓
-            self.logger.info("开空仓")
-            await self._open_short_position(current_price)
+            # 无持仓，只有在颜色反转时才能开空仓
+            if is_color_changed:
+                self.logger.info("颜色反转，开空仓")
+                await self._open_short_position(current_price)
+            else:
+                self.logger.info("颜色未反转，不开仓")
             
         except Exception as e:
             self.logger.error(f"处理空头信号失败: {e}")

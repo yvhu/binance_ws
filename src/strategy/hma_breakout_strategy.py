@@ -63,17 +63,23 @@ class HMABreakoutStrategy:
         
         # 检查颜色是否变化
         if current_color != self.current_color:
+            # 颜色反转，生成开仓信号
             self.current_color = current_color
-            return self._generate_signal(current_color)
+            return self._generate_signal(current_color, is_color_changed=True)
+        else:
+            # 颜色未变，只检查是否需要平仓
+            if current_color == 'GRAY':
+                return self._generate_signal(current_color, is_color_changed=False)
         
         return None
     
-    def _generate_signal(self, color: str) -> Optional[Dict]:
+    def _generate_signal(self, color: str, is_color_changed: bool) -> Optional[Dict]:
         """
         生成交易信号
         
         Args:
             color: 颜色
+            is_color_changed: 颜色是否发生变化
             
         Returns:
             信号字典
@@ -86,20 +92,34 @@ class HMABreakoutStrategy:
             'ma1': ma1,
             'ma2': ma2,
             'ma3': ma3,
-            'signal_type': None
+            'signal_type': None,
+            'is_color_changed': is_color_changed
         }
         
         if color == 'GREEN':
-            signal['signal_type'] = 'LONG'
-            self.long_signals += 1
-            self.last_signal = 'LONG'
-            logger.info(f"生成多头信号: MA1={ma1:.2f}, MA2={ma2:.2f}, MA3={ma3:.2f}")
+            if is_color_changed:
+                # 颜色反转，可以开多仓
+                signal['signal_type'] = 'LONG'
+                self.long_signals += 1
+                self.last_signal = 'LONG'
+                logger.info(f"生成多头信号（颜色反转）: MA1={ma1:.2f}, MA2={ma2:.2f}, MA3={ma3:.2f}")
+            else:
+                # 颜色未变，不生成信号
+                logger.debug(f"颜色未变（GREEN），不生成信号")
+                return None
         elif color == 'RED':
-            signal['signal_type'] = 'SHORT'
-            self.short_signals += 1
-            self.last_signal = 'SHORT'
-            logger.info(f"生成空头信号: MA1={ma1:.2f}, MA2={ma2:.2f}, MA3={ma3:.2f}")
+            if is_color_changed:
+                # 颜色反转，可以开空仓
+                signal['signal_type'] = 'SHORT'
+                self.short_signals += 1
+                self.last_signal = 'SHORT'
+                logger.info(f"生成空头信号（颜色反转）: MA1={ma1:.2f}, MA2={ma2:.2f}, MA3={ma3:.2f}")
+            else:
+                # 颜色未变，不生成信号
+                logger.debug(f"颜色未变（RED），不生成信号")
+                return None
         elif color == 'GRAY':
+            # 灰色信号，总是平仓
             signal['signal_type'] = 'CLOSE'
             self.close_signals += 1
             self.last_signal = 'CLOSE'
