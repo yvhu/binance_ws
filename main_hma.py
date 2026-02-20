@@ -161,24 +161,57 @@ class HMABreakoutBot:
             entry_price = position_info['entry_price']
             leverage = position_info['leverage']
             
+            position_type = None
+            quantity = 0
+            
             if position_amount > 0:
                 # 多头持仓
+                position_type = PositionType.LONG
+                quantity = position_amount
                 self.position_manager.open_position(
-                    position_type=PositionType.LONG,
+                    position_type=position_type,
                     entry_price=entry_price,
-                    quantity=position_amount,
+                    quantity=quantity,
                     leverage=leverage
                 )
             elif position_amount < 0:
                 # 空头持仓
+                position_type = PositionType.SHORT
+                quantity = abs(position_amount)
                 self.position_manager.open_position(
-                    position_type=PositionType.SHORT,
+                    position_type=position_type,
                     entry_price=entry_price,
-                    quantity=abs(position_amount),
+                    quantity=quantity,
                     leverage=leverage
                 )
             
             self.logger.info(f"持仓已同步: {self.position_manager.get_current_position()}")
+            
+            # 为现有持仓设置止损单（先检查是否已有止损单）
+            if position_type and quantity > 0:
+                # 检查是否已有止损单
+                has_stop_loss = self.trading_executor.has_active_stop_loss_order(self.symbol)
+                
+                if has_stop_loss:
+                    self.logger.info(f"检测到已有止损单，跳过设置")
+                else:
+                    self.logger.info(f"为现有持仓设置止损单...")
+                    stop_loss_order_id = self.trading_executor.set_stop_loss_for_existing_position(
+                        symbol=self.symbol,
+                        position_type=position_type,
+                        quantity=quantity,
+                        entry_price=entry_price,
+                        stop_loss_roi=self.config.trading_config['stop_loss_roi']
+                    )
+                    
+                    if stop_loss_order_id:
+                        # 更新持仓管理器中的止损单ID
+                        position = self.position_manager.get_current_position()
+                        if position:
+                            position.stop_loss_algo_id = stop_loss_order_id
+                            self.logger.info(f"止损单ID已更新到持仓管理器: {stop_loss_order_id}")
+                    else:
+                        self.logger.warning(f"为现有持仓设置止损单失败")
             
         except Exception as e:
             self.logger.error(f"同步持仓失败: {e}")

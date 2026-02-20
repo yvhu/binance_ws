@@ -981,6 +981,90 @@ class TradingExecutor:
         """
         return self.algo_order_manager.get_all_orders(symbol)
     
+    def has_active_stop_loss_order(self, symbol: str) -> bool:
+        """
+        检查指定交易对是否有活跃的止损单
+        
+        Args:
+            symbol: 交易对
+            
+        Returns:
+            是否有活跃的止损单
+        """
+        try:
+            # 先从本地管理器检查
+            local_orders = self.algo_order_manager.get_all_orders(symbol)
+            if local_orders:
+                self.logger.info(f"本地管理器中发现 {len(local_orders)} 个止损单")
+                return True
+            
+            # 如果本地没有，从 Binance API 查询
+            # 获取所有开放订单
+            open_orders = self.client.futures_get_open_orders(symbol=symbol)
+            
+            # 检查是否有止损类型的订单
+            for order in open_orders:
+                order_type = order.get('type', '')
+                if order_type in ['STOP', 'STOP_MARKET', 'TAKE_PROFIT', 'TAKE_PROFIT_MARKET']:
+                    self.logger.info(f"从 Binance API 发现止损单: 订单ID={order.get('orderId')}, 类型={order_type}")
+                    return True
+            
+            self.logger.info(f"未发现 {symbol} 的活跃止损单")
+            return False
+            
+        except BinanceAPIException as e:
+            self.logger.error(f"查询止损单失败: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"查询止损单异常: {e}")
+            return False
+    
+    def set_stop_loss_for_existing_position(self, symbol: str, position_type: PositionType,
+                                           quantity: float, entry_price: float,
+                                           stop_loss_roi: float = -0.40) -> Optional[int]:
+        """
+        为现有持仓设置止损单
+        
+        Args:
+            symbol: 交易对
+            position_type: 持仓类型
+            quantity: 数量
+            entry_price: 入场价格
+            stop_loss_roi: 止损ROI（默认-40%）
+            
+        Returns:
+            止损单ID，失败返回None
+        """
+        try:
+            # 根据持仓类型确定止损单方向
+            if position_type == PositionType.LONG:
+                side = SIDE_SELL
+            else:
+                side = SIDE_BUY
+            
+            # 设置止损单
+            stop_loss_order_id = self._set_stop_loss_order(
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                entry_price=entry_price,
+                stop_loss_roi=stop_loss_roi
+            )
+            
+            if stop_loss_order_id:
+                logger.info(f"为现有持仓设置止损单成功: {symbol} 类型={position_type} "
+                           f"入场价={entry_price:.2f} 止损单ID={stop_loss_order_id}")
+            else:
+                logger.warning(f"为现有持仓设置止损单失败: {symbol}")
+            
+            return stop_loss_order_id
+            
+        except Exception as e:
+            logger.error(f"为现有持仓设置止损单异常: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
     def get_account_info(self) -> Optional[Dict]:
         """
         获取账户信息
