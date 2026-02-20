@@ -166,7 +166,7 @@ class TradingExecutor:
                         'position_amount': float(pos['positionAmt']),
                         'entry_price': float(pos['entryPrice']),
                         'unrealized_pnl': float(pos['unRealizedProfit']),
-                        'leverage': int(pos['leverage'])
+                        'leverage': int(pos.get('leverage', 1))  # 使用 get 方法，默认值为 1
                     }
             return None
         except BinanceAPIException as e:
