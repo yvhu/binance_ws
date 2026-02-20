@@ -360,7 +360,7 @@ class HMABreakoutBot:
                 return
             
             # 计算仓位大小（全仓）
-            quantity = self.trading_executor.calculate_position_size(balance, current_price)
+            quantity = self.trading_executor.calculate_position_size(balance, current_price, self.symbol)
             
             # 开多仓并设置止损单
             order = self.trading_executor.open_long_position(
@@ -394,7 +394,7 @@ class HMABreakoutBot:
                 return
             
             # 计算仓位大小（全仓）
-            quantity = self.trading_executor.calculate_position_size(balance, current_price)
+            quantity = self.trading_executor.calculate_position_size(balance, current_price, self.symbol)
             
             # 开空仓并设置止损单
             order = self.trading_executor.open_short_position(

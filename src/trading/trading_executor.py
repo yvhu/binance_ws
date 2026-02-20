@@ -33,6 +33,9 @@ class TradingExecutor:
         
         # 初始化Binance客户端
         self.client = Client(api_key, api_secret)
+        
+        # 缓存交易对精度信息
+        self.symbol_precision_cache: Dict[str, Dict] = {}
     
     def set_leverage(self, symbol: str, leverage: int) -> bool:
         """
@@ -170,13 +173,96 @@ class TradingExecutor:
             logger.error(f"获取持仓信息失败: {e}")
             return None
     
-    def calculate_position_size(self, balance: float, current_price: float) -> float:
+    def get_symbol_precision(self, symbol: str) -> Optional[Dict]:
+        """
+        获取交易对精度信息
+        
+        Args:
+            symbol: 交易对
+            
+        Returns:
+            精度信息字典，包含 quantity_precision 和 price_precision
+        """
+        # 检查缓存
+        if symbol in self.symbol_precision_cache:
+            return self.symbol_precision_cache[symbol]
+        
+        try:
+            exchange_info = self.client.futures_exchange_info()
+            
+            for s in exchange_info['symbols']:
+                if s['symbol'] == symbol:
+                    # 获取数量精度
+                    quantity_precision = 0
+                    for filter_info in s['filters']:
+                        if filter_info['filterType'] == 'LOT_SIZE':
+                            step_size = float(filter_info['stepSize'])
+                            # 计算小数位数
+                            if step_size < 1:
+                                quantity_precision = len(str(step_size).split('.')[1].rstrip('0'))
+                            break
+                    
+                    # 获取价格精度
+                    price_precision = 0
+                    for filter_info in s['filters']:
+                        if filter_info['filterType'] == 'PRICE_FILTER':
+                            tick_size = float(filter_info['tickSize'])
+                            # 计算小数位数
+                            if tick_size < 1:
+                                price_precision = len(str(tick_size).split('.')[1].rstrip('0'))
+                            break
+                    
+                    precision_info = {
+                        'quantity_precision': quantity_precision,
+                        'price_precision': price_precision,
+                        'step_size': step_size,
+                        'tick_size': tick_size
+                    }
+                    
+                    # 缓存结果
+                    self.symbol_precision_cache[symbol] = precision_info
+                    
+                    logger.info(f"交易对 {symbol} 精度: 数量={quantity_precision}, 价格={price_precision}")
+                    return precision_info
+            
+            logger.error(f"未找到交易对 {symbol} 的精度信息")
+            return None
+            
+        except BinanceAPIException as e:
+            logger.error(f"获取交易对精度失败: {e}")
+            return None
+    
+    def round_quantity(self, symbol: str, quantity: float) -> float:
+        """
+        根据交易对精度对数量进行四舍五入
+        
+        Args:
+            symbol: 交易对
+            quantity: 原始数量
+            
+        Returns:
+            四舍五入后的数量
+        """
+        precision_info = self.get_symbol_precision(symbol)
+        if precision_info:
+            step_size = precision_info['step_size']
+            # 向下取整到最近的 step_size 倍数
+            rounded_quantity = int(quantity / step_size) * step_size
+            logger.debug(f"数量四舍五入: {quantity:.8f} -> {rounded_quantity:.8f} (step_size={step_size})")
+            return rounded_quantity
+        else:
+            # 如果无法获取精度，默认保留3位小数
+            logger.warning(f"无法获取 {symbol} 精度，使用默认精度3位小数")
+            return round(quantity, 3)
+    
+    def calculate_position_size(self, balance: float, current_price: float, symbol: str = None) -> float:
         """
         计算仓位大小（全仓交易）
         
         Args:
             balance: 账户余额
             current_price: 当前价格
+            symbol: 交易对（可选，用于精度处理）
             
         Returns:
             仓位数量
@@ -188,6 +274,11 @@ class TradingExecutor:
         
         logger.info(f"计算仓位大小: 余额={balance:.2f}, 价格={current_price:.2f}, "
                    f"杠杆={self.leverage}x, 数量={quantity:.4f}")
+        
+        # 如果提供了交易对，根据精度进行四舍五入
+        if symbol:
+            quantity = self.round_quantity(symbol, quantity)
+            logger.info(f"精度调整后数量: {quantity:.8f}")
         
         return quantity
     
@@ -205,24 +296,28 @@ class TradingExecutor:
             订单信息
         """
         try:
+            # 根据交易对精度对数量进行四舍五入
+            rounded_quantity = self.round_quantity(symbol, quantity)
+            logger.info(f"开多仓数量调整: {quantity:.8f} -> {rounded_quantity:.8f}")
+            
             # 使用市价单开多仓
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=SIDE_BUY,
                 type=ORDER_TYPE_MARKET,
-                quantity=quantity
+                quantity=rounded_quantity
             )
             
-            logger.info(f"开多仓成功: {symbol} 数量={quantity:.4f}")
+            logger.info(f"开多仓成功: {symbol} 数量={rounded_quantity:.8f}")
             
             # 获取成交价格
             entry_price = float(order['avgPrice']) if 'avgPrice' in order else None
             if entry_price:
-                # 设置止损单
+                # 设置止损单（使用调整后的数量）
                 self._set_stop_loss_order(
                     symbol=symbol,
                     side=SIDE_SELL,
-                    quantity=quantity,
+                    quantity=rounded_quantity,
                     entry_price=entry_price,
                     stop_loss_roi=stop_loss_roi
                 )
@@ -247,24 +342,28 @@ class TradingExecutor:
             订单信息
         """
         try:
+            # 根据交易对精度对数量进行四舍五入
+            rounded_quantity = self.round_quantity(symbol, quantity)
+            logger.info(f"开空仓数量调整: {quantity:.8f} -> {rounded_quantity:.8f}")
+            
             # 使用市价单开空仓
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=SIDE_SELL,
                 type=ORDER_TYPE_MARKET,
-                quantity=quantity
+                quantity=rounded_quantity
             )
             
-            logger.info(f"开空仓成功: {symbol} 数量={quantity:.4f}")
+            logger.info(f"开空仓成功: {symbol} 数量={rounded_quantity:.8f}")
             
             # 获取成交价格
             entry_price = float(order['avgPrice']) if 'avgPrice' in order else None
             if entry_price:
-                # 设置止损单
+                # 设置止损单（使用调整后的数量）
                 self._set_stop_loss_order(
                     symbol=symbol,
                     side=SIDE_BUY,
-                    quantity=quantity,
+                    quantity=rounded_quantity,
                     entry_price=entry_price,
                     stop_loss_roi=stop_loss_roi
                 )
@@ -275,7 +374,7 @@ class TradingExecutor:
             logger.error(f"开空仓失败: {e}")
             return None
     
-    def close_position(self, symbol: str, position_type: PositionType, 
+    def close_position(self, symbol: str, position_type: PositionType,
                        quantity: float) -> Optional[Dict]:
         """
         平仓
@@ -289,6 +388,10 @@ class TradingExecutor:
             订单信息
         """
         try:
+            # 根据交易对精度对数量进行四舍五入
+            rounded_quantity = self.round_quantity(symbol, quantity)
+            logger.info(f"平仓数量调整: {quantity:.8f} -> {rounded_quantity:.8f}")
+            
             # 根据持仓类型决定平仓方向
             if position_type == PositionType.LONG:
                 # 平多仓：卖出
@@ -296,7 +399,7 @@ class TradingExecutor:
                     symbol=symbol,
                     side=SIDE_SELL,
                     type=ORDER_TYPE_MARKET,
-                    quantity=quantity
+                    quantity=rounded_quantity
                 )
             else:
                 # 平空仓：买入
@@ -304,10 +407,10 @@ class TradingExecutor:
                     symbol=symbol,
                     side=SIDE_BUY,
                     type=ORDER_TYPE_MARKET,
-                    quantity=quantity
+                    quantity=rounded_quantity
                 )
             
-            logger.info(f"平仓成功: {symbol} 数量={quantity:.4f}")
+            logger.info(f"平仓成功: {symbol} 数量={rounded_quantity:.8f}")
             return order
             
         except BinanceAPIException as e:
