@@ -69,6 +69,12 @@ class FiveMinuteStrategy:
         self.trend_filter_enabled = config.get_config("strategy", "trend_filter_enabled", default=True)
         self.trend_filter_ma_period = config.get_config("strategy", "trend_filter_ma_period", default=20)
         
+        # Reverse position stop loss configuration (反向开仓止损配置)
+        self.reverse_position_stop_loss_enabled = config.get_config("strategy", "reverse_position_stop_loss_enabled", default=True)
+        self.reverse_position_check_on_entry = config.get_config("strategy", "reverse_position_check_on_entry", default=True)
+        self.reverse_position_check_on_kline_close = config.get_config("strategy", "reverse_position_check_on_kline_close", default=True)
+        self.reverse_position_check_on_realtime = config.get_config("strategy", "reverse_position_check_on_realtime", default=True)
+        
         # ATR-based stop loss configuration
         self.atr_stop_loss_enabled = config.get_config("strategy", "atr_stop_loss_enabled", default=True)
         self.atr_stop_loss_multiplier = config.get_config("strategy", "atr_stop_loss_multiplier", default=1.5)
@@ -238,6 +244,9 @@ class FiveMinuteStrategy:
             await self._check_engulfing_stop_loss_realtime(symbol, kline_info)
             # Check for real-time trend reversal
             await self._check_realtime_trend_reversal(symbol, kline_info)
+            # Check for reverse position stop loss (反向开仓止损)
+            if self.reverse_position_check_on_realtime:
+                await self._check_reverse_position_stop_loss(symbol, kline_info, is_realtime=True)
         
         # Check for early entry if K-line is not closed (real-time entry)
         if not is_closed:
@@ -268,13 +277,23 @@ class FiveMinuteStrategy:
             # Check engulfing stop loss
             await self._check_engulfing_stop_loss(symbol, kline_info)
             
+            # Check for reverse position stop loss (反向开仓止损)
+            if self.reverse_position_check_on_kline_close:
+                await self._check_reverse_position_stop_loss(symbol, kline_info, is_realtime=False)
+            
             # Update trailing stop loss if enabled
             if self.trailing_stop_enabled:
                 await self._update_trailing_stop_loss(symbol, kline_info)
         
         # Check if position can be opened (no existing position)
         if self.position_manager.has_position(symbol):
-            return
+            # Check for reverse position stop loss before opening new position
+            if self.reverse_position_check_on_entry:
+                await self._check_reverse_position_stop_loss(symbol, kline_info, is_realtime=False)
+            
+            # Re-check if position still exists after reverse stop loss check
+            if self.position_manager.has_position(symbol):
+                return
         
         # Execute strategy logic
         await self._check_and_open_position(symbol, kline_info)
@@ -865,6 +884,9 @@ class FiveMinuteStrategy:
         try:
             # Check if position already exists
             if self.position_manager.has_position(symbol):
+                # Check for reverse position stop loss in real-time
+                if self.reverse_position_check_on_realtime:
+                    await self._check_reverse_position_stop_loss(symbol, kline, is_realtime=True)
                 return
             
             # 实时检查：每次K线更新都检查开仓条件
@@ -2287,6 +2309,192 @@ class FiveMinuteStrategy:
             logger.error(traceback.format_exc())
             import traceback
             logger.error(traceback.format_exc())
+    
+    async def _check_reverse_position_stop_loss(self, symbol: str, current_kline: Dict, is_realtime: bool = False) -> bool:
+        """
+        检查是否需要反向开仓止损
+        当出现与当前持仓方向相反的开仓信号时，立即平仓，避免连续开仓风险
+        
+        Args:
+            symbol: 交易对
+            current_kline: 当前K线
+            is_realtime: 是否为实时检查（未等待K线关闭）
+            
+        Returns:
+            True if position was closed due to reverse signal, False otherwise
+        """
+        try:
+            # 检查是否启用反向开仓止损
+            if not self.reverse_position_stop_loss_enabled:
+                return False
+            
+            # 检查是否有持仓
+            position = self.position_manager.get_position(symbol)
+            if not position:
+                return False
+            
+            position_side = position['side']
+            
+            # 获取当前K线方向
+            current_direction = self.technical_analyzer.get_kline_direction(current_kline)
+            if current_direction is None:
+                return False
+            
+            # 检查方向是否相反
+            is_reverse = False
+            if position_side == 'LONG' and current_direction == 'DOWN':
+                is_reverse = True
+            elif position_side == 'SHORT' and current_direction == 'UP':
+                is_reverse = True
+            
+            if not is_reverse:
+                return False
+            
+            # 检查是否满足开仓条件（成交量、实体比例、范围等）
+            volume_valid, volume_info = self._check_volume_condition(symbol, current_kline)
+            range_valid, range_info = self._check_range_condition(symbol, current_kline)
+            body_valid, body_info = self._check_body_ratio(current_kline)
+            
+            # 检查趋势过滤
+            trend_valid = True
+            if self.trend_filter_enabled:
+                trend_valid, trend_info = self._check_trend_filter(symbol, current_direction)
+            
+            # 检查RSI过滤
+            rsi_valid = True
+            if self.rsi_filter_enabled:
+                rsi_valid, rsi_info = self._check_rsi_filter(symbol, current_direction)
+            
+            # 检查横盘市场过滤
+            sideways_valid = True
+            if self.sideways_market_filter_enabled:
+                sideways_valid, sideways_info = self._check_sideways_market_filter(symbol, current_direction)
+            
+            # 检查信号确认
+            signal_confirmed = True
+            if self.signal_confirmation_enabled:
+                signal_confirmed = self._check_signal_confirmation(symbol, current_direction, current_kline)
+            
+            # 检查成交量确认
+            volume_confirmed = True
+            if self.volume_confirmation_enabled:
+                volume_confirmed = self._check_volume_confirmation(symbol)
+            
+            # 判断是否满足所有开仓条件
+            all_conditions_met = (
+                volume_valid and
+                range_valid and
+                body_valid and
+                trend_valid and
+                rsi_valid and
+                sideways_valid and
+                signal_confirmed and
+                volume_confirmed
+            )
+            
+            # 如果满足所有条件，说明出现了反向开仓信号，立即平仓
+            if all_conditions_met:
+                logger.warning(
+                    f"[REVERSE_POSITION_STOP_LOSS] {symbol}: "
+                    f"position_side={position_side}, "
+                    f"current_direction={current_direction}, "
+                    f"reverse signal detected, closing position immediately"
+                )
+                
+                # 立即平仓
+                success = await self.trading_executor.close_all_positions(symbol)
+                
+                if success:
+                    # 获取持仓详情
+                    entry_price = position.get('entry_price', 0)
+                    quantity = position.get('quantity', 0)
+                    current_price = self.data_handler.get_current_price(symbol)
+                    
+                    # 计算盈亏
+                    pnl = 0.0
+                    if current_price and entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SHORT
+                            pnl = (entry_price - current_price) * quantity
+                    
+                    # 计算盈亏比例
+                    pnl_percent = 0.0
+                    if entry_price > 0:
+                        if position_side == 'LONG':
+                            pnl_percent = (current_price - entry_price) / entry_price
+                        else:  # SHORT
+                            pnl_percent = (entry_price - current_price) / entry_price
+                    
+                    # 发送平仓通知
+                    check_type = "实时监控" if is_realtime else "K线关闭"
+                    await self.telegram_client.send_close_notification(
+                        symbol=symbol,
+                        side=position_side,
+                        entry_price=entry_price,
+                        exit_price=current_price if current_price else 0,
+                        quantity=quantity,
+                        pnl=pnl,
+                        close_reason=f"反向开仓止损触发\n"
+                                   f"持仓方向: {position_side}\n"
+                                   f"反向信号: {current_direction}\n"
+                                   f"当前价格: ${current_price:.2f if current_price else 'N/A'}\n"
+                                   f"开仓价格: ${entry_price:.2f}\n"
+                                   f"盈亏比例: {pnl_percent*100:.2f}%\n"
+                                   f"检查方式: {check_type}\n"
+                                   f"⚡ 检测到反向开仓信号，立即平仓避免连续开仓"
+                    )
+                    
+                    # 更新交易结果
+                    self._update_trade_result(pnl)
+                    
+                    # 记录退出信号
+                    self._log_signal(
+                        symbol=symbol,
+                        direction='UP' if position_side == 'LONG' else 'DOWN',
+                        current_price=current_price if current_price else 0,
+                        kline=current_kline,
+                        signal_strength='MEDIUM',
+                        volume_info=volume_info,
+                        range_info=range_info,
+                        body_info=body_info,
+                        signal_type="EXIT_REVERSE_POSITION_STOP_LOSS"
+                    )
+                    
+                    # 记录交易数据
+                    self._log_trade(symbol, position, current_price if current_price else 0, "Reverse Position Stop Loss")
+                    
+                    # 清除本地持仓状态
+                    self.position_manager.close_position(symbol, current_price if current_price else 0)
+                    
+                    # 清除相关状态
+                    if symbol in self.position_peak_prices:
+                        del self.position_peak_prices[symbol]
+                    if symbol in self.position_entry_times:
+                        del self.position_entry_times[symbol]
+                    if symbol in self.partial_take_profit_status:
+                        del self.partial_take_profit_status[symbol]
+                    if symbol in self.stop_loss_first_trigger_time:
+                        del self.stop_loss_first_trigger_time[symbol]
+                    
+                    logger.info(
+                        f"[REVERSE_POSITION_STOP_LOSS] {symbol}: "
+                        f"Position closed successfully due to reverse signal, "
+                        f"PnL: ${pnl:.2f} ({pnl_percent*100:.2f}%)"
+                    )
+                    
+                    return True
+                else:
+                    logger.error(f"[REVERSE_POSITION_STOP_LOSS] {symbol}: Failed to close position")
+                    return False
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking reverse position stop loss for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
     
     async def _update_trailing_stop_loss(self, symbol: str, current_kline: Dict) -> None:
         """

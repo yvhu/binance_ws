@@ -68,6 +68,12 @@ stop_loss_min_distance_percent = 0.008  # Minimum stop loss distance as percenta
 stop_loss_max_distance_percent = 0.015  # Maximum stop loss distance as percentage of price (1.5% = 0.015) - 降低到1.5%
 engulfing_body_ratio_threshold = 0.9  # Minimum engulfing body ratio to trigger stop loss (90% = more sensitive) - 降低到90%
 
+# Reverse position stop loss parameters (反向开仓止损参数) - 避免连续开仓风险
+reverse_position_stop_loss_enabled = true  # 启用反向开仓止损 - 当出现反向信号时立即平仓
+reverse_position_check_on_entry = true  # 开仓前检查是否需要反向止损
+reverse_position_check_on_kline_close = true  # K线关闭时检查是否需要反向止损
+reverse_position_check_on_realtime = true  # 实时检查是否需要反向止损
+
 # ATR-based stop loss parameters (ATR动态止损参数) - 5分钟日内交易优化
 atr_stop_loss_enabled = true  # Enable ATR-based stop loss (启用ATR动态止损)
 atr_stop_loss_multiplier = 1.2  # ATR multiplier for stop loss distance (ATR倍数) - 降低到1.2
