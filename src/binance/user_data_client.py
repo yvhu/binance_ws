@@ -1,175 +1,158 @@
 """
-Binance Futures User Data Stream Client
-Handles WebSocket connections for user account data (balance, positions, orders)
+Binance User Data Stream Client
+Handles WebSocket connections for user data (orders, positions, account)
 """
 
 import asyncio
 import json
 import logging
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 import websockets
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
+import hmac
+import hashlib
+import time
 
 from ..config.config_manager import ConfigManager
-
+from binance.client import Client
 
 logger = logging.getLogger(__name__)
 
 
 class UserDataClient:
-    """Binance user data stream client for account information"""
+    """Binance user data stream client"""
     
-    def __init__(self, config: ConfigManager, trading_executor):
+    def __init__(self, config: ConfigManager, api_key: str, api_secret: str):
         """
         Initialize user data stream client
         
         Args:
             config: Configuration manager instance
-            trading_executor: Trading executor for getting listen key
+            api_key: Binance API key
+            api_secret: Binance API secret
         """
         self.config = config
-        self.trading_executor = trading_executor
-        self.ws_url = config.binance_ws_url
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.client = Client(api_key, api_secret)
         
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.is_connected = False
         self.listen_key: Optional[str] = None
+        self.keep_alive_task: Optional[asyncio.Task] = None
         
-        # Callbacks for different message types
-        self.callbacks: Dict[str, Callable] = {
-            'account_update': None,
-            'order_update': None,
-            'position_update': None,
-            'error': None
+        # Callbacks for different event types
+        self.callbacks: Dict[str, List[Callable]] = {
+            'order_update': [],
+            'error': []
         }
         
-        # Account data storage
-        self.account_balance: Optional[float] = None
-        self.positions: Dict[str, Dict] = {}
-        
-        # Keep-alive task
-        self.keep_alive_task: Optional[asyncio.Task] = None
+        # Track active callback tasks
+        self.active_tasks: List[asyncio.Task] = []
     
-    def on_account_update(self, callback: Callable) -> None:
+    def on_message(self, message_type: str, callback: Callable) -> None:
         """
-        Register callback for account updates
+        Register callback for specific message type
         
         Args:
-            callback: Callback function to handle account updates
+            message_type: Type of message (order_update, account_update, position_update, error)
+            callback: Callback function to handle the message
         """
-        self.callbacks['account_update'] = callback
+        if message_type in self.callbacks:
+            self.callbacks[message_type].append(callback)
     
-    def on_order_update(self, callback: Callable) -> None:
+    async def _get_listen_key(self) -> str:
         """
-        Register callback for order updates
+        Get listen key for user data stream
         
-        Args:
-            callback: Callback function to handle order updates
+        Returns:
+            Listen key string
         """
-        self.callbacks['order_update'] = callback
+        try:
+            response = self.client.futures_stream_get_listen_key()
+            logger.info("获取用户数据流 listen key 成功")
+            return response
+        except Exception as e:
+            logger.error(f"获取 listen key 失败: {e}")
+            raise
     
-    def on_position_update(self, callback: Callable) -> None:
+    async def _keep_alive_listen_key(self) -> None:
         """
-        Register callback for position updates
-        
-        Args:
-            callback: Callback function to handle position updates
+        Keep the listen key alive by sending keep-alive request every 30 minutes
         """
-        self.callbacks['position_update'] = callback
-    
-    def on_error(self, callback: Callable) -> None:
-        """
-        Register callback for errors
-        
-        Args:
-            callback: Callback function to handle errors
-        """
-        self.callbacks['error'] = callback
+        while self.is_connected:
+            try:
+                await asyncio.sleep(30 * 60)  # 30 minutes
+                if self.listen_key:
+                    self.client.futures_stream_keepalive(self.listen_key)
+                    logger.info("Keep-alive 请求发送成功")
+            except Exception as e:
+                logger.error(f"Keep-alive 请求失败: {e}")
     
     async def connect(self) -> None:
         """Connect to Binance user data stream"""
-        # Get listen key
-        self.listen_key = await asyncio.to_thread(
-            self.trading_executor.get_listen_key
-        )
-        
-        if not self.listen_key:
-            logger.error("[USER_WS] ✗ Failed to get listen key: listen_key is None or empty")
-            raise RuntimeError("Failed to get listen key")
-        
-        # Build WebSocket URL per Binance docs: wss://fstream.binance.com/ws/<listenKey>
-        url = f"wss://fstream.binance.com/ws/{self.listen_key}"
-        
         try:
-            # Set timeout to avoid hanging
+            # Get listen key
+            self.listen_key = await self._get_listen_key()
+            
+            # Build WebSocket URL
+            ws_url = f"wss://fstream.binance.com/ws/{self.listen_key}"
+            
+            # Connect
             self.websocket = await asyncio.wait_for(
-                websockets.connect(url),
+                websockets.connect(
+                    ws_url,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    close_timeout=5,
+                    max_queue=1000
+                ),
                 timeout=30.0
             )
+            
             self.is_connected = True
+            logger.info("用户数据流连接成功")
             
             # Start keep-alive task
-            self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
+            self.keep_alive_task = asyncio.create_task(self._keep_alive_listen_key())
             
-            # 主动用 REST 获取一次余额（否则可能永远收不到）
-            try:
-                balance = await asyncio.to_thread(
-                    self.trading_executor.get_account_balance
-                )
-                self.account_balance = balance
-            except Exception as e:
-                logger.error(f"[USER_WS] ✗ Failed to fetch initial balance: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
         except asyncio.TimeoutError:
-            logger.error("[USER_WS] ✗ User data stream connection timeout after 30 seconds")
+            logger.error("用户数据流连接超时")
             self.is_connected = False
             raise
         except Exception as e:
-            logger.error(f"[USER_WS] ✗ Failed to connect to user data stream: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"用户数据流连接失败: {e}")
             self.is_connected = False
             raise
     
     async def disconnect(self) -> None:
         """Disconnect from user data stream"""
-        if self.keep_alive_task:
-            self.keep_alive_task.cancel()
-            try:
-                await self.keep_alive_task
-            except asyncio.CancelledError:
-                pass
-        
-        if self.websocket:
-            await self.websocket.close()
+        try:
+            # Cancel keep-alive task
+            if self.keep_alive_task:
+                self.keep_alive_task.cancel()
+                try:
+                    await self.keep_alive_task
+                except asyncio.CancelledError:
+                    pass
+            
+            # Close WebSocket
+            if self.websocket:
+                await self.websocket.close()
+            
+            # Close listen key
+            if self.listen_key:
+                try:
+                    self.client.futures_stream_close(self.listen_key)
+                    logger.info("Listen key 已关闭")
+                except Exception as e:
+                    logger.error(f"关闭 listen key 失败: {e}")
+            
             self.is_connected = False
-    
-    async def _keep_alive_loop(self) -> None:
-        """Keep the listen key alive (every 30 minutes)"""
-        while self.is_connected:
-            try:
-                # Wait 30 minutes
-                await asyncio.sleep(30 * 60)
-                
-                # Keep alive
-                if self.listen_key:
-                    success = await asyncio.to_thread(
-                        self.trading_executor.keep_alive_listen_key,
-                        self.listen_key
-                    )
-                    if success:
-                        pass
-                    else:
-                        logger.error("[USER_WS] ✗ Failed to keep listen key alive")
-                        # May need to reconnect
-                        break
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"[USER_WS] ✗ Error in keep-alive loop: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
+            logger.info("用户数据流已断开")
+            
+        except Exception as e:
+            logger.error(f"断开连接失败: {e}")
     
     async def _handle_message(self, message: str) -> None:
         """
@@ -180,325 +163,98 @@ class UserDataClient:
         """
         try:
             data = json.loads(message)
+            event_type = data.get('e', '')
             
-            # Determine message type
-            if 'e' in data:
-                event_type = data['e']
+            if event_type == 'ORDER_TRADE_UPDATE':
+                self._process_order_update(data)
+            else:
+                logger.debug(f"未知事件类型: {event_type}")
                 
-                if event_type == 'ACCOUNT_UPDATE':
-                    self._process_account_update(data)
-                elif event_type == 'ORDER_TRADE_UPDATE':
-                    self._process_order_update(data)
-                elif event_type == 'ACCOUNT_CONFIG_UPDATE':
-                    self._process_account_config_update(data)
-                elif event_type == 'TRADE_LITE':
-                    self._process_trade_lite(data)
-                elif event_type == 'ALGO_UPDATE':
-                    self._process_algo_update(data)
-                else:
-                    logger.warning(f"[USER_WS] Unknown user data event type: {event_type}")
-            
         except json.JSONDecodeError as e:
-            logger.error(f"[USER_WS] ✗ Failed to parse user data message: {e}")
-            logger.error(f"[USER_WS] Raw message: {message[:200]}...")
+            logger.error(f"解析消息失败: {e}")
         except Exception as e:
-            logger.error(f"[USER_WS] ✗ Error handling user data message: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-    
-    def _process_account_update(self, data: Dict) -> None:
-        """
-        Process account update
-        
-        Args:
-            data: Account update data from Binance
-        """
-        try:
-            account_data = data.get('a', {})
-            balances = account_data.get('B', [])
-            
-            # Find USDC balance (Binance USDC-M Futures uses USDC)
-            for balance in balances:
-                asset = balance.get('a', '')
-                
-                if asset == 'USDC':
-                    available_balance = float(balance.get('cw', 0))
-                    self.account_balance = available_balance
-                    
-                    # Trigger callback
-                    if self.callbacks['account_update']:
-                        try:
-                            payload = {
-                                'balance': available_balance,
-                                'timestamp': data.get('E', 0)
-                            }
-
-                            if asyncio.iscoroutinefunction(self.callbacks['account_update']):
-                                asyncio.create_task(
-                                    self.callbacks['account_update'](payload)
-                                )
-                            else:
-                                self.callbacks['account_update'](payload)
-
-                        except Exception as e:
-                            logger.error(f"[USER_WS] ✗ Error in account update callback: {e}")
-                            import traceback
-                            logger.error(traceback.format_exc())
-
-                    break
-
-            # Update positions
-            positions = account_data.get('P', [])
-            
-            for position in positions:
-                symbol = position.get('s', '')
-                position_amt = float(position.get('pa', 0))
-                unrealized_pnl = float(position.get('up', 0))
-                
-                if position_amt != 0:
-                    self.positions[symbol] = {
-                        'amount': position_amt,
-                        'unrealized_pnl': unrealized_pnl,
-                        'entry_price': float(position.get('ep', 0)),
-                        'mark_price': float(position.get('mp', 0))
-                    }
-                    
-                    # Trigger callback
-                    if self.callbacks['position_update']:
-                        try:
-                            if asyncio.iscoroutinefunction(self.callbacks['position_update']):
-                                asyncio.create_task(self.callbacks['position_update']({
-                                    'symbol': symbol,
-                                    'amount': position_amt,
-                                    'unrealized_pnl': unrealized_pnl,
-                                    'entry_price': float(position.get('ep', 0)),
-                                    'mark_price': float(position.get('mp', 0))
-                                }))
-                            else:
-                                self.callbacks['position_update']({
-                                    'symbol': symbol,
-                                    'amount': position_amt,
-                                    'unrealized_pnl': unrealized_pnl,
-                                    'entry_price': float(position.get('ep', 0)),
-                                    'mark_price': float(position.get('mp', 0))
-                                })
-                        except Exception as e:
-                            logger.error(f"[USER_WS] ✗ Error in position update callback: {e}")
-                            import traceback
-                            logger.error(traceback.format_exc())
-                elif symbol in self.positions:
-                    # Position closed
-                    del self.positions[symbol]
-        
-        except Exception as e:
-            logger.error(f"[USER_WS] ✗ Error processing account update: {e}")
+            logger.error(f"处理消息失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
     
     def _process_order_update(self, data: Dict) -> None:
         """
-        Process order update
+        Process order update event
         
         Args:
             data: Order update data from Binance
         """
-        try:
-            order = data.get('o', {})
-            symbol = order.get('s', '')
-            order_status = order.get('X', '')
-            
-            # Trigger callback
-            if self.callbacks['order_update']:
-                try:
-                    if asyncio.iscoroutinefunction(self.callbacks['order_update']):
-                        asyncio.create_task(self.callbacks['order_update']({
-                            'symbol': symbol,
-                            'order_id': order.get('i', 0),
-                            'client_order_id': order.get('c', ''),
-                            'side': order.get('S', ''),
-                            'order_type': order.get('o', ''),
-                            'status': order_status,
-                            'price': float(order.get('p', 0)),
-                            'quantity': float(order.get('q', 0)),
-                            'executed_quantity': float(order.get('z', 0)),
-                            'cumulative_quote_qty': float(order.get('Z', 0)),
-                            'avg_price': float(order.get('ap', 0)),
-                            'timestamp': data.get('E', 0)
-                        }))
-                    else:
-                        self.callbacks['order_update']({
-                            'symbol': symbol,
-                            'order_id': order.get('i', 0),
-                            'client_order_id': order.get('c', ''),
-                            'side': order.get('S', ''),
-                            'order_type': order.get('o', ''),
-                            'status': order_status,
-                            'price': float(order.get('p', 0)),
-                            'quantity': float(order.get('q', 0)),
-                            'executed_quantity': float(order.get('z', 0)),
-                            'cumulative_quote_qty': float(order.get('Z', 0)),
-                            'avg_price': float(order.get('ap', 0)),
-                            'timestamp': data.get('E', 0)
-                        })
-                except Exception as e:
-                    logger.error(f"[USER_WS] ✗ Error in order update callback: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
+        order = data.get('o', {})
+        symbol = order.get('s', 'UNKNOWN')
         
-        except Exception as e:
-            logger.error(f"[USER_WS] ✗ Error processing order update: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+        order_info = {
+            'symbol': symbol,
+            'order_id': order.get('i', 0),
+            'client_order_id': order.get('c', ''),
+            'side': order.get('S', 'UNKNOWN'),
+            'order_type': order.get('o', 'UNKNOWN'),
+            'time_in_force': order.get('f', 'UNKNOWN'),
+            'original_quantity': float(order.get('q', 0)),
+            'executed_quantity': float(order.get('z', 0)),
+            'cumulative_quote_qty': float(order.get('Z', 0)),
+            'status': order.get('X', 'UNKNOWN'),
+            'stop_price': float(order.get('p', 0)),
+            'avg_price': float(order.get('ap', 0)),
+            'commission': float(order.get('n', 0)),
+            'commission_asset': order.get('N', ''),
+            'is_maker': order.get('m', False),
+            'is_reduce_only': order.get('R', False),
+            'is_close_position': order.get('cp', False),
+            'execution_type': order.get('x', 'UNKNOWN'),
+            'order_time': order.get('T', 0),
+            'event_time': data.get('E', 0)
+        }
+        
+        for idx, callback in enumerate(self.callbacks['order_update']):
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    task = asyncio.create_task(callback(order_info))
+                    self.active_tasks.append(task)
+                    self.active_tasks = [t for t in self.active_tasks if not t.done()]
+                else:
+                    callback(order_info)
+            except Exception as e:
+                logger.error(f"订单更新回调错误: {e}")
     
-    def _process_account_config_update(self, data: Dict) -> None:
-        """
-        Process account configuration update
-        
-        Args:
-            data: Account config update data from Binance
-        """
-        try:
-            pass
-        except Exception as e:
-            logger.error(f"Error processing account config update: {e}")
-    
-    def _process_trade_lite(self, data: Dict) -> None:
-        """
-        Process trade lite event (lightweight trade notification)
-        
-        Args:
-            data: Trade lite data from Binance
-        """
-        try:
-            # TRADE_LITE is a lightweight event that contains basic trade information
-            # We can log it for debugging purposes
-            logger.debug(f"[USER_WS] Trade lite event received: {data}")
-            
-            # Extract basic trade information if needed
-            # Note: The structure of TRADE_LITE may vary, so we need to handle it carefully
-            trade_data = data.get('t')
-            
-            # Check if trade_data is a dictionary before accessing its fields
-            if isinstance(trade_data, dict):
-                symbol = trade_data.get('s', '')
-                price = float(trade_data.get('p', 0))
-                quantity = float(trade_data.get('q', 0))
-                trade_id = trade_data.get('t', 0)
-                
-                logger.debug(f"[USER_WS] Trade lite: {symbol} price={price} qty={quantity} trade_id={trade_id}")
-            else:
-                # If trade_data is not a dictionary, log the raw data for debugging
-                logger.debug(f"[USER_WS] Trade lite data is not a dictionary: {trade_data} (type: {type(trade_data)})")
-                logger.debug(f"[USER_WS] Full trade lite event data: {data}")
-            
-        except Exception as e:
-            logger.error(f"[USER_WS] Error processing trade lite event: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-    
-    def _process_algo_update(self, data: Dict) -> None:
-        """
-        Process algo order update (conditional orders like stop loss orders)
-        
-        Args:
-            data: Algo order update data from Binance
-        """
-        try:
-            # ALGO_UPDATE contains information about conditional orders (stop loss, take profit, etc.)
-            algo_order = data.get('o', {})
-            symbol = algo_order.get('s', '')
-            algo_id = algo_order.get('i', 0)
-            algo_status = algo_order.get('X', '')
-            order_type = algo_order.get('o', '')
-            
-        except Exception as e:
-            logger.error(f"[USER_WS] Error processing algo update event: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
     
     async def listen(self) -> None:
         """Listen for incoming messages from user data stream"""
         if not self.is_connected or not self.websocket:
-            logger.error("[USER_WS] ✗ Cannot listen: User data stream is not connected")
-            raise RuntimeError("User data stream is not connected")
-        
-        message_count = 0
+            logger.error("无法监听: WebSocket 未连接")
+            raise RuntimeError("WebSocket 未连接")
         
         try:
             async for message in self.websocket:
-                message_count += 1
                 await self._handle_message(message)
         except ConnectionClosedError as e:
-            logger.error(f"[USER_WS] ✗ User data stream connection closed: {e}")
-            logger.error(f"[USER_WS] Total messages received: {message_count}")
+            logger.error(f"用户数据流连接关闭: {e}")
             self.is_connected = False
-            if self.callbacks['error']:
+            for callback in self.callbacks['error']:
                 try:
-                    self.callbacks['error']({'type': 'connection_closed', 'error': str(e)})
+                    callback({'type': 'connection_closed', 'error': str(e)})
                 except Exception as err:
-                    logger.error(f"[USER_WS] Error in error callback: {err}")
+                    logger.error(f"错误回调异常: {err}")
         except Exception as e:
-            logger.error(f"[USER_WS] ✗ Error while listening to user data: {e}")
-            logger.error(f"[USER_WS] Total messages received: {message_count}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"监听错误: {e}")
             self.is_connected = False
     
     async def start(self) -> None:
-        """Start user data stream connection and listening with continuous reconnection"""
-        attempt = 0
-        max_delay = 60  # Maximum delay between reconnection attempts
-        
+        """Start user data stream with continuous reconnection"""
         while True:
             try:
                 await self.connect()
                 await self.listen()
-                logger.warning("User data listen loop ended unexpectedly")
-                
-                # Reset attempt counter on successful connection
-                attempt = 0
+                logger.warning("监听循环意外结束")
                 
             except Exception as e:
                 import traceback
-                attempt += 1
-                logger.error(f"UserDataClient.start() error (attempt {attempt}): {e}")
+                logger.error(f"连接失败: {e}")
                 logger.error(traceback.format_exc())
                 
-                # Trigger error callback
-                if self.callbacks['error']:
-                    try:
-                        error_dict = {'type': 'start_error', 'error': str(e), 'attempt': attempt}
-                        if asyncio.iscoroutinefunction(self.callbacks['error']):
-                            await self.callbacks['error'](error_dict)
-                        else:
-                            self.callbacks['error'](error_dict)
-                    except Exception as cb_err:
-                        logger.error(f"Error callback raised exception: {cb_err}")
-                
-                # Calculate delay with exponential backoff (max 60 seconds)
-                delay = min(5 * (2 ** min(attempt - 1, 4)), max_delay)
-                logger.info(f"Reconnecting to user data stream in {delay} seconds... (attempt {attempt})")
-                await asyncio.sleep(delay)
-                
-                # Reset attempt counter after long delay to allow fresh start
-                if attempt >= 10:
-                    logger.warning(f"Reached 10 failed attempts, continuing to retry...")
-                    attempt = 0
-    
-    def get_account_balance(self) -> Optional[float]:
-        """
-        Get current account balance
-        
-        Returns:
-            Account balance or None if not available
-        """
-        return self.account_balance
-    
-    def get_positions(self) -> Dict[str, Dict]:
-        """
-        Get current positions
-        
-        Returns:
-            Dictionary of positions
-        """
-        return self.positions.copy()
+                logger.info("5秒后重连...")
+                await asyncio.sleep(5)

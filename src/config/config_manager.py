@@ -76,21 +76,6 @@ class ConfigManager:
         return value
     
     @property
-    def binance_api_key(self) -> str:
-        """Get Binance API key"""
-        return self.get_env("BINANCE_API_KEY")
-    
-    @property
-    def binance_api_secret(self) -> str:
-        """Get Binance API secret"""
-        return self.get_env("BINANCE_API_SECRET")
-    
-    @property
-    def binance_ws_url(self) -> str:
-        """Get Binance WebSocket URL"""
-        return self.get_env("BINANCE_WS_URL", "wss://stream.binance.com:9443")
-    
-    @property
     def telegram_bot_token(self) -> str:
         """Get Telegram bot token"""
         return self.get_env("TELEGRAM_BOT_TOKEN")
@@ -99,11 +84,6 @@ class ConfigManager:
     def telegram_chat_id(self) -> str:
         """Get Telegram chat ID"""
         return self.get_env("TELEGRAM_CHAT_ID")
-    
-    @property
-    def leverage(self) -> int:
-        """Get trading leverage"""
-        return int(self.get_env("LEVERAGE", "10"))
     
     @property
     def binance_symbols(self) -> list:
@@ -121,16 +101,21 @@ class ConfigManager:
         return self.get_config("telegram", "enable_notifications", default=True)
     
     @property
-    def indicators_config(self) -> Dict[str, Any]:
-        """Get indicators configuration"""
-        return self.get_config("indicators", default={})
-    
-    @property
-    def strategy_config(self) -> Dict[str, Any]:
-        """Get strategy configuration"""
-        return self.get_config("strategy", default={})
-    
-    @property
     def logging_config(self) -> Dict[str, Any]:
         """Get logging configuration"""
         return self.get_config("logging", default={})
+    
+    @property
+    def hma_strategy_config(self) -> Dict[str, Any]:
+        """Get HMA strategy configuration"""
+        return self.get_config("hma_strategy", default={})
+    
+    @property
+    def data_config(self) -> Dict[str, Any]:
+        """Get data management configuration"""
+        return self.get_config("data_management", default={})
+    
+    @property
+    def trading_config(self) -> Dict[str, Any]:
+        """Get trading configuration"""
+        return self.get_config("trading", default={})

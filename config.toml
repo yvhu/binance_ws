@@ -3,25 +3,41 @@
 # 监控的交易对（合约）
 symbols = ["BTCUSDC"]
 # WebSocket 数据流（合约）
-streams = ["ticker", "kline_5m", "kline_15m", "kline_1h"]
-# 重连设置
-reconnect_attempts = 5
-reconnect_delay = 5  # 秒
-# 合约类型：'perpetual' 表示永续合约
-futures_type = "perpetual"
+streams = ["kline_5m"]
 
 # Telegram 配置
 [telegram]
 # 消息设置
 enable_notifications = true
-message_timeout = 30  # 秒
-# 速率限制
-max_messages_per_minute = 20
 
 # 日志配置
 [logging]
 level = "INFO"
 format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 file = "logs/app.log"
-max_bytes = 10485760  # 10MB
-backup_count = 5
+
+# HMA Breakout 策略配置
+[hma_strategy]
+# HMA 参数
+hma1 = 10
+hma2 = 20
+hma3 = 100
+
+# K 线周期
+kline_interval = "5m"  # 5分钟K线
+
+# 数据管理配置
+[data_management]
+# 历史数据保留数量
+max_klines = 200
+# 初始化时获取的历史K线数量
+init_klines = 200
+
+# 交易配置
+[trading]
+# 杠杆倍数
+leverage = 10
+# 交易模式：'cross' 为全仓，'isolated' 为逐仓
+margin_type = "cross"
+# 止损配置
+stop_loss_roi = -0.40  # 投资回报率 -40% 止损
