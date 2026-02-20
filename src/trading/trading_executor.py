@@ -379,6 +379,63 @@ class TradingExecutor:
             logger.info(f"精度调整后数量: {quantity:.8f}")
         
         return quantity
+    def _wait_for_filled_order_price(self, symbol: str, order_id: int, max_retries: int = 5, retry_interval: float = 0.5) -> Optional[float]:
+        """
+        等待订单成交并获取成交价格
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            max_retries: 最大重试次数
+            retry_interval: 重试间隔（秒）
+            
+        Returns:
+            成交价格，失败返回None
+        """
+        for attempt in range(max_retries):
+            try:
+                # 查询订单状态
+                order_status = self.client.futures_get_order(symbol=symbol, orderId=order_id)
+                
+                logger.info(f"查询订单状态 (尝试 {attempt + 1}/{max_retries}): {order_status}")
+                
+                # 检查订单状态
+                status = order_status.get('status', '')
+                if status == 'FILLED':
+                    # 订单已成交，获取成交价格
+                    avg_price = float(order_status.get('avgPrice', 0))
+                    if avg_price > 0:
+                        logger.info(f"订单已成交，成交价格: {avg_price}")
+                        return avg_price
+                    else:
+                        # 尝试从其他字段计算
+                        cum_quote = float(order_status.get('cummulativeQuoteQty', 0))
+                        exec_qty = float(order_status.get('executedQty', 0))
+                        if exec_qty > 0:
+                            calculated_price = cum_quote / exec_qty
+                            logger.info(f"从成交数据计算价格: {calculated_price}")
+                            return calculated_price
+                elif status in ['CANCELED', 'EXPIRED', 'REJECTED']:
+                    logger.error(f"订单状态异常: {status}")
+                    return None
+                
+                # 订单未成交，等待后重试
+                if attempt < max_retries - 1:
+                    logger.info(f"订单未成交，等待 {retry_interval} 秒后重试...")
+                    time.sleep(retry_interval)
+                    
+            except BinanceAPIException as e:
+                logger.error(f"查询订单状态失败: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_interval)
+            except Exception as e:
+                logger.error(f"查询订单状态异常: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_interval)
+        
+        logger.error(f"等待订单成交超时，无法获取成交价格")
+        return None
+    
     
     def open_long_position(self, symbol: str, quantity: float,
                           stop_loss_roi: float = -0.40) -> Optional[Dict]:
@@ -422,6 +479,14 @@ class TradingExecutor:
                     entry_price = cum_quote / exec_qty
             
             logger.info(f"获取到的入场价格: {entry_price}")
+            
+            # 如果没有获取到入场价格，等待订单成交后获取
+            if not entry_price or entry_price == 0:
+                order_id = order.get('orderId')
+                if order_id:
+                    logger.info(f"等待订单成交以获取入场价格，订单ID: {order_id}")
+                    entry_price = self._wait_for_filled_order_price(symbol, order_id)
+                    logger.info(f"等待后获取到的入场价格: {entry_price}")
             
             stop_loss_order_id = None
             if entry_price:
@@ -490,6 +555,14 @@ class TradingExecutor:
                     entry_price = cum_quote / exec_qty
             
             logger.info(f"获取到的入场价格: {entry_price}")
+            
+            # 如果没有获取到入场价格，等待订单成交后获取
+            if not entry_price or entry_price == 0:
+                order_id = order.get('orderId')
+                if order_id:
+                    logger.info(f"等待订单成交以获取入场价格，订单ID: {order_id}")
+                    entry_price = self._wait_for_filled_order_price(symbol, order_id)
+                    logger.info(f"等待后获取到的入场价格: {entry_price}")
             
             stop_loss_order_id = None
             if entry_price:
