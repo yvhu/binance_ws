@@ -350,7 +350,7 @@ class HMABreakoutBot:
         """开多仓"""
         try:
             # 获取账户余额
-            balance = self.trading_executor.get_account_balance()
+            balance = self.trading_executor.get_account_balance(self.symbol)
             if balance is None:
                 self.logger.error("无法获取账户余额")
                 return
@@ -384,7 +384,7 @@ class HMABreakoutBot:
         """开空仓"""
         try:
             # 获取账户余额
-            balance = self.trading_executor.get_account_balance()
+            balance = self.trading_executor.get_account_balance(self.symbol)
             if balance is None:
                 self.logger.error("无法获取账户余额")
                 return

@@ -157,9 +157,6 @@ class BinanceWSClient:
         kline = data.get('k', {})
         symbol = data.get('s', 'UNKNOWN')
         interval = kline.get('i', '1m')
-        is_closed = kline.get('x', False)
-        
-        self.latest_data[f"{symbol}_kline_{interval}"] = data
         
         kline_info = {
             'symbol': symbol,

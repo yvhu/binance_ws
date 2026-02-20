@@ -77,21 +77,52 @@ class TradingExecutor:
             logger.info(f"设置保证金模式: {symbol} {margin_type}")
             return True
         except BinanceAPIException as e:
+            # 如果已经是正确的保证金模式，忽略错误
+            if e.code == -4046:
+                logger.info(f"保证金模式已经是 {margin_type}，无需修改")
+                return True
             logger.error(f"设置保证金模式失败: {e}")
             return False
     
-    def get_account_balance(self) -> Optional[float]:
+    def get_account_balance(self, symbol: str = None) -> Optional[float]:
         """
         获取账户余额
         
+        Args:
+            symbol: 交易对（可选），用于确定查询哪种资产余额
+        
         Returns:
-            USDT余额
+            资产余额
         """
         try:
-            account = self.client.futures_account()
-            balance = float(account['totalWalletBalance'])
-            logger.info(f"账户余额: {balance:.2f} USDT")
-            return balance
+            account = self.client.futures_account_balance()
+            
+            # 如果指定了交易对，提取基础货币
+            asset_name = 'USDT'  # 默认查询USDT
+            if symbol:
+                # 从交易对中提取基础货币（如BTCUSDC -> BTC）
+                if symbol.endswith('USDT'):
+                    asset_name = 'USDT'
+                elif symbol.endswith('BUSD'):
+                    asset_name = 'BUSD'
+                elif symbol.endswith('USDC'):
+                    asset_name = 'USDC'
+                else:
+                    # 对于其他交易对，提取基础货币（如BTCUSDC -> BTC）
+                    # 去掉USDC后缀
+                    base_asset = symbol.replace('USDC', '').replace('USDT', '').replace('BUSD', '')
+                    if base_asset:
+                        asset_name = base_asset
+            
+            # 查找指定资产余额
+            for asset in account:
+                if asset['asset'] == asset_name:
+                    balance = float(asset['balance'])
+                    logger.info(f"账户余额: {balance:.8f} {asset_name}")
+                    return balance
+            
+            logger.warning(f"未找到 {asset_name} 余额")
+            return 0.0
         except BinanceAPIException as e:
             logger.error(f"获取账户余额失败: {e}")
             return None
