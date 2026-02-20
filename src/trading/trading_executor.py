@@ -406,7 +406,13 @@ class TradingExecutor:
             account = self.client.futures_account()
             
             # 打印完整的账户信息用于调试
-            logger.debug(f"完整账户信息: {account}")
+            logger.info(f"完整账户信息: {account}")
+            
+            # 检查关键字段是否存在
+            if 'totalWalletBalance' not in account:
+                logger.error(f"API返回数据缺少 totalWalletBalance 字段")
+                logger.error(f"可用字段: {list(account.keys())}")
+                return None
             
             account_info = {
                 'total_wallet_balance': float(account['totalWalletBalance']),
