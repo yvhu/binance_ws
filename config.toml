@@ -82,9 +82,20 @@ stop_loss_price_buffer_percent = 0.001  # Price buffer to avoid false triggers (
 stop_loss_time_threshold = 3  # Time threshold in seconds to confirm stop loss trigger (3 seconds) - 降低到3秒
 stop_loss_check_interval = 1  # Check interval in seconds (1 second)
 
-# Trailing stop loss parameters (移动止损参数) - 5分钟日内交易优化：启用移动止损
+# Trailing stop loss parameters (移动止损参数) - 5分钟日内交易优化：启用智能移动止损
 trailing_stop_enabled = true  # Enable trailing stop loss (移动止损开关) - 启用移动止损
 trailing_stop_kline_count = 2  # Number of recent klines to use for trailing stop (使用最近N根K线的最低/最高点) - 降低到2根K线
+
+# Profit drawdown protection (利润回撤保护) - 防止利润过度回吐
+profit_drawdown_protection_enabled = true  # 启用利润回撤保护
+profit_drawdown_threshold_percent = 0.01  # 触发回撤保护的最低利润比例 (1%)
+max_profit_drawdown_percent = 0.005  # 最大允许回撤比例 (0.5%) - 达到目标利润后，最多回撤0.5%
+
+# Dynamic trailing stop distance (动态移动止损距离) - 根据利润水平调整止损距离
+dynamic_trailing_distance_enabled = true  # 启用动态移动止损距离
+# 阶梯式移动止损配置
+trailing_profit_levels = [0.01, 0.015, 0.02]  # 利润阈值 [1%, 1.5%, 2%]
+trailing_distance_levels = [0.003, 0.005, 0.008]  # 对应的移动止损距离 [0.3%, 0.5%, 0.8%]
 
 # Take profit parameters (止盈参数) - 5分钟日内交易优化：降低止盈目标
 take_profit_enabled = true  # Enable take profit (止盈开关)

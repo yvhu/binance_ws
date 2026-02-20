@@ -82,6 +82,31 @@ class FiveMinuteStrategy:
         self.trailing_stop_enabled = config.get_config("strategy", "trailing_stop_enabled", default=False)
         self.trailing_stop_kline_count = config.get_config("strategy", "trailing_stop_kline_count", default=5)
         
+        # Profit drawdown protection configuration (利润回撤保护)
+        self.profit_drawdown_protection_enabled = config.get_config(
+            "strategy", "profit_drawdown_protection_enabled", default=True
+        )
+        self.profit_drawdown_threshold_percent = config.get_config(
+            "strategy", "profit_drawdown_threshold_percent", default=0.01
+        )
+        self.max_profit_drawdown_percent = config.get_config(
+            "strategy", "max_profit_drawdown_percent", default=0.005
+        )
+        
+        # Dynamic trailing stop distance configuration (动态移动止损距离)
+        self.dynamic_trailing_distance_enabled = config.get_config(
+            "strategy", "dynamic_trailing_distance_enabled", default=True
+        )
+        self.trailing_profit_levels = config.get_config(
+            "strategy", "trailing_profit_levels", default=[0.01, 0.015, 0.02]
+        )
+        self.trailing_distance_levels = config.get_config(
+            "strategy", "trailing_distance_levels", default=[0.003, 0.005, 0.008]
+        )
+        
+        # Track peak profit for drawdown protection
+        self.position_peak_profits: Dict[str, float] = {}  # symbol -> peak profit percentage
+        
         # Real-time stop loss optimization configuration
         self.stop_loss_price_buffer_percent = config.get_config("strategy", "stop_loss_price_buffer_percent", default=0.002)
         self.stop_loss_time_threshold = config.get_config("strategy", "stop_loss_time_threshold", default=5)
@@ -1452,8 +1477,10 @@ class FiveMinuteStrategy:
                         position['stop_loss_price'] = stop_loss_price
                     
                     # Initialize peak price tracking for take profit
-                    
                     self.position_peak_prices[symbol] = final_price
+                    
+                    # Initialize peak profit tracking for drawdown protection
+                    self.position_peak_profits[symbol] = 0.0
                     
                     # Record entry time for time-based stop loss
                     self.position_entry_times[symbol] = kline_time if kline_time else int(datetime.now().timestamp() * 1000)
@@ -1601,6 +1628,9 @@ class FiveMinuteStrategy:
                     
                     # Initialize peak price tracking for take profit
                     self.position_peak_prices[symbol] = final_price
+                    
+                    # Initialize peak profit tracking for drawdown protection
+                    self.position_peak_profits[symbol] = 0.0
                     
                     # Record entry time for time-based stop loss
                     self.position_entry_times[symbol] = kline_time if kline_time else int(datetime.now().timestamp() * 1000)
@@ -2245,36 +2275,113 @@ class FiveMinuteStrategy:
             # Update stop loss price in position
             position['stop_loss_price'] = new_stop_loss
             
-            # Send notification about trailing stop update
-            entry_price = position.get('entry_price', 0)
-            current_price = self.data_handler.get_current_price(symbol)
-            
-            if current_price:
-                # Calculate unrealized PnL
-                quantity = position.get('quantity', 0)
-                unrealized_pnl = 0.0
-                if position_side == 'LONG':
-                    unrealized_pnl = (current_price - entry_price) * quantity
-                else:  # SHORT
-                    unrealized_pnl = (entry_price - current_price) * quantity
-                
-                await self.telegram_client.send_message(
-                    f"🔄 移动止损更新\n\n"
-                    f"交易对: {symbol}\n"
-                    f"方向: {position_side}\n"
-                    f"开仓价格: ${entry_price:.2f}\n"
-                    f"当前价格: ${current_price:.2f}\n"
-                    f"未实现盈亏: ${unrealized_pnl:.2f}\n"
-                    f"止损价格: ${current_stop_loss:.2f} → ${new_stop_loss:.2f}\n"
-                    f"参考K线数: {self.trailing_stop_kline_count}\n"
-                    f"{'最低价' if position_side == 'LONG' else '最高价'}: "
-                    f"{'${:.2f}'.format(lowest_price if position_side == 'LONG' else highest_price)}"
-                )
-            
         except Exception as e:
             logger.error(f"Error updating trailing stop loss for {symbol}: {e}")
             import traceback
             logger.error(traceback.format_exc())
+    
+    def _calculate_dynamic_trailing_distance(self, pnl_percent: float) -> float:
+        """
+        Calculate dynamic trailing stop distance based on profit level
+        根据利润水平动态计算移动止损距离
+        
+        Args:
+            pnl_percent: Current profit percentage
+            
+        Returns:
+            Dynamic trailing stop distance
+        """
+        try:
+            if not self.dynamic_trailing_distance_enabled:
+                # Use default trailing distance if dynamic is disabled
+                return 0.005  # Default 0.5%
+            
+            # Find the appropriate trailing distance based on profit level
+            trailing_distance = 0.005  # Default 0.5%
+            
+            for i, profit_level in enumerate(self.trailing_profit_levels):
+                if pnl_percent >= profit_level:
+                    trailing_distance = self.trailing_distance_levels[i]
+                else:
+                    break
+            
+            return trailing_distance
+            
+        except Exception as e:
+            logger.error(f"Error calculating dynamic trailing distance: {e}")
+            return 0.005  # Default 0.5% on error
+    
+    def _check_profit_drawdown_protection(self, symbol: str, current_price: float, 
+                                         entry_price: float, position_side: str) -> Tuple[bool, Optional[float]]:
+        """
+        Check if profit drawdown protection should be triggered
+        检查是否应该触发利润回撤保护
+        
+        Args:
+            symbol: Trading pair symbol
+            current_price: Current price
+            entry_price: Entry price
+            position_side: 'LONG' or 'SHORT'
+            
+        Returns:
+            Tuple of (should_close, new_stop_loss_price)
+        """
+        try:
+            if not self.profit_drawdown_protection_enabled:
+                return False, None
+            
+            # Calculate current profit percentage
+            if position_side == 'LONG':
+                current_pnl_percent = (current_price - entry_price) / entry_price if entry_price > 0 else 0
+            else:  # SHORT
+                current_pnl_percent = (entry_price - current_price) / entry_price if entry_price > 0 else 0
+            
+            # Update peak profit
+            if symbol not in self.position_peak_profits:
+                self.position_peak_profits[symbol] = 0.0
+            
+            if current_pnl_percent > self.position_peak_profits[symbol]:
+                self.position_peak_profits[symbol] = current_pnl_percent
+                logger.info(
+                    f"[PROFIT_PEAK] {symbol}: "
+                    f"new_peak={current_pnl_percent*100:.2f}%, "
+                    f"current_price={current_price:.2f}"
+                )
+            
+            peak_profit = self.position_peak_profits[symbol]
+            
+            # Check if profit has reached the threshold for drawdown protection
+            if peak_profit < self.profit_drawdown_threshold_percent:
+                return False, None
+            
+            # Calculate drawdown from peak
+            drawdown = peak_profit - current_pnl_percent
+            
+            # Check if drawdown exceeds maximum allowed
+            if drawdown >= self.max_profit_drawdown_percent:
+                logger.warning(
+                    f"[PROFIT_DRAWDOWN] {symbol}: "
+                    f"peak_profit={peak_profit*100:.2f}%, "
+                    f"current_profit={current_pnl_percent*100:.2f}%, "
+                    f"drawdown={drawdown*100:.2f}% >= {self.max_profit_drawdown_percent*100:.2f}%, "
+                    f"triggering protection"
+                )
+                
+                # Calculate new stop loss price to lock in remaining profit
+                if position_side == 'LONG':
+                    # For long: stop loss at current price - small buffer
+                    new_stop_loss = current_price * (1 - 0.001)  # 0.1% buffer
+                else:  # SHORT
+                    # For short: stop loss at current price + small buffer
+                    new_stop_loss = current_price * (1 + 0.001)  # 0.1% buffer
+                
+                return True, new_stop_loss
+            
+            return False, None
+            
+        except Exception as e:
+            logger.error(f"Error checking profit drawdown protection: {e}")
+            return False, None
     
     async def check_stop_loss_on_price_update(self, symbol: str, current_price: float) -> None:
         """
