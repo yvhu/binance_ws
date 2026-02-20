@@ -675,8 +675,8 @@ class FiveMinuteStrategy:
                     f"交易对: {symbol}\n"
                     f"方向: {direction}\n"
                     f"信号强度: {signal_strength}\n"
-                    f"当前价格: ${current_price:.2f if current_price else 'N/A'}\n"
-                    f"止损价格: ${stop_loss_price:.2f if stop_loss_price else 'N/A'}\n"
+                    f"当前价格: ${f'{current_price:.2f}' if current_price else 'N/A'}\n"
+                    f"止损价格: ${f'{stop_loss_price:.2f}' if stop_loss_price else 'N/A'}\n"
                     f"止盈比例: {self.take_profit_percent*100:.1f}%\n"
                     f"⚡ WebSocket实时数据"
                 )
@@ -3306,7 +3306,7 @@ class FiveMinuteStrategy:
                     f"交易对: {symbol}\n"
                     f"方向: {position_side}\n"
                     f"原因: {reason}\n"
-                    f"当前价格: ${current_price:.2f if current_price else 'N/A'}\n"
+                    f"当前价格: ${f'{current_price:.2f}' if current_price else 'N/A'}\n"
                     f"开仓价格: ${entry_price:.2f}\n"
                     f"盈亏: ${pnl:.2f}"
                 )
