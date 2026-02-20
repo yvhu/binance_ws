@@ -53,7 +53,7 @@ early_entry_enabled = true  # Enable real-time entry (启用实时开仓)
 # - Immediate response to market changes
 
 # Volume check parameters - 5分钟日内交易优化
-volume_ratio_threshold = 1.2  # Minimum volume ratio (current volume / average volume of last 5 klines) - 提高到120%以过滤弱信号
+volume_ratio_threshold = 1.0  # Minimum volume ratio (current volume / average volume of last 5 klines) - 降低到100%以允许更多信号
 
 # K-line body ratio check parameters - 5分钟日内交易优化
 body_ratio_threshold = 0.4  # Minimum body ratio (body / range), filters klines with too much resistance - 降低到40%
@@ -105,24 +105,24 @@ trend_filter_ma_period = 7  # MA period for trend filter (default: 7) - 使用MA
 # - For SHORT: price must be BELOW MA7 AND MA7 must be trending DOWN
 # This helps avoid false breakouts in sideways markets
 
-# Sideways market filter (横盘市场过滤) - 新增
-sideways_market_filter_enabled = true  # 启用横盘市场过滤
-sideways_market_adx_threshold = 20  # ADX阈值，低于此值视为横盘市场
-min_trend_strength = 0.3  # 最小趋势强度要求
+# Sideways market filter (横盘市场过滤) - 放宽条件
+sideways_market_filter_enabled = false  # 暂时禁用横盘市场过滤，允许更多信号
+sideways_market_adx_threshold = 15  # ADX阈值，降低到15以允许更多信号
+min_trend_strength = 0.1  # 最小趋势强度要求，降低到0.1
 
-# Signal quality filter (信号质量过滤) - 新增
-signal_confirmation_enabled = true  # 启用信号确认
-signal_confirmation_klines = 2  # 需要2根K线确认信号
-min_signal_strength = "MEDIUM"  # 只接受MEDIUM以上信号
+# Signal quality filter (信号质量过滤) - 放宽条件
+signal_confirmation_enabled = false  # 暂时禁用信号确认，允许更多信号
+signal_confirmation_klines = 1  # 降低到1根K线确认
+min_signal_strength = "WEAK"  # 接受所有信号强度
 
-# Volume confirmation (成交量确认) - 新增
-volume_confirmation_enabled = true  # 启用成交量确认
-volume_confirmation_klines = 3  # 需要3根K线成交量确认
+# Volume confirmation (成交量确认) - 放宽条件
+volume_confirmation_enabled = false  # 暂时禁用成交量确认，允许更多信号
+volume_confirmation_klines = 1  # 降低到1根K线确认
 
 # Additional indicator filters (额外指标过滤) - 5分钟日内交易优化：只保留核心过滤器
 rsi_filter_enabled = true  # Enable RSI filter (启用RSI过滤)
-rsi_long_max = 65  # Maximum RSI for long entry (做多时RSI最大值) - 降低到65以避免超买
-rsi_short_min = 35  # Minimum RSI for short entry (做空时RSI最小值) - 提高到35以避免超卖
+rsi_long_max = 75  # Maximum RSI for long entry (做多时RSI最大值) - 放宽到75
+rsi_short_min = 25  # Minimum RSI for short entry (做空时RSI最小值) - 放宽到25
 
 # Trading Configuration
 [trading]
