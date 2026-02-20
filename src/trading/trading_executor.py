@@ -995,28 +995,39 @@ class TradingExecutor:
             # 先从本地管理器检查
             local_orders = self.algo_order_manager.get_all_orders(symbol)
             if local_orders:
-                self.logger.info(f"本地管理器中发现 {len(local_orders)} 个止损单")
+                logger.info(f"本地管理器中发现 {len(local_orders)} 个止损单")
                 return True
             
             # 如果本地没有，从 Binance API 查询
-            # 获取所有开放订单
+            # 获取所有开放订单（包括条件单）
+            logger.info(f"从 Binance API 查询 {symbol} 的开放订单...")
             open_orders = self.client.futures_get_open_orders(symbol=symbol)
+            
+            logger.info(f"查询到 {len(open_orders)} 个开放订单")
+            
+            # 打印所有订单信息用于调试
+            for order in open_orders:
+                logger.info(f"订单详情: {order}")
             
             # 检查是否有止损类型的订单
             for order in open_orders:
                 order_type = order.get('type', '')
+                logger.info(f"检查订单: 订单ID={order.get('orderId')}, 类型={order_type}")
                 if order_type in ['STOP', 'STOP_MARKET', 'TAKE_PROFIT', 'TAKE_PROFIT_MARKET']:
-                    self.logger.info(f"从 Binance API 发现止损单: 订单ID={order.get('orderId')}, 类型={order_type}")
+                    logger.info(f"从 Binance API 发现止损单: 订单ID={order.get('orderId')}, 类型={order_type}")
                     return True
             
-            self.logger.info(f"未发现 {symbol} 的活跃止损单")
+            logger.info(f"未发现 {symbol} 的活跃止损单")
             return False
             
         except BinanceAPIException as e:
-            self.logger.error(f"查询止损单失败: {e}")
+            logger.error(f"查询止损单失败: {e}")
+            logger.error(f"错误代码: {e.code}, 错误消息: {e.message}")
             return False
         except Exception as e:
-            self.logger.error(f"查询止损单异常: {e}")
+            logger.error(f"查询止损单异常: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def set_stop_loss_for_existing_position(self, symbol: str, position_type: PositionType,
