@@ -259,22 +259,40 @@ K线周期: 5m
 
 ### 止损机制
 
-系统使用条件单（Conditional Order）实现自动止损：
+系统使用币安条件单（Conditional Order）实现自动止损，通过 `algoOrder.place` API 创建止损单：
 
 1. **开仓时自动设置止损**：
    - 根据入场价格和-40% ROI计算止损价格
    - 创建STOP_MARKET条件单，设置`closePosition=True`
-   - 止损单ID被保存到仓位管理器中
+   - 条件单ID（algoId）被保存到仓位管理器中
+   - 使用AlgoOrderManager管理所有活跃的条件单
 
-2. **止损触发**：
+2. **市价单成交价格处理**：
+   - 市价单返回时`avgPrice`为0.0（订单尚未成交）
+   - 系统自动轮询等待订单成交（最多10秒）
+   - 获取实际成交价格后计算止损价格
+   - 确保止损价格基于真实入场价格
+
+3. **止损触发**：
    - 当价格达到止损价时，条件单自动触发
    - 系统通过用户数据流监听订单更新
    - 检测到止损单成交后自动平仓
    - 发送止损平仓通知
 
-3. **平仓时自动清理**：
+4. **平仓时自动清理**：
    - 手动平仓时自动撤销止损条件单
+   - 从AlgoOrderManager中移除对应的条件单
    - 避免订单冲突和资源浪费
+
+5. **系统启动时处理现有持仓**：
+   - 检测现有持仓时自动设置止损单
+   - 检查是否已存在活跃的止损单
+   - 避免重复创建止损单
+
+6. **避免重复止损单**：
+   - 创建止损单前检查是否已存在
+   - 通过`has_active_stop_loss_order()`方法检查
+   - 确保每个持仓只有一个止损单
 
 ### 止损价格计算
 
@@ -294,6 +312,58 @@ ROI = (价格变化 / 入场价格) × 杠杆
 - 价格变化 = -0.40 × 50000 / 10 = -200 USDT
 - 多头止损价格 = 50000 - 200 = 49800 USDT
 
+### 条件单API说明
+
+系统使用币安WebSocket条件单API进行止损管理：
+
+#### 创建条件单（algoOrder.place）
+
+```json
+{
+  "id": "unique-request-id",
+  "method": "algoOrder.place",
+  "params": {
+    "algoType": "CONDITIONAL",
+    "symbol": "BTCUSDT",
+    "side": "SELL",
+    "positionSide": "LONG",
+    "type": "STOP_MARKET",
+    "stopPrice": "49800.00",
+    "closePosition": "true",
+    "timeInForce": "GTC",
+    "workingType": "CONTRACT_PRICE",
+    "timestamp": 1702555533821,
+    "signature": "..."
+  }
+}
+```
+
+**关键参数说明**：
+- `algoType`: 固定为"CONDITIONAL"
+- `type`: 止损单类型，使用"STOP_MARKET"
+- `stopPrice`: 触发价格（止损价格）
+- `closePosition`: "true"表示触发后全部平仓
+- `workingType`: 触发类型，"CONTRACT_PRICE"为合约最新价
+
+#### 撤销条件单（algoOrder.cancel）
+
+```json
+{
+  "id": "unique-cancel-id",
+  "method": "algoOrder.cancel",
+  "params": {
+    "algoId": 3000000000003505,
+    "timestamp": 1703439070722,
+    "signature": "..."
+  }
+}
+```
+
+**重要说明**：
+- 条件单使用`algoId`而非`orderId`
+- `algoId`与`orderId`是不同的标识符
+- 撤销时必须使用`algoId`
+
 ### 止损单管理
 
 系统提供完整的止损单管理功能：
@@ -302,12 +372,46 @@ ROI = (价格变化 / 入场价格) × 杠杆
 # 查看活跃的止损单
 active_orders = executor.get_active_stop_loss_orders(symbol)
 
+# 检查是否已有止损单
+has_stop_loss = executor.has_active_stop_loss_order(symbol, position_side)
+
 # 撤销指定止损单
-executor.cancel_stop_loss_order(symbol, order_id)
+executor.cancel_stop_loss_order(symbol, algo_id)
 
 # 撤销所有止损单
 executor.cancel_all_stop_loss_orders(symbol)
+
+# 为现有持仓设置止损
+executor.set_stop_loss_for_existing_position(position)
 ```
+
+### AlgoOrderManager
+
+系统使用AlgoOrderManager类管理所有活跃的条件单：
+
+```python
+class AlgoOrderManager:
+    def __init__(self):
+        self.active_orders = {}  # {symbol: {algo_id: order_info}}
+    
+    def add_order(self, symbol, algo_id, order_info):
+        """添加条件单"""
+    
+    def remove_order(self, symbol, algo_id):
+        """移除条件单"""
+    
+    def get_orders(self, symbol):
+        """获取指定交易对的所有条件单"""
+    
+    def has_order(self, symbol, algo_id):
+        """检查条件单是否存在"""
+```
+
+**管理规则**：
+- 每个交易对维护独立的条件单列表
+- 条件单按algo_id索引
+- 平仓时自动清理对应的条件单
+- 系统重启时重新同步条件单状态
 
 ## 信号确认功能详解
 
@@ -449,6 +553,34 @@ A: 可以通过日志查看，或者使用交易执行器的方法：
 ```python
 active_orders = executor.get_active_stop_loss_orders(symbol)
 ```
+
+### Q: 条件单和普通订单有什么区别？
+
+A: 条件单（Conditional Order）和普通订单的主要区别：
+
+| 特性 | 普通订单 | 条件单 |
+|------|---------|--------|
+| API | order.place | algoOrder.place |
+| 订单ID | orderId | algoId |
+| 触发方式 | 立即执行 | 价格达到触发价后执行 |
+| 用途 | 开仓、平仓 | 止损、止盈 |
+| 返回字段 | orderId | algoId |
+
+### Q: 为什么市价单的avgPrice是0？
+
+A: 市价单返回时订单可能尚未成交，因此`avgPrice`为0.0。系统会自动轮询等待订单成交（最多10秒），获取实际成交价格后再计算止损价格。
+
+### Q: 系统重启后如何处理现有持仓的止损？
+
+A: 系统启动时会自动检测现有持仓，并为每个持仓设置止损单。在设置前会检查是否已存在活跃的止损单，避免重复创建。
+
+### Q: 如何避免重复创建止损单？
+
+A: 系统在创建止损单前会调用`has_active_stop_loss_order()`方法检查是否已存在止损单。如果已存在，则跳过创建，避免重复。
+
+### Q: 条件单触发后如何通知？
+
+A: 条件单触发后，系统通过用户数据流监听订单更新。检测到止损单成交后，会自动平仓并发送Telegram通知。
 
 ## 技术支持
 

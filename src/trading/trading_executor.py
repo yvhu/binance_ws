@@ -842,13 +842,13 @@ class TradingExecutor:
             params['signature'] = signature
             
             # 构建请求
-            request = {
-                'id': request_id,
-                'method': 'algoOrder.place',
-                'params': params
-            }
+            # request = {
+            #     'id': request_id,
+            #     'method': 'algoOrder.place',
+            #     'params': params
+            # }
             
-            logger.info(f"发送条件单请求: {request}")
+            # logger.info(f"发送条件单请求: {request}")
             
             # 使用Binance REST API创建条件单
             # 注意：binance-python库可能不支持直接的条件单API
