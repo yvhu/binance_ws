@@ -38,10 +38,9 @@ class HMABreakoutBot:
         hma_params = self.config.hma_strategy_config
         
         # 获取信号确认配置
-        confirmation_config = self.config.config.get('signal_confirmation', {})
-        confirmation_enabled = confirmation_config.get('enabled', True)
-        confirmation_times = confirmation_config.get('confirmation_times', [30, 60])
-        required_confirmations = confirmation_config.get('required_confirmations', 2)
+        confirmation_enabled = self.config.get_config('signal_confirmation', 'enabled', default=True)
+        confirmation_times = self.config.get_config('signal_confirmation', 'confirmation_times', default=[30, 60])
+        required_confirmations = self.config.get_config('signal_confirmation', 'required_confirmations', default=2)
         
         self.strategy = HMABreakoutStrategy(
             hma1=hma_params['hma1'],
