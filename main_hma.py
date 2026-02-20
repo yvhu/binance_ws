@@ -14,10 +14,8 @@ from src.data import KlineManager, Kline
 from src.indicators import HMAIndicator
 from src.strategy import HMABreakoutStrategy
 from src.trading import PositionManager, PositionType, TradingExecutor
-from src.telegram.telegram_client import TelegramClient
-from src.binance.ws_client import BinanceWSClient
-from src.binance.user_data_client import UserDataClient
-from binance.client import Client
+from src.telegram import TelegramClient
+from src.binance import BinanceWSClient, UserDataClient
 
 
 class HMABreakoutBot:
