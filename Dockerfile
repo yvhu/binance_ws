@@ -40,4 +40,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Run the application
-CMD ["python", "main.py"]
+CMD ["python", "main_hma.py"]
