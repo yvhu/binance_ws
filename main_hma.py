@@ -102,15 +102,17 @@ class HMABreakoutBot:
             # 初始化 Telegram
             await self.telegram_client.initialize()
             
-            # 设置杠杆和保证金模式
+            # 设置杠杆
             self.trading_executor.set_leverage(
                 self.symbol,
                 self.config.trading_config['leverage']
             )
-            self.trading_executor.set_margin_type(
-                self.symbol,
-                self.config.trading_config['margin_type']
-            )
+            
+            # 保证金模式配置已关闭（使用账户默认设置）
+            # self.trading_executor.set_margin_type(
+            #     self.symbol,
+            #     self.config.trading_config['margin_type']
+            # )
             
             # 获取账户信息
             account_info = self.trading_executor.get_account_info()
