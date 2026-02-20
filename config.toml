@@ -205,7 +205,7 @@ medium_signal_position_ratio = 0.3  # 30% position for medium signals - 降低�
 weak_signal_position_ratio = 0.2  # 20% position for weak signals - 降低到20%
 
 # Drawdown protection parameters (回撤保护参数) - 5分钟日内交易优化
-drawdown_protection_enabled = true  # Enable drawdown protection (启用回撤保护)
+drawdown_protection_enabled = false  # Enable drawdown protection (启用回测保护) - 已关闭
 max_consecutive_losses = 5  # Maximum consecutive losses before pausing trading (最大连续亏损次数) - 提高到5次
 max_daily_loss_percent = 0.08  # Maximum daily loss as percentage of account balance (最大日亏损比例8%) - 提高到8%
 position_reduction_on_loss = 0.3  # Position reduction factor after consecutive losses (连续亏损后仓位缩减比例30%) - 降低到30%
