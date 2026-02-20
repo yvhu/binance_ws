@@ -101,7 +101,7 @@ class TradingExecutor:
             account = self.client.futures_account()
             
             # 打印完整账户信息用于调试
-            logger.debug(f"完整账户信息: {account}")
+            # logger.debug(f"完整账户信息: {account}")
             
             # 确定保证金资产（根据交易对后缀）
             asset_name = 'USDT'  # 默认查询USDT
@@ -406,7 +406,7 @@ class TradingExecutor:
             account = self.client.futures_account()
             
             # 打印完整的账户信息用于调试
-            logger.info(f"完整账户信息: {account}")
+            # logger.info(f"完整账户信息: {account}")
             
             # 从 assets 数组中查找 USDC 或 USDT 的可用余额
             available_balance = 0.0

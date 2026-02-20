@@ -68,11 +68,11 @@ class KlineManager:
         if kline.is_closed:
             # K线已关闭，加入历史数据
             self.klines.append(kline)
-            logger.info(f"添加已关闭K线: {kline}")
+            # logger.info(f"添加已关闭K线: {kline}")
         else:
             # K线未关闭，更新当前K线
             self.current_kline = kline
-            logger.debug(f"更新当前K线: {kline}")
+            # logger.debug(f"更新当前K线: {kline}")
     
     def update_current_kline(self, kline: Kline) -> None:
         """
