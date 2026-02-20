@@ -904,11 +904,25 @@ class TradingExecutor:
         try:
             # Get current position
             position = self.get_position(symbol)
-            if not position or float(position['positionAmt']) <= 0:
-                logger.warning(f"No long position to close for {symbol}")
+            if not position:
+                logger.warning(f"No position found for {symbol}")
                 return None
             
-            quantity = abs(float(position['positionAmt']))
+            position_amt = float(position['positionAmt'])
+            
+            # Check if it's a long position (positive amount)
+            if position_amt <= 0:
+                logger.warning(f"No long position to close for {symbol}, positionAmt={position_amt}")
+                return None
+            
+            quantity = position_amt
+            
+            # Log position details for debugging
+            logger.info(
+                f"[CLOSE_LONG] {symbol}: "
+                f"positionAmt={position_amt}, "
+                f"quantity_to_close={quantity}"
+            )
             
             # Round quantity to match symbol precision (unified precision handling)
             rounded_quantity = self.round_quantity(quantity, symbol)
@@ -916,6 +930,16 @@ class TradingExecutor:
                 logger.error(f"Failed to round quantity for closing long position {symbol}")
                 return None
             
+            # Verify rounded quantity is not zero
+            if rounded_quantity <= 0:
+                logger.error(f"Rounded quantity is zero or negative for {symbol}: {rounded_quantity}")
+                return None
+            
+            # Log order details before placing
+            logger.info(
+                f"[CLOSE_LONG] Placing order for {symbol}: "
+                f"side=SELL, type=MARKET, quantity={rounded_quantity}, reduceOnly=True"
+            )
             
             # Place market order to close
             order = self.client.futures_create_order(
@@ -959,11 +983,25 @@ class TradingExecutor:
         try:
             # Get current position
             position = self.get_position(symbol)
-            if not position or float(position['positionAmt']) >= 0:
-                logger.warning(f"No short position to close for {symbol}")
+            if not position:
+                logger.warning(f"No position found for {symbol}")
                 return None
             
-            quantity = abs(float(position['positionAmt']))
+            position_amt = float(position['positionAmt'])
+            
+            # Check if it's a short position (negative amount)
+            if position_amt >= 0:
+                logger.warning(f"No short position to close for {symbol}, positionAmt={position_amt}")
+                return None
+            
+            quantity = abs(position_amt)
+            
+            # Log position details for debugging
+            logger.info(
+                f"[CLOSE_SHORT] {symbol}: "
+                f"positionAmt={position_amt}, "
+                f"quantity_to_close={quantity}"
+            )
             
             # Round quantity to match symbol precision (unified precision handling)
             rounded_quantity = self.round_quantity(quantity, symbol)
@@ -971,6 +1009,16 @@ class TradingExecutor:
                 logger.error(f"Failed to round quantity for closing short position {symbol}")
                 return None
             
+            # Verify rounded quantity is not zero
+            if rounded_quantity <= 0:
+                logger.error(f"Rounded quantity is zero or negative for {symbol}: {rounded_quantity}")
+                return None
+            
+            # Log order details before placing
+            logger.info(
+                f"[CLOSE_SHORT] Placing order for {symbol}: "
+                f"side=BUY, type=MARKET, quantity={rounded_quantity}, reduceOnly=True"
+            )
             
             # Place market order to close
             order = self.client.futures_create_order(

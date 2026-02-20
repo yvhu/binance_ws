@@ -1038,14 +1038,18 @@ class FiveMinuteStrategy:
                         f"Max consecutive losses reached, pausing trading for {self.trading_pause_duration/60:.1f} minutes"
                     )
                     
-                    # Send notification
+                    # Close all open positions before pausing trading (async task)
                     import asyncio
+                    asyncio.create_task(self._close_all_positions_on_drawdown())
+                    
+                    # Send notification
                     asyncio.create_task(self.telegram_client.send_message(
                         f"🛑 回撤保护触发\n\n"
                         f"连续亏损: {self.consecutive_losses} 次\n"
                         f"日盈亏: ${self.daily_pnl:.2f}\n"
                         f"交易暂停: {self.trading_pause_duration/60:.1f} 分钟\n"
-                        f"仓位缩减: {self.position_reduction_on_loss*100:.1f}%"
+                        f"仓位缩减: {self.position_reduction_on_loss*100:.1f}%\n"
+                        f"已关闭所有持仓"
                     ))
             else:
                 # Reset consecutive losses on profit
@@ -1063,7 +1067,6 @@ class FiveMinuteStrategy:
                     )
                     
                     # Send notification
-            
                     import asyncio
                     asyncio.create_task(self.telegram_client.send_message(
                         f"🛑 日亏损限制触发\n\n"
@@ -1075,6 +1078,117 @@ class FiveMinuteStrategy:
             
         except Exception as e:
             logger.error(f"Error updating trade result: {e}")
+    
+    async def _close_all_positions_on_drawdown(self) -> None:
+        """
+        Close all open positions when drawdown protection is triggered
+        This ensures no positions remain open when trading is paused
+        
+        This method is called when consecutive losses reach the maximum limit
+        """
+        try:
+            # Get all symbols with open positions
+            symbols_to_close = list(self.position_manager.positions.keys())
+            
+            if not symbols_to_close:
+                logger.info("[DRAWDOWN_PROTECTION] No open positions to close")
+                return
+            
+            logger.warning(
+                f"[DRAWDOWN_PROTECTION] Closing {len(symbols_to_close)} open positions: {symbols_to_close}"
+            )
+            
+            # Close each position
+            for symbol in symbols_to_close:
+                try:
+                    # Get position details before closing
+                    position = self.position_manager.get_position(symbol)
+                    if not position:
+                        logger.warning(f"[DRAWDOWN_PROTECTION] No position found for {symbol}")
+                        continue
+                    
+                    # Get current price
+                    current_price = self.data_handler.get_current_price(symbol)
+                    if current_price is None:
+                        logger.warning(f"[DRAWDOWN_PROTECTION] Could not get current price for {symbol}")
+                        continue
+                    
+                    # Close position
+                    success = await self.trading_executor.close_all_positions(symbol)
+                    
+                    if success:
+                        # Calculate PnL
+                        entry_price = position.get('entry_price', 0)
+                        quantity = position.get('quantity', 0)
+                        position_side = position.get('side', 'LONG')
+                        
+                        pnl = 0.0
+                        if current_price and entry_price > 0:
+                            if position_side == 'LONG':
+                                pnl = (current_price - entry_price) * quantity
+                            else:  # SHORT
+                                pnl = (entry_price - current_price) * quantity
+                        
+                        # Send close notification
+                        await self.telegram_client.send_close_notification(
+                            symbol=symbol,
+                            side=position_side,
+                            entry_price=entry_price,
+                            exit_price=current_price,
+                            quantity=quantity,
+                            pnl=pnl,
+                            close_reason=f"回撤保护强制平仓\n"
+                                       f"连续亏损达到上限\n"
+                                       f"交易暂停 {self.trading_pause_duration/60:.1f} 分钟"
+                        )
+                        
+                        # Log exit signal
+                        self._log_signal(
+                            symbol=symbol,
+                            direction='UP' if position_side == 'LONG' else 'DOWN',
+                            current_price=current_price,
+                            kline={},
+                            signal_strength='MEDIUM',
+                            volume_info={},
+                            range_info={},
+                            body_info={},
+                            signal_type="EXIT_DRAWDOWN_PROTECTION"
+                        )
+                        
+                        # Log trade data
+                        self._log_trade(symbol, position, current_price, "Drawdown Protection")
+                        
+                        # Clear local position state
+                        self.position_manager.close_position(symbol, current_price)
+                        
+                        # Clear related state
+                        if symbol in self.position_peak_prices:
+                            del self.position_peak_prices[symbol]
+                        if symbol in self.position_entry_times:
+                            del self.position_entry_times[symbol]
+                        if symbol in self.partial_take_profit_status:
+                            del self.partial_take_profit_status[symbol]
+                        if symbol in self.stop_loss_first_trigger_time:
+                            del self.stop_loss_first_trigger_time[symbol]
+                        
+                        logger.info(
+                            f"[DRAWDOWN_PROTECTION] Successfully closed position for {symbol}, "
+                            f"PnL: ${pnl:.2f}"
+                        )
+                    else:
+                        logger.error(f"[DRAWDOWN_PROTECTION] Failed to close position for {symbol}")
+                        
+                except Exception as e:
+                    logger.error(f"[DRAWDOWN_PROTECTION] Error closing position for {symbol}: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+            
+            logger.info("[DRAWDOWN_PROTECTION] All positions closed successfully")
+            
+        except Exception as e:
+            logger.error(f"[DRAWDOWN_PROTECTION] Error in _close_all_positions_on_drawdown: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def _get_position_ratio(self, signal_strength: str) -> float:
         """
