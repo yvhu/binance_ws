@@ -6,7 +6,7 @@ Implements the 5m K-line trading strategy with dynamic position management
 import asyncio
 import logging
 import time
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List
 from datetime import datetime
 import pandas as pd
 
@@ -104,10 +104,27 @@ class FiveMinuteStrategy:
             "strategy", "dynamic_trailing_distance_enabled", default=True
         )
         self.trailing_profit_levels = config.get_config(
-            "strategy", "trailing_profit_levels", default=[0.01, 0.015, 0.02]
+            "strategy", "trailing_profit_levels", default=[0.015, 0.025, 0.035]
         )
         self.trailing_distance_levels = config.get_config(
-            "strategy", "trailing_distance_levels", default=[0.003, 0.005, 0.008]
+            "strategy", "trailing_distance_levels", default=[0.008, 0.012, 0.015]
+        )
+        
+        # Volatility-based trailing stop configuration (基于波动率的移动止损)
+        self.volatility_based_trailing_enabled = config.get_config(
+            "strategy", "volatility_based_trailing_enabled", default=True
+        )
+        self.volatility_atr_period = config.get_config(
+            "strategy", "volatility_atr_period", default=14
+        )
+        self.volatility_multiplier_low = config.get_config(
+            "strategy", "volatility_multiplier_low", default=1.5
+        )
+        self.volatility_multiplier_high = config.get_config(
+            "strategy", "volatility_multiplier_high", default=2.5
+        )
+        self.volatility_threshold = config.get_config(
+            "strategy", "volatility_threshold", default=0.015
         )
         
         # Track peak profit for drawdown protection
@@ -209,6 +226,9 @@ class FiveMinuteStrategy:
         # Track pending limit orders for each symbol
         self.pending_limit_orders: Dict[str, Dict] = {}  # symbol -> {order_id, side, order_price, quantity, timestamp}
         
+        # Track last notification time for each symbol to avoid duplicate notifications
+        self.last_notification_time: Dict[str, int] = {}  # symbol -> timestamp (milliseconds)
+        
         # Initialize order persistence
         self.order_persistence = OrderPersistence()
         
@@ -226,6 +246,17 @@ class FiveMinuteStrategy:
         
         # Sync orders with exchange on startup
         asyncio.create_task(self._sync_orders_with_exchange())
+    
+    def _clear_notification_time(self, symbol: str) -> None:
+        """
+        Clear the last notification time for a symbol
+        This should be called when a position is closed to allow new notifications
+        
+        Args:
+            symbol: Trading pair symbol
+        """
+        if symbol in self.last_notification_time:
+            del self.last_notification_time[symbol]
     
     async def on_5m_kline_update(self, kline_info: Dict) -> None:
         """
@@ -950,6 +981,18 @@ class FiveMinuteStrategy:
             
             # If all conditions met, open position
             if all_conditions_met:
+                # Check if we already sent a notification for this kline
+                kline_open_time = kline.get('open_time', 0)
+                current_time = int(time.time() * 1000)
+                
+                # Only send notification if we haven't sent one for this kline recently
+                # (within the last 10 seconds to avoid duplicates)
+                should_send_notification = True
+                if symbol in self.last_notification_time:
+                    last_notification = self.last_notification_time[symbol]
+                    time_diff = current_time - last_notification
+                    if time_diff < 10000:  # 10 seconds
+                        should_send_notification = False
                 
                 # Get current price
                 current_price = self.data_handler.get_current_price(symbol)
@@ -974,17 +1017,20 @@ class FiveMinuteStrategy:
                         kline.get('close_time'), signal_strength, self.take_profit_percent
                     )
                 
-                # Send notification
-                await self.telegram_client.send_message(
-                    f"⚡ 实时开仓执行\n\n"
-                    f"交易对: {symbol}\n"
-                    f"方向: {direction}\n"
-                    f"信号强度: {signal_strength}\n"
-                    f"当前价格: ${f'{current_price:.2f}' if current_price else 'N/A'}\n"
-                    f"止损价格: ${f'{stop_loss_price:.2f}' if stop_loss_price else 'N/A'}\n"
-                    f"止盈比例: {self.take_profit_percent*100:.1f}%\n"
-                    f"⚡ WebSocket实时数据"
-                )
+                # Send notification only if we haven't sent one recently
+                if should_send_notification:
+                    await self.telegram_client.send_message(
+                        f"⚡ 实时开仓执行\n\n"
+                        f"交易对: {symbol}\n"
+                        f"方向: {direction}\n"
+                        f"信号强度: {signal_strength}\n"
+                        f"当前价格: ${f'{current_price:.2f}' if current_price else 'N/A'}\n"
+                        f"止损价格: ${f'{stop_loss_price:.2f}' if stop_loss_price else 'N/A'}\n"
+                        f"止盈比例: {self.take_profit_percent*100:.1f}%\n"
+                        f"⚡ WebSocket实时数据"
+                    )
+                    # Update last notification time
+                    self.last_notification_time[symbol] = current_time
         except Exception as e:
             logger.error(f"Error checking early entry for {symbol}: {e}")
             import traceback
@@ -1182,6 +1228,9 @@ class FiveMinuteStrategy:
                         
                         # Clear local position state
                         self.position_manager.close_position(symbol, current_price)
+                        
+                        # Clear notification time to allow new notifications
+                        self._clear_notification_time(symbol)
                         
                         # Clear related state
                         if symbol in self.position_peak_prices:
@@ -2121,6 +2170,9 @@ class FiveMinuteStrategy:
                     # 清除本地持仓状态
                     self.position_manager.close_position(symbol, current_price if current_price else 0)
                     
+                    # 清除通知时间，允许新的通知
+                    self._clear_notification_time(symbol)
+                    
                     # 清除相关状态
                     if symbol in self.position_peak_prices:
                         del self.position_peak_prices[symbol]
@@ -2290,6 +2342,9 @@ class FiveMinuteStrategy:
                         
                         # 清除本地持仓状态
                         self.position_manager.close_position(symbol, current_price if current_price else 0)
+                        
+                        # 清除通知时间，允许新的通知
+                        self._clear_notification_time(symbol)
                         
                         # 清除相关状态
                         if symbol in self.position_peak_prices:
@@ -2467,6 +2522,9 @@ class FiveMinuteStrategy:
                     # 清除本地持仓状态
                     self.position_manager.close_position(symbol, current_price if current_price else 0)
                     
+                    # 清除通知时间，允许新的通知
+                    self._clear_notification_time(symbol)
+                    
                     # 清除相关状态
                     if symbol in self.position_peak_prices:
                         del self.position_peak_prices[symbol]
@@ -2496,13 +2554,106 @@ class FiveMinuteStrategy:
             logger.error(traceback.format_exc())
             return False
     
+    def _calculate_atr(self, klines: List[Dict], period: int = 14) -> float:
+        """
+        Calculate Average True Range (ATR) for volatility measurement
+        
+        Args:
+            klines: List of kline data
+            period: ATR calculation period
+            
+        Returns:
+            ATR value as percentage of price
+        """
+        if len(klines) < period + 1:
+            return 0.0
+        
+        true_ranges = []
+        for i in range(len(klines) - 1, len(klines) - period - 1, -1):
+            if i < 0:
+                break
+                
+            current = klines[i]
+            previous = klines[i - 1] if i > 0 else current
+            
+            high = float(current.get('high', 0))
+            low = float(current.get('low', 0))
+            prev_close = float(previous.get('close', 0))
+            
+            if high == 0 or low == 0:
+                continue
+                
+            # True Range = max(high-low, abs(high-prev_close), abs(low-prev_close))
+            tr = max(
+                high - low,
+                abs(high - prev_close),
+                abs(low - prev_close)
+            )
+            
+            # Convert to percentage
+            close_price = float(current.get('close', 0))
+            if close_price > 0:
+                tr_percent = tr / close_price
+                true_ranges.append(tr_percent)
+        
+        if not true_ranges:
+            return 0.0
+            
+        return sum(true_ranges) / len(true_ranges)
+    
+    def _get_volatility_based_trailing_distance(
+        self, 
+        atr: float, 
+        base_distance: float
+    ) -> float:
+        """
+        Calculate trailing stop distance based on volatility
+        
+        Args:
+            atr: Current ATR value
+            base_distance: Base trailing stop distance
+            
+        Returns:
+            Adjusted trailing stop distance
+        """
+        if not self.volatility_based_trailing_enabled or atr == 0:
+            return base_distance
+        
+        # Determine volatility level
+        if atr < self.volatility_threshold:
+            # Low volatility - use tighter stop
+            multiplier = self.volatility_multiplier_low
+            volatility_level = "低"
+        else:
+            # High volatility - use wider stop
+            multiplier = self.volatility_multiplier_high
+            volatility_level = "高"
+        
+        # Calculate adjusted distance
+        adjusted_distance = base_distance * multiplier
+        
+        # Log the adjustment
+        logger.info(
+            f"波动率调整: ATR={atr:.4f} ({volatility_level}波动), "
+            f"基础距离={base_distance:.4f}, "
+            f"调整后距离={adjusted_distance:.4f} (倍数={multiplier:.1f})"
+        )
+        
+        return adjusted_distance
+    
     async def _update_trailing_stop_loss(self, symbol: str, current_kline: Dict) -> None:
         """
-        Update trailing stop loss based on recent K-line highs/lows
+        Update trailing stop loss based on recent K-line highs/lows with volatility adjustment
         
         For LONG positions: stop loss follows recent N klines' lowest price
         For SHORT positions: stop loss follows recent N klines' highest price
         Stop loss can only move in favorable direction (up for LONG, down for SHORT)
+        
+        With volatility-based adjustment:
+        - Calculate ATR to measure market volatility
+        - Adjust trailing stop distance based on volatility level
+        - High volatility: wider stop distance to avoid premature exit
+        - Low volatility: tighter stop distance for better profit protection
         
         Args:
             symbol: Trading pair symbol
@@ -2516,6 +2667,7 @@ class FiveMinuteStrategy:
             
             position_side = position['side']
             current_stop_loss = position.get('stop_loss_price')
+            entry_price = position.get('entry_price', 0)
             
             # If no stop loss price is set, skip update
             if current_stop_loss is None:
@@ -2559,39 +2711,78 @@ class FiveMinuteStrategy:
                 )
                 return
             
+            # Calculate ATR for volatility measurement
+            atr = 0.0
+            if self.volatility_based_trailing_enabled:
+                atr = self._calculate_atr(closed_klines, period=self.volatility_atr_period)
+                logger.info(
+                    f"[TRAILING_STOP] {symbol}: "
+                    f"ATR={atr:.4f} ({atr*100:.2f}%), "
+                    f"波动率阈值={self.volatility_threshold:.4f}"
+                )
+            
             # Calculate new trailing stop loss price
             new_stop_loss = None
+            current_price = current_kline.get('close', 0)
             
             if position_side == 'LONG':
                 # For long position, trailing stop follows the lowest price in recent klines
                 lowest_price = min(k['low'] for k in recent_klines)
-                new_stop_loss = lowest_price
+                
+                # Calculate base trailing distance
+                base_distance = current_price - lowest_price if current_price > 0 else 0
+                
+                # Apply volatility-based adjustment
+                if self.volatility_based_trailing_enabled and base_distance > 0:
+                    adjusted_distance = self._get_volatility_based_trailing_distance(atr, base_distance)
+                    new_stop_loss = current_price - adjusted_distance
+                else:
+                    new_stop_loss = lowest_price
                 
                 # Stop loss can only move up (favorable direction)
                 if new_stop_loss <= current_stop_loss:
                     return
                 
+                # Calculate improvement percentage
+                improvement = ((new_stop_loss - current_stop_loss) / current_stop_loss * 100) if current_stop_loss > 0 else 0
+                
                 logger.info(
-                    f"Trailing stop updated for {symbol} (LONG): "
+                    f"[TRAILING_STOP] {symbol} (LONG): "
                     f"current_stop={current_stop_loss:.2f} -> new_stop={new_stop_loss:.2f}, "
                     f"lowest_in_recent={lowest_price:.2f}, "
-                    f"improvement={((new_stop_loss - current_stop_loss) / current_stop_loss * 100):.2f}%"
+                    f"improvement={improvement:.2f}%, "
+                    f"ATR={atr:.4f}, "
+                    f"current_price={current_price:.2f}"
                 )
                 
             else:  # SHORT
                 # For short position, trailing stop follows the highest price in recent klines
                 highest_price = max(k['high'] for k in recent_klines)
-                new_stop_loss = highest_price
+                
+                # Calculate base trailing distance
+                base_distance = highest_price - current_price if current_price > 0 else 0
+                
+                # Apply volatility-based adjustment
+                if self.volatility_based_trailing_enabled and base_distance > 0:
+                    adjusted_distance = self._get_volatility_based_trailing_distance(atr, base_distance)
+                    new_stop_loss = current_price + adjusted_distance
+                else:
+                    new_stop_loss = highest_price
                 
                 # Stop loss can only move down (favorable direction)
                 if new_stop_loss >= current_stop_loss:
                     return
                 
+                # Calculate improvement percentage
+                improvement = ((current_stop_loss - new_stop_loss) / current_stop_loss * 100) if current_stop_loss > 0 else 0
+                
                 logger.info(
-                    f"Trailing stop updated for {symbol} (SHORT): "
+                    f"[TRAILING_STOP] {symbol} (SHORT): "
                     f"current_stop={current_stop_loss:.2f} -> new_stop={new_stop_loss:.2f}, "
                     f"highest_in_recent={highest_price:.2f}, "
-                    f"improvement={((current_stop_loss - new_stop_loss) / current_stop_loss * 100):.2f}%"
+                    f"improvement={improvement:.2f}%, "
+                    f"ATR={atr:.4f}, "
+                    f"current_price={current_price:.2f}"
                 )
             
             # Update stop loss price in position
