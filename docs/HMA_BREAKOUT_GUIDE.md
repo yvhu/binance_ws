@@ -17,6 +17,7 @@ HMA Breakout 策略基于 Hull Moving Average (HMA) 指标，通过三个不同�
 3. **持仓管理**：只要颜色不变，保持当前仓位
 4. **止损**：开仓时在币安设置止损单，ROI 达到 -40% 时自动触发
 5. **杠杆**：10倍杠杆，全仓交易
+6. **信号确认**：启用信号确认后，信号反转需要经过多次确认才会执行交易，避免市场噪音
 
 ## 快速开始
 
@@ -65,6 +66,17 @@ leverage = 10
 margin_type = "cross"
 # 止损配置
 stop_loss_roi = -0.40  # 投资回报率 -40% 止损
+# 条件单类型：'CONDITIONAL' 为条件单
+algo_type = "CONDITIONAL"
+
+# 信号确认配置
+[signal_confirmation]
+# 是否启用信号确认
+enabled = true
+# 确认时间点（秒），例如 [30, 60] 表示在30秒和60秒时确认
+confirmation_times = [30, 60]
+# 确认次数要求，例如 2 表示需要在所有确认时间点都确认
+required_confirmations = 2
 ```
 
 ### 4. 运行策略
@@ -168,6 +180,15 @@ python main_hma.py
 | leverage | 杠杆倍数 | 10 |
 | margin_type | 保证金模式 | cross |
 | stop_loss_roi | 止损 ROI | -0.40 |
+| algo_type | 条件单类型 | CONDITIONAL |
+
+### 信号确认参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| enabled | 是否启用信号确认 | true |
+| confirmation_times | 确认时间点（秒） | [30, 60] |
+| required_confirmations | 需要的确认次数 | 2 |
 
 ### 数据管理参数
 
@@ -234,6 +255,142 @@ K线周期: 5m
 原因: 止损触发
 ```
 
+## 止损功能详解
+
+### 止损机制
+
+系统使用条件单（Conditional Order）实现自动止损：
+
+1. **开仓时自动设置止损**：
+   - 根据入场价格和-40% ROI计算止损价格
+   - 创建STOP_MARKET条件单，设置`closePosition=True`
+   - 止损单ID被保存到仓位管理器中
+
+2. **止损触发**：
+   - 当价格达到止损价时，条件单自动触发
+   - 系统通过用户数据流监听订单更新
+   - 检测到止损单成交后自动平仓
+   - 发送止损平仓通知
+
+3. **平仓时自动清理**：
+   - 手动平仓时自动撤销止损条件单
+   - 避免订单冲突和资源浪费
+
+### 止损价格计算
+
+```
+ROI = (价格变化 / 入场价格) × 杠杆
+价格变化 = ROI × 入场价格 / 杠杆
+止损价格 = 入场价格 ± 价格变化
+
+多头止损：止损价格 = 入场价格 - 价格变化
+空头止损：止损价格 = 入场价格 + 价格变化
+```
+
+示例：
+- 入场价格：50000 USDT
+- 杠杆：10倍
+- 止损ROI：-40%
+- 价格变化 = -0.40 × 50000 / 10 = -200 USDT
+- 多头止损价格 = 50000 - 200 = 49800 USDT
+
+### 止损单管理
+
+系统提供完整的止损单管理功能：
+
+```python
+# 查看活跃的止损单
+active_orders = executor.get_active_stop_loss_orders(symbol)
+
+# 撤销指定止损单
+executor.cancel_stop_loss_order(symbol, order_id)
+
+# 撤销所有止损单
+executor.cancel_all_stop_loss_orders(symbol)
+```
+
+## 信号确认功能详解
+
+### 信号确认机制
+
+为了避免市场噪音导致的频繁交易，系统引入了信号确认机制：
+
+1. **信号反转检测**：
+   - K线关闭时检测到颜色反转
+   - 创建待确认信号
+   - 不立即执行交易
+
+2. **信号确认过程**：
+   - 在配置的时间点（如30秒、60秒）检查信号
+   - 重新计算当前颜色
+   - 如果颜色保持一致，添加确认
+   - 如果颜色发生变化，取消信号
+
+3. **信号执行**：
+   - 达到确认次数要求后执行交易
+   - 确保信号稳定可靠
+
+### 信号确认流程
+
+```
+0秒: 检测到信号反转 (GRAY -> GREEN)
+     ↓
+     创建待确认信号，等待确认
+     ↓
+30秒: 检查确认
+     ↓
+     颜色仍然是GREEN → 确认1/2
+     颜色变为RED → 取消信号
+     ↓
+60秒: 检查确认
+     ↓
+     颜色仍然是GREEN → 确认2/2 → 执行交易
+     颜色变为RED → 取消信号
+```
+
+### 配置建议
+
+| 策略类型 | confirmation_times | required_confirmations | 特点 |
+|---------|-------------------|----------------------|------|
+| 保守策略 | [30, 60, 90] | 3 | 需要多次确认，避免假信号 |
+| 平衡策略 | [30, 60] | 2 | 平衡速度和准确性（默认） |
+| 激进策略 | [30] | 1 | 快速响应，但可能受噪音影响 |
+| 禁用确认 | - | - | 立即执行，无延迟 |
+
+### 信号确认配置示例
+
+```toml
+# 平衡策略（默认）
+[signal_confirmation]
+enabled = true
+confirmation_times = [30, 60]
+required_confirmations = 2
+
+# 保守策略
+[signal_confirmation]
+enabled = true
+confirmation_times = [30, 60, 90]
+required_confirmations = 3
+
+# 激进策略
+[signal_confirmation]
+enabled = true
+confirmation_times = [30]
+required_confirmations = 1
+
+# 禁用确认
+[signal_confirmation]
+enabled = false
+```
+
+### 信号确认的优势
+
+1. **避免市场噪音**：过滤短期价格波动导致的假信号
+2. **提高交易质量**：确保信号稳定可靠后再执行
+3. **减少交易频率**：避免频繁开平仓
+4. **降低交易成本**：减少手续费和滑点
+5. **提高胜率**：通过确认机制提高交易成功率
+
 ## 风险提示
 
 1. **高风险策略**：10倍杠杆全仓交易风险极高
@@ -256,6 +413,42 @@ stop_loss_roi = -0.30  # 改为 -30%
 ### Q: 如何查看当前持仓？
 
 A: 程序启动时会自动同步交易所的持仓信息，也可以通过 Telegram 通知查看。
+
+### Q: 如何调整信号确认参数？
+
+A: 修改 `config.toml` 中的 `signal_confirmation` 配置：
+
+```toml
+[signal_confirmation]
+enabled = true
+confirmation_times = [30, 60]  # 在30秒和60秒时确认
+required_confirmations = 2  # 需要两次确认
+```
+
+### Q: 如何禁用信号确认？
+
+A: 将 `enabled` 设置为 `false`：
+
+```toml
+[signal_confirmation]
+enabled = false
+```
+
+### Q: 信号确认会延迟交易吗？
+
+A: 是的，信号确认会延迟交易。默认配置下，信号反转后需要等待60秒（两次确认）才会执行交易。这是为了避免市场噪音，提高交易质量。
+
+### Q: 止损单会自动撤销吗？
+
+A: 是的，平仓时会自动撤销止损条件单。系统会自动管理止损单的生命周期，避免订单冲突。
+
+### Q: 如何查看活跃的止损单？
+
+A: 可以通过日志查看，或者使用交易执行器的方法：
+
+```python
+active_orders = executor.get_active_stop_loss_orders(symbol)
+```
 
 ## 技术支持
 
