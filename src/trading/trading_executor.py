@@ -5,6 +5,10 @@
 
 from typing import Optional, Dict
 import logging
+import time
+import hmac
+import hashlib
+import uuid
 from binance.client import Client
 from binance.enums import *
 from binance.exceptions import BinanceAPIException
@@ -13,6 +17,97 @@ from .position_manager import Position, PositionType
 from ..utils.retry_decorator import sync_retry, log_retry_attempt
 
 logger = logging.getLogger(__name__)
+
+
+class AlgoOrderManager:
+    """条件单管理器"""
+    
+    def __init__(self):
+        """初始化条件单管理器"""
+        # 存储活跃的条件单 {symbol: {order_id: order_info}}
+        self.active_orders: Dict[str, Dict[int, Dict]] = {}
+    
+    def add_order(self, symbol: str, order_id: int, order_type: str,
+                  trigger_price: float, position_side: str) -> None:
+        """
+        添加条件单到跟踪列表
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            order_type: 订单类型
+            trigger_price: 触发价格
+            position_side: 持仓方向
+        """
+        if symbol not in self.active_orders:
+            self.active_orders[symbol] = {}
+        
+        self.active_orders[symbol][order_id] = {
+            'order_type': order_type,
+            'trigger_price': trigger_price,
+            'position_side': position_side,
+            'created_time': time.time()
+        }
+        
+        logger.info(f"条件单已添加到跟踪: {symbol} 订单ID={order_id} 类型={order_type}")
+    
+    def remove_order(self, symbol: str, order_id: int) -> bool:
+        """
+        从跟踪列表中移除条件单
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            
+        Returns:
+            是否成功移除
+        """
+        if symbol in self.active_orders and order_id in self.active_orders[symbol]:
+            del self.active_orders[symbol][order_id]
+            logger.info(f"条件单已从跟踪中移除: {symbol} 订单ID={order_id}")
+            return True
+        return False
+    
+    def get_order(self, symbol: str, order_id: int) -> Optional[Dict]:
+        """
+        获取条件单信息
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            
+        Returns:
+            订单信息字典
+        """
+        if symbol in self.active_orders and order_id in self.active_orders[symbol]:
+            return self.active_orders[symbol][order_id]
+        return None
+    
+    def get_all_orders(self, symbol: str = None) -> Dict:
+        """
+        获取所有条件单
+        
+        Args:
+            symbol: 交易对（可选），如果为None则返回所有交易对的条件单
+            
+        Returns:
+            条件单字典
+        """
+        if symbol:
+            return self.active_orders.get(symbol, {})
+        return self.active_orders
+    
+    def clear_symbol_orders(self, symbol: str) -> None:
+        """
+        清除指定交易对的所有条件单
+        
+        Args:
+            symbol: 交易对
+        """
+        if symbol in self.active_orders:
+            order_count = len(self.active_orders[symbol])
+            del self.active_orders[symbol]
+            logger.info(f"已清除 {symbol} 的所有条件单，共 {order_count} 个")
 
 
 class TradingExecutor:
@@ -36,6 +131,9 @@ class TradingExecutor:
         
         # 缓存交易对精度信息
         self.symbol_precision_cache: Dict[str, Dict] = {}
+        
+        # 初始化条件单管理器
+        self.algo_order_manager = AlgoOrderManager()
     
     def set_leverage(self, symbol: str, leverage: int) -> bool:
         """
@@ -293,7 +391,7 @@ class TradingExecutor:
             stop_loss_roi: 止损ROI（默认-40%）
             
         Returns:
-            订单信息
+            订单信息，包含止损单ID
         """
         try:
             # 根据交易对精度对数量进行四舍五入
@@ -325,15 +423,22 @@ class TradingExecutor:
             
             logger.info(f"获取到的入场价格: {entry_price}")
             
+            stop_loss_order_id = None
             if entry_price:
                 # 设置止损单（使用调整后的数量）
-                self._set_stop_loss_order(
+                stop_loss_order_id = self._set_stop_loss_order(
                     symbol=symbol,
                     side=SIDE_SELL,
                     quantity=rounded_quantity,
                     entry_price=entry_price,
                     stop_loss_roi=stop_loss_roi
                 )
+                
+                if stop_loss_order_id:
+                    order['stop_loss_order_id'] = stop_loss_order_id
+                    logger.info(f"止损单ID已保存: {stop_loss_order_id}")
+                else:
+                    logger.warning("止损单创建失败，但开仓成功")
             else:
                 logger.error("无法获取入场价格，无法设置止损单")
             
@@ -354,7 +459,7 @@ class TradingExecutor:
             stop_loss_roi: 止损ROI（默认-40%）
             
         Returns:
-            订单信息
+            订单信息，包含止损单ID
         """
         try:
             # 根据交易对精度对数量进行四舍五入
@@ -386,15 +491,22 @@ class TradingExecutor:
             
             logger.info(f"获取到的入场价格: {entry_price}")
             
+            stop_loss_order_id = None
             if entry_price:
                 # 设置止损单（使用调整后的数量）
-                self._set_stop_loss_order(
+                stop_loss_order_id = self._set_stop_loss_order(
                     symbol=symbol,
                     side=SIDE_BUY,
                     quantity=rounded_quantity,
                     entry_price=entry_price,
                     stop_loss_roi=stop_loss_roi
                 )
+                
+                if stop_loss_order_id:
+                    order['stop_loss_order_id'] = stop_loss_order_id
+                    logger.info(f"止损单ID已保存: {stop_loss_order_id}")
+                else:
+                    logger.warning("止损单创建失败，但开仓成功")
             else:
                 logger.error("无法获取入场价格，无法设置止损单")
             
@@ -405,14 +517,15 @@ class TradingExecutor:
             return None
     
     def close_position(self, symbol: str, position_type: PositionType,
-                       quantity: float) -> Optional[Dict]:
+                       quantity: float, stop_loss_order_id: Optional[int] = None) -> Optional[Dict]:
         """
-        平仓
+        平仓并自动撤销止损条件单
         
         Args:
             symbol: 交易对
             position_type: 持仓类型
             quantity: 数量
+            stop_loss_order_id: 止损单ID（可选）
             
         Returns:
             订单信息
@@ -441,6 +554,16 @@ class TradingExecutor:
                 )
             
             logger.info(f"平仓成功: {symbol} 数量={rounded_quantity:.8f}")
+            
+            # 平仓后自动撤销止损条件单
+            if stop_loss_order_id:
+                logger.info(f"平仓后撤销止损条件单: 订单ID={stop_loss_order_id}")
+                self.cancel_stop_loss_order(symbol, stop_loss_order_id)
+            else:
+                # 如果没有提供止损单ID，尝试撤销该交易对的所有止损单
+                logger.info(f"平仓后撤销 {symbol} 的所有止损条件单")
+                self.cancel_all_stop_loss_orders(symbol)
+            
             return order
             
         except BinanceAPIException as e:
@@ -484,9 +607,9 @@ class TradingExecutor:
             return False
     
     def _set_stop_loss_order(self, symbol: str, side: str, quantity: float,
-                            entry_price: float, stop_loss_roi: float) -> bool:
+                            entry_price: float, stop_loss_roi: float) -> Optional[int]:
         """
-        设置止损单
+        设置止损单（使用条件单）
         
         Args:
             symbol: 交易对
@@ -496,14 +619,14 @@ class TradingExecutor:
             stop_loss_roi: 止损ROI
             
         Returns:
-            是否成功
+            止损单ID，失败返回None
         """
         try:
             # 获取交易对价格精度
             precision_info = self.get_symbol_precision(symbol)
             if not precision_info:
                 logger.error(f"无法获取 {symbol} 的价格精度，无法设置止损单")
-                return False
+                return None
             
             price_precision = precision_info['price_precision']
             tick_size = precision_info['tick_size']
@@ -526,7 +649,7 @@ class TradingExecutor:
             # 确保止损价格不为负数
             if stop_price <= 0:
                 logger.error(f"止损价格计算错误: {stop_price:.8f} <= 0")
-                return False
+                return None
             
             # 根据价格精度调整止损价格
             # 向下取整到最近的 tick_size 倍数
@@ -535,32 +658,255 @@ class TradingExecutor:
             logger.info(f"止损价格调整: 原始={stop_price:.8f}, 调整后={rounded_stop_price:.8f}, "
                        f"tick_size={tick_size}")
             
-            # 创建止损单
-            # 注意：closePosition=True 时不能使用 reduceOnly 参数
-            logger.info(f"正在创建止损单: symbol={symbol}, side={side}, "
+            # 使用条件单API创建止损单
+            logger.info(f"正在创建止损条件单: symbol={symbol}, side={side}, "
                        f"stopPrice={rounded_stop_price:.8f}, closePosition=True")
             
-            stop_order = self.client.futures_create_order(
+            stop_order = self.place_algo_order(
                 symbol=symbol,
                 side=side,
-                type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                stopPrice=rounded_stop_price,
-                closePosition=True
+                order_type='STOP_MARKET',
+                trigger_price=rounded_stop_price,
+                close_position=True,
+                position_side='BOTH',
+                working_type='CONTRACT_PRICE',
+                price_protect=True
             )
             
-            logger.info(f"设置止损单成功: {symbol} 止损价={rounded_stop_price:.8f} ROI={stop_loss_roi:.2%} "
-                       f"订单ID={stop_order.get('orderId', 'N/A')}")
-            return True
+            if stop_order and 'orderId' in stop_order:
+                order_id = stop_order['orderId']
+                logger.info(f"设置止损条件单成功: {symbol} 止损价={rounded_stop_price:.8f} "
+                           f"ROI={stop_loss_roi:.2%} 订单ID={order_id}")
+                
+                # 添加到条件单管理器
+                self.algo_order_manager.add_order(
+                    symbol=symbol,
+                    order_id=order_id,
+                    order_type='STOP_MARKET',
+                    trigger_price=rounded_stop_price,
+                    position_side='BOTH'
+                )
+                
+                return order_id
+            else:
+                logger.error(f"止损条件单创建失败，未返回订单ID")
+                return None
             
         except BinanceAPIException as e:
             logger.error(f"设置止损单失败: {e}")
             logger.error(f"错误代码: {e.code}, 错误消息: {e.message}")
-            return False
+            return None
         except Exception as e:
             logger.error(f"设置止损单异常: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            return None
+    
+    def place_algo_order(self, symbol: str, side: str, order_type: str,
+                        trigger_price: float, quantity: Optional[float] = None,
+                        position_side: str = 'BOTH', close_position: bool = False,
+                        working_type: str = 'CONTRACT_PRICE', price_protect: bool = False,
+                        client_algo_id: Optional[str] = None) -> Optional[Dict]:
+        """
+        下条件单（使用WebSocket API格式）
+        
+        Args:
+            symbol: 交易对
+            side: 买卖方向 (BUY/SELL)
+            order_type: 订单类型 (STOP/TAKE_PROFIT/STOP_MARKET/TAKE_PROFIT_MARKET)
+            trigger_price: 触发价格
+            quantity: 数量（closePosition=True时不需要）
+            position_side: 持仓方向 (BOTH/LONG/SHORT)
+            close_position: 是否全部平仓
+            working_type: 触发类型 (MARK_PRICE/CONTRACT_PRICE)
+            price_protect: 价格保护
+            client_algo_id: 用户自定义条件订单号
+            
+        Returns:
+            订单信息
+        """
+        try:
+            # 生成请求ID
+            request_id = str(uuid.uuid4())
+            
+            # 获取时间戳
+            timestamp = int(time.time() * 1000)
+            
+            # 构建参数
+            params = {
+                'apiKey': self.api_key,
+                'symbol': symbol,
+                'side': side,
+                'type': order_type,
+                'algoType': 'CONDITIONAL',
+                'triggerPrice': trigger_price,
+                'positionSide': position_side,
+                'workingType': working_type,
+                'priceProtect': 'TRUE' if price_protect else 'FALSE',
+                'timestamp': timestamp
+            }
+            
+            # 添加可选参数
+            if quantity is not None and not close_position:
+                params['quantity'] = quantity
+            
+            if close_position:
+                params['closePosition'] = 'TRUE'
+            
+            if client_algo_id:
+                params['clientAlgoId'] = client_algo_id
+            
+            # 生成签名
+            query_string = '&'.join([f"{k}={v}" for k, v in sorted(params.items())])
+            signature = hmac.new(
+                self.api_secret.encode('utf-8'),
+                query_string.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            
+            params['signature'] = signature
+            
+            # 构建请求
+            request = {
+                'id': request_id,
+                'method': 'algoOrder.place',
+                'params': params
+            }
+            
+            logger.info(f"发送条件单请求: {request}")
+            
+            # 使用Binance REST API创建条件单
+            # 注意：binance-python库可能不支持直接的条件单API
+            # 这里使用futures_create_order创建STOP_MARKET订单作为替代
+            if order_type == 'STOP_MARKET':
+                stop_order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=side,
+                    type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                    stopPrice=trigger_price,
+                    closePosition=close_position,
+                    positionSide=position_side,
+                    workingType=working_type,
+                    priceProtect=price_protect
+                )
+                logger.info(f"条件单创建成功: {stop_order}")
+                return stop_order
+            else:
+                logger.error(f"暂不支持的条件单类型: {order_type}")
+                return None
+                
+        except BinanceAPIException as e:
+            logger.error(f"创建条件单失败: {e}")
+            logger.error(f"错误代码: {e.code}, 错误消息: {e.message}")
+            return None
+        except Exception as e:
+            logger.error(f"创建条件单异常: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
+    def cancel_algo_order(self, symbol: str, algo_id: Optional[int] = None,
+                         client_algo_id: Optional[str] = None) -> Optional[Dict]:
+        """
+        撤销条件单
+        
+        Args:
+            symbol: 交易对
+            algo_id: 系统订单号
+            client_algo_id: 用户自定义订单号
+            
+        Returns:
+            撤销结果
+        """
+        try:
+            if not algo_id and not client_algo_id:
+                logger.error("必须提供 algo_id 或 client_algo_id")
+                return None
+            
+            # 使用Binance REST API撤销订单
+            if algo_id:
+                result = self.client.futures_cancel_order(
+                    symbol=symbol,
+                    orderId=algo_id
+                )
+            else:
+                result = self.client.futures_cancel_order(
+                    symbol=symbol,
+                    origClientOrderId=client_algo_id
+                )
+            
+            logger.info(f"撤销条件单成功: {result}")
+            return result
+            
+        except BinanceAPIException as e:
+            logger.error(f"撤销条件单失败: {e}")
+            logger.error(f"错误代码: {e.code}, 错误消息: {e.message}")
+            return None
+        except Exception as e:
+            logger.error(f"撤销条件单异常: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
+    def cancel_stop_loss_order(self, symbol: str, order_id: int) -> bool:
+        """
+        撤销止损单并从管理器中移除
+        
+        Args:
+            symbol: 交易对
+            order_id: 订单ID
+            
+        Returns:
+            是否成功
+        """
+        try:
+            # 撤销订单
+            result = self.cancel_algo_order(symbol=symbol, algo_id=order_id)
+            
+            if result:
+                # 从管理器中移除
+                self.algo_order_manager.remove_order(symbol, order_id)
+                logger.info(f"止损单已撤销并从管理器中移除: {symbol} 订单ID={order_id}")
+                return True
+            else:
+                logger.error(f"撤销止损单失败: {symbol} 订单ID={order_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"撤销止损单异常: {e}")
             return False
+    
+    def cancel_all_stop_loss_orders(self, symbol: str) -> int:
+        """
+        撤销指定交易对的所有止损单
+        
+        Args:
+            symbol: 交易对
+            
+        Returns:
+            成功撤销的订单数量
+        """
+        orders = self.algo_order_manager.get_all_orders(symbol)
+        success_count = 0
+        
+        for order_id in orders.keys():
+            if self.cancel_stop_loss_order(symbol, order_id):
+                success_count += 1
+        
+        logger.info(f"已撤销 {symbol} 的 {success_count}/{len(orders)} 个止损单")
+        return success_count
+    
+    def get_active_stop_loss_orders(self, symbol: str = None) -> Dict:
+        """
+        获取活跃的止损单
+        
+        Args:
+            symbol: 交易对（可选）
+            
+        Returns:
+            活跃止损单字典
+        """
+        return self.algo_order_manager.get_all_orders(symbol)
     
     def get_account_info(self) -> Optional[Dict]:
         """

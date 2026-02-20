@@ -41,3 +41,5 @@ leverage = 10
 margin_type = "cross"
 # 止损配置
 stop_loss_roi = -0.40  # 投资回报率 -40% 止损
+# 条件单类型：'CONDITIONAL' 为条件单
+algo_type = "CONDITIONAL"

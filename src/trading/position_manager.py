@@ -42,6 +42,9 @@ class Position:
         # 止损
         self.stop_loss_price: Optional[float] = None
         self.stop_loss_roi: Optional[float] = None
+        
+        # 条件单ID（用于跟踪和管理）
+        self.stop_loss_algo_id: Optional[int] = None
     
     def calculate_pnl(self, current_price: float) -> Dict:
         """
@@ -123,7 +126,8 @@ class Position:
             'leverage': self.leverage,
             'entry_time': self.entry_time.isoformat(),
             'stop_loss_price': self.stop_loss_price,
-            'stop_loss_roi': self.stop_loss_roi
+            'stop_loss_roi': self.stop_loss_roi,
+            'stop_loss_algo_id': self.stop_loss_algo_id
         }
     
     def __repr__(self):
@@ -189,7 +193,7 @@ class PositionManager:
             current_price: 当前价格
             
         Returns:
-            平仓信息字典
+            平仓信息字典，包含止损单ID
         """
         if self.current_position is None:
             logger.warning("无持仓，无法平仓")
@@ -207,7 +211,8 @@ class PositionManager:
             'roi': pnl_info['roi'],
             'leverage': self.current_position.leverage,
             'entry_time': self.current_position.entry_time.isoformat(),
-            'close_time': datetime.now().isoformat()
+            'close_time': datetime.now().isoformat(),
+            'stop_loss_algo_id': self.current_position.stop_loss_algo_id
         }
         
         logger.info(f"平仓成功: ROI={pnl_info['roi']:.2%}, PnL={pnl_info['pnl']:.2f}")
