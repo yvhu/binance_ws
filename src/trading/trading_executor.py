@@ -469,10 +469,22 @@ class TradingExecutor:
             是否成功
         """
         try:
+            # 获取交易对价格精度
+            precision_info = self.get_symbol_precision(symbol)
+            if not precision_info:
+                logger.error(f"无法获取 {symbol} 的价格精度，无法设置止损单")
+                return False
+            
+            price_precision = precision_info['price_precision']
+            tick_size = precision_info['tick_size']
+            
             # 计算止损价格
             # ROI = (价格变化 / 入场价格) * 杠杆
             # 价格变化 = ROI * 入场价格 / 杠杆
             price_change = abs(stop_loss_roi) * entry_price / self.leverage
+            
+            logger.info(f"止损价格计算: 入场价={entry_price:.8f}, ROI={stop_loss_roi:.2%}, "
+                       f"杠杆={self.leverage}x, 价格变化={price_change:.8f}")
             
             if side == SIDE_SELL:
                 # 多头止损：价格下跌
@@ -481,21 +493,43 @@ class TradingExecutor:
                 # 空头止损：价格上涨
                 stop_price = entry_price + price_change
             
+            # 确保止损价格不为负数
+            if stop_price <= 0:
+                logger.error(f"止损价格计算错误: {stop_price:.8f} <= 0")
+                return False
+            
+            # 根据价格精度调整止损价格
+            # 向下取整到最近的 tick_size 倍数
+            rounded_stop_price = int(stop_price / tick_size) * tick_size
+            
+            logger.info(f"止损价格调整: 原始={stop_price:.8f}, 调整后={rounded_stop_price:.8f}, "
+                       f"tick_size={tick_size}")
+            
             # 创建止损单
+            # 注意：closePosition=True 时不能使用 reduceOnly 参数
+            logger.info(f"正在创建止损单: symbol={symbol}, side={side}, "
+                       f"stopPrice={rounded_stop_price:.8f}, closePosition=True")
+            
             stop_order = self.client.futures_create_order(
                 symbol=symbol,
                 side=side,
                 type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                stopPrice=round(stop_price, 2),
-                closePosition=True,
-                reduceOnly=True
+                stopPrice=rounded_stop_price,
+                closePosition=True
             )
             
-            logger.info(f"设置止损单成功: {symbol} 止损价={stop_price:.2f} ROI={stop_loss_roi:.2%}")
+            logger.info(f"设置止损单成功: {symbol} 止损价={rounded_stop_price:.8f} ROI={stop_loss_roi:.2%} "
+                       f"订单ID={stop_order.get('orderId', 'N/A')}")
             return True
             
         except BinanceAPIException as e:
             logger.error(f"设置止损单失败: {e}")
+            logger.error(f"错误代码: {e.code}, 错误消息: {e.message}")
+            return False
+        except Exception as e:
+            logger.error(f"设置止损单异常: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def get_account_info(self) -> Optional[Dict]:
