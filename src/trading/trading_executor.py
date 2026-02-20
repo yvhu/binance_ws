@@ -10,6 +10,7 @@ from binance.enums import *
 from binance.exceptions import BinanceAPIException
 
 from .position_manager import Position, PositionType
+from ..utils.retry_decorator import sync_retry, log_retry_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -84,21 +85,23 @@ class TradingExecutor:
             logger.error(f"设置保证金模式失败: {e}")
             return False
     
+    @sync_retry(max_retries=3, base_delay=1.0, on_retry_callback=log_retry_attempt)
     def get_account_balance(self, symbol: str = None) -> Optional[float]:
         """
-        获取账户余额
+        获取账户可用余额（用于开仓）
         
         Args:
             symbol: 交易对（可选），用于确定查询哪种资产余额
         
         Returns:
-            资产余额
+            可用资产余额，失败返回None
         """
         try:
-            account = self.client.futures_account_balance()
+            # 使用 futures_account 获取完整账户信息（包含可用余额）
+            account = self.client.futures_account()
             
-            # 打印所有资产用于调试
-            logger.debug(f"账户所有资产: {account}")
+            # 打印完整账户信息用于调试
+            logger.debug(f"完整账户信息: {account}")
             
             # 确定保证金资产（根据交易对后缀）
             asset_name = 'USDT'  # 默认查询USDT
@@ -112,26 +115,30 @@ class TradingExecutor:
             
             logger.debug(f"查询资产: {asset_name}")
             
-            # 查找指定资产余额
-            for asset in account:
-                logger.debug(f"检查资产: {asset['asset']} = {asset['balance']}")
-                if asset['asset'] == asset_name:
-                    balance = float(asset['balance'])
-                    logger.info(f"账户余额: {balance:.8f} {asset_name}")
-                    return balance
+            # 检查所有资产余额
+            balance = 0.0
+            if 'assets' in account:
+                for asset in account['assets']:
+                    asset_name_check = asset.get('asset', 'N/A')
+                    available_balance = float(asset.get('availableBalance', 0))
+                    
+                    logger.debug(f"检查资产: {asset_name_check} = {available_balance:.8f} (可用)")
+                    
+                    # 优先使用 USDC，如果没有则使用 USDT
+                    if asset_name_check == 'USDC' and available_balance > 0:
+                        balance = available_balance
+                        logger.info(f"使用 USDC 可用余额: {balance:.8f}")
+                    elif asset_name_check == 'USDT' and available_balance > 0 and balance == 0:
+                        balance = available_balance
+                        logger.info(f"使用 USDT 可用余额: {balance:.8f}")
             
-            # 如果没找到指定资产，尝试返回总余额
-            logger.warning(f"未找到 {asset_name} 余额，尝试返回总余额")
-            total_balance = 0.0
-            for asset in account:
-                total_balance += float(asset['balance'])
+            if balance > 0:
+                logger.info(f"账户可用余额: {balance:.8f} {asset_name}")
+                return balance
             
-            if total_balance > 0:
-                logger.info(f"账户总余额: {total_balance:.8f}")
-                return total_balance
-            
-            logger.warning(f"账户无余额")
+            logger.warning(f"账户无可用余额")
             return 0.0
+            
         except BinanceAPIException as e:
             logger.error(f"获取账户余额失败: {e}")
             return None
